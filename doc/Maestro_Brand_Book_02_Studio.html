@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maestro — Brand Book 02 · Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Neutrals — clean cool light */
+    --canvas:#FAFAFC;
+    --surface:#FFFFFF;
+    --surface-2:#F4F4F8;
+    --line:#E9E9F0;
+    --line-2:#D8D8E2;
+    /* Indigo — primary brand */
+    --indigo:#5546E8;
+    --indigo-deep:#3A2FB5;
+    --indigo-soft:#EEEBFF;
+    --indigo-tint:rgba(85,70,232,.08);
+    /* Warm spark — the maestro thread */
+    --spark:#FF9E44;
+    --spark-deep:#E07A18;
+    --spark-soft:#FFF1E2;
+    /* Text */
+    --ink:#171723;
+    --ink-2:#55566A;
+    --ink-3:#8A8C9E;
+    /* Semantic status */
+    --ok:#12A150;
+    --neutral:#8A8C9E;
+    --info:#2F72E6;
+    --warn:#F59E0B;
+    --danger:#E5484D;
+    --mismatch:#F97316;
+    /* type */
+    --display:"Space Grotesk",system-ui,sans-serif;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --shadow:0 1px 2px rgba(23,23,35,.04),0 8px 24px rgba(23,23,35,.06);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--canvas);color:var(--ink);
+    font-family:var(--sans);font-size:16px;line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--indigo-deep);text-decoration:none;font-weight:600}
+  :focus-visible{outline:2px solid var(--indigo);outline-offset:3px;border-radius:6px}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:0 32px}
+  section{padding:76px 0;border-top:1px solid var(--line)}
+  section:first-of-type{border-top:none}
+
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--indigo-deep);margin:0 0 18px;font-weight:600;
+    background:var(--indigo-soft);padding:6px 12px;border-radius:999px;
+  }
+  h2{font-family:var(--display);font-weight:600;font-size:clamp(30px,4vw,46px);
+    line-height:1.06;margin:0 0 14px;letter-spacing:-.025em}
+  h3{font-family:var(--display);font-weight:600;font-size:18px;margin:0 0 8px;letter-spacing:-.01em}
+  .lede{color:var(--ink-2);font-size:18px;max-width:60ch;margin:0 0 8px}
+  .muted{color:var(--ink-3)}
+
+  /* ---------- COVER ---------- */
+  .cover{padding:96px 0 76px;position:relative;overflow:hidden}
+  .cover::before{
+    content:"";position:absolute;inset:-30% -10% auto auto;width:60%;height:120%;
+    background:radial-gradient(50% 50% at 70% 30%,var(--indigo-tint),transparent 70%);
+    pointer-events:none;
+  }
+  .brandmark{display:flex;align-items:center;gap:14px;margin-bottom:52px;position:relative}
+  .tile{width:44px;height:44px;border-radius:13px;background:var(--surface);
+    border:1px solid var(--line);box-shadow:var(--shadow);
+    display:flex;align-items:flex-end;justify-content:center;gap:3px;padding:11px 10px}
+  .tile span{width:4px;border-radius:2px;background:var(--indigo)}
+  .tile span.spark{background:var(--spark)}
+  .b1{height:42%}.b2{height:78%}.b3{height:100%}.b4{height:58%}.b5{height:86%}
+  .wordmark{font-family:var(--display);font-weight:600;font-size:25px;letter-spacing:-.02em}
+
+  .cover h1{
+    font-family:var(--display);font-weight:600;
+    font-size:clamp(52px,10vw,116px);line-height:.95;letter-spacing:-.04em;
+    margin:0 0 24px;position:relative;
+  }
+  .cover h1 .u{
+    background:linear-gradient(120deg,var(--indigo),#8b6cff);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .cover-sub{font-size:clamp(18px,2.3vw,23px);color:var(--ink-2);max-width:56ch;margin:0;position:relative}
+  .cover-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:44px;position:relative}
+  .pill{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--ink-2);
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;
+    padding:8px 15px;box-shadow:var(--shadow)}
+  .pill b{color:var(--indigo-deep)}
+
+  /* ---------- POSITIONING ---------- */
+  .traits{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:36px}
+  .trait{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:24px;box-shadow:var(--shadow)}
+  .trait .eq{display:flex;align-items:flex-end;gap:3px;height:20px;margin-bottom:14px}
+  .trait .eq i{width:4px;border-radius:2px;background:var(--indigo)}
+  .trait .eq i:last-child{background:var(--spark)}
+  .trait .k{font-family:var(--display);font-weight:600;font-size:19px;margin-bottom:6px}
+  .trait .v{font-size:13.5px;color:var(--ink-3);line-height:1.55}
+
+  /* ---------- LOGO ---------- */
+  .logo-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;margin-top:36px}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;
+    padding:28px;box-shadow:var(--shadow)}
+  .logo-hero{display:flex;align-items:center;gap:18px;padding:44px 30px;
+    background:linear-gradient(180deg,#fff,#f7f7fb);
+    border:1px solid var(--line);border-radius:18px;margin-bottom:20px;box-shadow:var(--shadow)}
+  .logo-hero .tile{width:66px;height:66px;border-radius:18px}
+  .logo-hero .wordmark{font-size:46px}
+  .clearspace{padding:30px;border:1px dashed var(--line-2);border-radius:14px;
+    display:flex;justify-content:center;background:var(--surface-2)}
+  .rules{list-style:none;padding:0;margin:14px 0 0}
+  .rules li{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line);
+    font-size:14px;color:var(--ink-2)}
+  .rules li:first-child{border-top:none}
+  .yes{color:var(--ok)}.no{color:var(--danger)}
+
+  /* ---------- COLOR ---------- */
+  .sw-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:32px}
+  .sw{border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    background:var(--surface);box-shadow:var(--shadow)}
+  .sw .chip{height:104px;display:flex;align-items:flex-end;padding:12px;
+    font-family:var(--mono);font-size:11px}
+  .sw .meta{padding:13px 15px 17px}
+  .sw .name{font-weight:700;font-size:14px;margin-bottom:2px}
+  .sw .role{font-size:12.5px;color:var(--ink-3);line-height:1.45}
+  .ramp{display:flex;border-radius:14px;overflow:hidden;margin-top:14px;border:1px solid var(--line)}
+  .ramp div{flex:1;height:64px;display:flex;align-items:flex-end;justify-content:center;
+    padding-bottom:8px;font-family:var(--mono);font-size:10px}
+
+  .status-list{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}
+  .st{display:flex;align-items:center;gap:12px;background:var(--surface);
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+  .badge-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    padding:4px 10px;border-radius:999px}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .st .desc{font-size:12px;color:var(--ink-3)}
+
+  .note{background:var(--spark-soft);border:1px solid #FBD9AE;
+    border-radius:14px;padding:16px 18px;margin-top:20px;font-size:14px;color:var(--ink-2)}
+  .note b{color:var(--spark-deep);font-weight:700}
+  .note.indigo{background:var(--indigo-soft);border-color:#D9D2FF}
+  .note.indigo b{color:var(--indigo-deep)}
+
+  /* ---------- TYPE ---------- */
+  .type-spec{background:var(--surface);border:1px solid var(--line);
+    border-radius:18px;padding:34px;margin-top:32px;box-shadow:var(--shadow)}
+  .spec-row{padding:20px 0;border-top:1px solid var(--line);display:grid;
+    grid-template-columns:130px 1fr;gap:24px;align-items:baseline}
+  .spec-row:first-child{border-top:none;padding-top:0}
+  .spec-tag{font-family:var(--mono);font-size:11px;color:var(--ink-3);
+    letter-spacing:.06em;text-transform:uppercase;padding-top:6px}
+  .d-display{font-family:var(--display);font-weight:600;font-size:52px;line-height:1;letter-spacing:-.035em}
+  .d-h1{font-family:var(--display);font-weight:600;font-size:34px;letter-spacing:-.025em}
+  .d-h2{font-family:var(--sans);font-weight:700;font-size:22px;letter-spacing:-.01em}
+  .d-body{font-family:var(--sans);font-weight:400;font-size:16px;color:var(--ink-2);max-width:56ch}
+  .d-small{font-family:var(--sans);font-weight:600;font-size:13px;color:var(--ink-3)}
+  .d-mono{font-family:var(--mono);font-weight:400;font-size:13px;color:var(--indigo-deep);
+    background:var(--indigo-soft);padding:6px 10px;border-radius:8px;display:inline-block}
+
+  .fam-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px}
+  .fam{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:24px;box-shadow:var(--shadow)}
+  .fam .big{font-size:42px;margin-bottom:14px;line-height:1}
+  .fam .fname{font-weight:700;font-size:15px;margin-bottom:2px}
+  .fam .frole{font-size:12.5px;color:var(--ink-3);line-height:1.55}
+  .fam .glyphs{font-size:13px;color:var(--ink-2);margin-top:12px;
+    padding-top:12px;border-top:1px solid var(--line)}
+
+  .usage{width:100%;border-collapse:collapse;margin-top:24px;font-size:13.5px}
+  .usage th,.usage td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  .usage th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:500}
+  .usage td:first-child{font-weight:700;color:var(--ink)}
+  .usage .f{font-family:var(--mono);font-size:12px;color:var(--indigo-deep);font-weight:500}
+
+  /* ---------- UI PREVIEW ---------- */
+  .ui-stage{background:var(--surface-2);border:1px solid var(--line);
+    border-radius:22px;padding:28px;margin-top:32px}
+  .searchbar{display:flex;align-items:center;gap:12px;background:var(--surface);
+    border:1px solid var(--line-2);border-radius:14px;padding:15px 18px;color:var(--ink-3);
+    box-shadow:var(--shadow)}
+  .searchbar .q{color:var(--ink-2);font-weight:500}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 22px}
+  .fchip{font-size:12.5px;font-weight:500;padding:7px 13px;border-radius:999px;
+    border:1px solid var(--line-2);color:var(--ink-2);background:var(--surface)}
+  .fchip.on{background:var(--indigo);border-color:var(--indigo);color:#fff}
+
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    overflow:hidden;box-shadow:var(--shadow)}
+  .art{height:118px;position:relative;display:flex;align-items:flex-end;padding:12px;
+    background:linear-gradient(135deg,#EEEBFF,#E4DEFF)}
+  .art.b{background:linear-gradient(135deg,#FFF1E2,#FFE3C4)}
+  .art.c{background:linear-gradient(135deg,#E7F6EE,#D6F0E1)}
+  .wave{display:flex;align-items:flex-end;gap:2px;height:36px}
+  .wave i{width:3px;background:var(--indigo);border-radius:2px}
+  .art.b .wave i{background:var(--spark-deep)}
+  .art.c .wave i{background:var(--ok)}
+  .badge{position:absolute;top:11px;left:11px;font-size:10.5px;font-weight:700;
+    padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.85);color:var(--ink);
+    backdrop-filter:blur(4px)}
+  .vchip{position:absolute;top:11px;right:11px;font-family:var(--mono);font-size:10px;
+    font-weight:500;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,.85);color:var(--indigo-deep)}
+  .card-body{padding:14px 15px 16px}
+  .card-title{font-weight:700;font-size:14px;margin-bottom:6px}
+  .card-key{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .avail{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;margin-top:11px;
+    padding:4px 10px;border-radius:999px}
+
+  .btn-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;align-items:center}
+  .btn{font-family:var(--sans);font-weight:700;font-size:14px;padding:11px 20px;
+    border-radius:12px;border:1px solid transparent;cursor:pointer;letter-spacing:-.01em}
+  .btn-primary{background:var(--indigo);color:#fff;box-shadow:0 6px 16px rgba(85,70,232,.28)}
+  .btn-primary:hover{background:var(--indigo-deep)}
+  .btn-spark{background:var(--spark);color:#3d2200;box-shadow:0 6px 16px rgba(255,158,68,.3)}
+  .btn-secondary{background:var(--surface);color:var(--ink);border-color:var(--line-2)}
+  .btn-ghost{background:transparent;color:var(--ink-2)}
+  .btn-danger{background:transparent;color:var(--danger);border-color:#F4C0C2}
+
+  /* footer */
+  footer{padding:56px 0 80px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+  .footmark{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .footmark .tile{width:34px;height:34px;border-radius:10px;padding:8px 7px;gap:2px}
+  .footmark .tile span{width:3px}
+  .footmark .wordmark{font-size:20px}
+
+  @media (max-width:860px){
+    .traits,.sw-grid,.status-list,.fam-grid,.cards{grid-template-columns:1fr 1fr}
+    .logo-grid{grid-template-columns:1fr}
+    .spec-row{grid-template-columns:1fr}
+    .d-display{font-size:40px}
+  }
+  @media (max-width:560px){
+    .wrap{padding:0 20px}
+    .traits,.sw-grid,.status-list,.fam-grid,.cards{grid-template-columns:1fr}
+  }
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<header class="cover">
+  <div class="wrap">
+    <div class="brandmark">
+      <div class="tile"><span class="b1"></span><span class="b2"></span><span class="b3 spark"></span><span class="b4"></span><span class="b5"></span></div>
+      <span class="wordmark">Maestro</span>
+    </div>
+    <h1>Brand book<br><span class="u">Studio</span></h1>
+    <p class="cover-sub">Direction two of two. A bright, crisp identity for the platform that conducts every asset behind a release — modern, fast, and dependable, like the studio in daylight.</p>
+    <div class="cover-meta">
+      <span class="pill"><b>Product</b> · Music asset management</span>
+      <span class="pill"><b>Mood</b> · Studio, in daylight</span>
+      <span class="pill"><b>Version</b> · 1.0</span>
+    </div>
+  </div>
+</header>
+
+<!-- POSITIONING -->
+<section>
+  <div class="wrap">
+    <p class="eyebrow">01 — Positioning</p>
+    <h2>The modern studio, in daylight</h2>
+    <p class="lede">Maestro is where a music company keeps every master, cover, video, reel and lyric for a release — searchable, versioned, and always accounted for. The Studio direction makes that feel effortless: a clean white canvas, a confident indigo, and a warm amber spark for the one action that matters most on any screen.</p>
+    <div class="traits">
+      <div class="trait"><div class="eq"><i style="height:40%"></i><i style="height:75%"></i><i style="height:100%"></i><i style="height:60%"></i></div><div class="k">Clear</div><div class="v">Generous whitespace and plain labels. You always know where you are and what a button will do.</div></div>
+      <div class="trait"><div class="eq"><i style="height:70%"></i><i style="height:45%"></i><i style="height:90%"></i><i style="height:55%"></i></div><div class="k">Fast</div><div class="v">Crisp type, tight components, instant feedback. The interface feels as quick as the uploads.</div></div>
+      <div class="trait"><div class="eq"><i style="height:55%"></i><i style="height:100%"></i><i style="height:65%"></i><i style="height:80%"></i></div><div class="k">Dependable</div><div class="v">Calm status colours and honest states. The system tells you the truth about every file.</div></div>
+      <div class="trait"><div class="eq"><i style="height:85%"></i><i style="height:50%"></i><i style="height:70%"></i><i style="height:100%"></i></div><div class="k">Warm</div><div class="v">A single amber accent keeps a technical tool feeling human and made for creative people.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- LOGO -->
+<section>
+  <div class="wrap">
+    <p class="eyebrow">02 — Logo &amp; wordmark</p>
+    <h2>The mark</h2>
+    <p class="lede">A five-bar equaliser in a soft, rounded tile — with the tallest bar struck in amber as the downbeat. The wordmark is set in Space Grotesk: geometric, current, and unmistakably a product.</p>
+
+    <div class="logo-hero">
+      <div class="tile"><span class="b1"></span><span class="b2"></span><span class="b3 spark"></span><span class="b4"></span><span class="b5"></span></div>
+      <span class="wordmark">Maestro</span>
+    </div>
+
+    <div class="logo-grid">
+      <div class="panel">
+        <h3>Clear space &amp; sizing</h3>
+        <p class="muted" style="font-size:14px;margin:0 0 8px">Keep clear space equal to the tile height on every side. Minimum tile size is 24&nbsp;px; below that, use the tile alone. The amber bar is always the centre (tallest) bar — never move it.</p>
+        <div class="clearspace">
+          <div class="brandmark" style="margin:0">
+            <div class="tile"><span class="b1"></span><span class="b2"></span><span class="b3 spark"></span><span class="b4"></span><span class="b5"></span></div>
+            <span class="wordmark">Maestro</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Usage rules</h3>
+        <ul class="rules">
+          <li><span class="yes">✓</span> Indigo bars, one amber downbeat, on a white tile.</li>
+          <li><span class="yes">✓</span> On indigo backgrounds, flip the tile to white.</li>
+          <li><span class="no">✕</span> Never make all bars amber or all indigo.</li>
+          <li><span class="no">✕</span> Never add a gradient or shadow to the bars.</li>
+          <li><span class="no">✕</span> Never set the wordmark in the body font (Jakarta).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COLOR -->
+<section>
+  <div class="wrap">
+    <p class="eyebrow">03 — Colour</p>
+    <h2>Indigo &amp; a warm spark</h2>
+    <p class="lede">A near-white canvas keeps artwork and thumbnails clean. Indigo carries identity — primary actions, links, focus, selection. Amber is rationed to one thing per screen: the single most important next step, or a value worth noticing.</p>
+
+    <div class="sw-grid">
+      <div class="sw"><div class="chip" style="background:#FAFAFC;color:#8A8C9E">#FAFAFC</div><div class="meta"><div class="name">Canvas</div><div class="role">Page background</div></div></div>
+      <div class="sw"><div class="chip" style="background:#5546E8;color:#fff">#5546E8</div><div class="meta"><div class="name">Indigo</div><div class="role">Primary action, links, focus, selection</div></div></div>
+      <div class="sw"><div class="chip" style="background:#FF9E44;color:#3d2200">#FF9E44</div><div class="meta"><div class="name">Spark</div><div class="role">One key action or value per screen</div></div></div>
+      <div class="sw"><div class="chip" style="background:#171723;color:#fff">#171723</div><div class="meta"><div class="name">Ink</div><div class="role">Body text &amp; headings</div></div></div>
+    </div>
+
+    <h3 style="margin-top:34px">Neutral ramp</h3>
+    <div class="ramp">
+      <div style="background:#FAFAFC;color:#8A8C9E">Canvas</div>
+      <div style="background:#F4F4F8;color:#8A8C9E">Surface-2</div>
+      <div style="background:#E9E9F0;color:#8A8C9E">Line</div>
+      <div style="background:#D8D8E2;color:#55566A">Line-2</div>
+      <div style="background:#8A8C9E;color:#fff">Ink-3</div>
+      <div style="background:#55566A;color:#fff">Ink-2</div>
+      <div style="background:#171723;color:#fff">Ink</div>
+    </div>
+
+    <h3 style="margin-top:34px">Availability status system</h3>
+    <p class="muted" style="font-size:14px;margin:0">The dashboard must answer “is this file truly in storage?” at a glance. These six pills map directly to the availability badge on every asset.</p>
+    <div class="status-list">
+      <div class="st"><span class="badge-pill" style="background:#E7F6EE;color:#0E7A3C"><span class="dot" style="background:var(--ok)"></span>Available</span><span class="desc">#12A150</span></div>
+      <div class="st"><span class="badge-pill" style="background:#F1F1F5;color:#5C5E70"><span class="dot" style="background:var(--neutral)"></span>Not checked</span><span class="desc">#8A8C9E</span></div>
+      <div class="st"><span class="badge-pill" style="background:#E6EFFD;color:#1D5FCB"><span class="dot" style="background:var(--info)"></span>Archived</span><span class="desc">#2F72E6</span></div>
+      <div class="st"><span class="badge-pill" style="background:#FEF3E0;color:#B77400"><span class="dot" style="background:var(--warn)"></span>Restoring</span><span class="desc">#F59E0B</span></div>
+      <div class="st"><span class="badge-pill" style="background:#FDE9EA;color:#C22026"><span class="dot" style="background:var(--danger)"></span>Missing</span><span class="desc">#E5484D</span></div>
+      <div class="st"><span class="badge-pill" style="background:#FEEBDD;color:#C8560A"><span class="dot" style="background:var(--mismatch)"></span>Mismatch</span><span class="desc">#F97316</span></div>
+    </div>
+    <div class="note indigo"><b>Keep spark scarce.</b> Amber and the “restoring” status both sit in the warm range, so never place a spark button beside a restoring badge. One warm signal per view — the eye should always know where to look.</div>
+  </div>
+</section>
+
+<!-- TYPE -->
+<section>
+  <div class="wrap">
+    <p class="eyebrow">04 — Typography</p>
+    <h2>Three voices, clear roles</h2>
+    <p class="lede">A geometric display face for personality, a humanist sans for the working interface, and a monospace for the technical truth — keys, hashes, sizes and IDs. Display sets headlines and the wordmark; it never runs a dense table.</p>
+
+    <div class="fam-grid">
+      <div class="fam">
+        <div class="big" style="font-family:var(--display)">Aa</div>
+        <div class="fname">Space Grotesk</div>
+        <div class="frole">Display &amp; brand. Wordmark, page titles, big headings, empty states.</div>
+        <div class="glyphs" style="font-family:var(--display)">Maestro · Studio · V2</div>
+      </div>
+      <div class="fam">
+        <div class="big" style="font-family:var(--sans)">Aa</div>
+        <div class="fname">Plus Jakarta Sans</div>
+        <div class="frole">Interface &amp; body. Buttons, labels, tables, forms, card titles — everything functional.</div>
+        <div class="glyphs" style="font-family:var(--sans)">Search · Rename · Download</div>
+      </div>
+      <div class="fam">
+        <div class="big" style="font-family:var(--mono)">Aa</div>
+        <div class="fname">IBM Plex Mono</div>
+        <div class="frole">Data &amp; technical. S3 keys, checksums, ETags, IDs, code, eyebrow labels.</div>
+        <div class="glyphs" style="font-family:var(--mono)">assets/1c9d…/original.mp4</div>
+      </div>
+    </div>
+
+    <div class="type-spec">
+      <div class="spec-row"><div class="spec-tag">Display / 52</div><div class="d-display">Every release, conducted</div></div>
+      <div class="spec-row"><div class="spec-tag">Heading / 34</div><div class="d-h1">Storage health &amp; drift</div></div>
+      <div class="spec-row"><div class="spec-tag">Subhead / 22</div><div class="d-h2">Assets grouped by family</div></div>
+      <div class="spec-row"><div class="spec-tag">Body / 16</div><div class="d-body">Uploads travel straight from the browser into storage and back again — the interface stays fast because it only ever moves meaning, never bytes.</div></div>
+      <div class="spec-row"><div class="spec-tag">Small / 13</div><div class="d-small">Last verified 2 minutes ago · 48.2 MB · STANDARD</div></div>
+      <div class="spec-row"><div class="spec-tag">Mono / 13</div><div class="d-mono">sha256: e3b0c44298fc1c14…b924</div></div>
+    </div>
+
+    <h3 style="margin-top:34px">Where each font goes</h3>
+    <table class="usage">
+      <thead><tr><th>Element</th><th>Typeface</th><th>Weight &amp; treatment</th></tr></thead>
+      <tbody>
+        <tr><td>Wordmark &amp; page titles</td><td class="f">Space Grotesk</td><td>Semibold 600 · tight −0.03em tracking</td></tr>
+        <tr><td>Big empty states &amp; hero headings</td><td class="f">Space Grotesk</td><td>Medium–Semibold · large sizes only</td></tr>
+        <tr><td>Section &amp; card headings</td><td class="f">Plus Jakarta Sans</td><td>Bold 700 · −0.01em</td></tr>
+        <tr><td>Body, labels, forms, tables</td><td class="f">Plus Jakarta Sans</td><td>Regular 400 / Medium 500</td></tr>
+        <tr><td>Buttons</td><td class="f">Plus Jakarta Sans</td><td>Bold 700 · sentence case</td></tr>
+        <tr><td>Eyebrows &amp; metadata tags</td><td class="f">IBM Plex Mono</td><td>Medium 500 · UPPERCASE · 0.16em tracking</td></tr>
+        <tr><td>S3 keys, checksums, IDs, code</td><td class="f">IBM Plex Mono</td><td>Regular 400 · never truncate the hash silently</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Premium upgrade path.</b> If a licensed budget opens up, Space Grotesk → <b>Clash Display</b> or <b>GT Walsheim</b>, and Plus Jakarta → <b>Satoshi</b> or <b>Inter Display</b>. The role structure stays identical.</div>
+  </div>
+</section>
+
+<!-- UI PREVIEW -->
+<section>
+  <div class="wrap">
+    <p class="eyebrow">05 — In context</p>
+    <h2>The system, assembled</h2>
+    <p class="lede">Tokens and type applied to the surfaces you’ll actually ship: universal search, the media-card grid, availability pills, and the button family — with amber reserved for the primary upload action.</p>
+
+    <div class="ui-stage">
+      <div class="searchbar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A8C9E" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="q">Raju Singh reels</span>
+      </div>
+      <div class="chips">
+        <span class="fchip on">Video</span>
+        <span class="fchip">Punjabi</span>
+        <span class="fchip">Viral</span>
+        <span class="fchip">9:16</span>
+        <span class="fchip">Available</span>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="art">
+            <span class="badge">Reel · BTS/MV</span><span class="vchip">V2</span>
+            <div class="wave"><i style="height:40%"></i><i style="height:70%"></i><i style="height:100%"></i><i style="height:55%"></i><i style="height:85%"></i><i style="height:45%"></i><i style="height:75%"></i><i style="height:35%"></i><i style="height:60%"></i></div>
+          </div>
+          <div class="card-body">
+            <div class="card-title">dilse_bts_reel_v2.mp4</div>
+            <div class="card-key">assets/1c9de4a7…/original.mp4</div>
+            <div class="avail" style="background:#E7F6EE;color:#0E7A3C"><span class="dot" style="background:var(--ok)"></span>Available</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="art b">
+            <span class="badge">Master audio</span><span class="vchip">Final</span>
+            <div class="wave"><i style="height:60%"></i><i style="height:90%"></i><i style="height:45%"></i><i style="height:100%"></i><i style="height:70%"></i><i style="height:38%"></i><i style="height:82%"></i><i style="height:52%"></i><i style="height:66%"></i></div>
+          </div>
+          <div class="card-body">
+            <div class="card-title">dil_se_master_final.wav</div>
+            <div class="card-key">assets/8f3a2bc5…/original.wav</div>
+            <div class="avail" style="background:#FEF3E0;color:#B77400"><span class="dot" style="background:var(--warn)"></span>Restoring</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="art c">
+            <span class="badge">Cover art</span><span class="vchip">V1</span>
+            <div class="wave"><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i><i style="height:30%"></i></div>
+          </div>
+          <div class="card-body">
+            <div class="card-title">dil_se_cover_3000.jpg</div>
+            <div class="card-key">assets/7b2f1088…/original.jpg</div>
+            <div class="avail" style="background:#E7F6EE;color:#0E7A3C"><span class="dot" style="background:var(--ok)"></span>Available</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-spark">Upload asset</button>
+        <button class="btn btn-primary">Share link</button>
+        <button class="btn btn-secondary">Rename</button>
+        <button class="btn btn-ghost">Verify now</button>
+        <button class="btn btn-danger">Purge</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footmark">
+      <div class="tile"><span class="b1"></span><span class="b2"></span><span class="b3 spark"></span><span class="b4"></span><span class="b5"></span></div>
+      <span class="wordmark">Maestro</span>
+    </div>
+    Brand Book 02 · Studio — light, indigo, modern. One of two directions.<br>
+    Space Grotesk + Plus Jakarta Sans + IBM Plex Mono · all available free via Google Fonts.
+  </div>
+</footer>
+
+</body>
+</html>

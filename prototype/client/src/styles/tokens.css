@@ -1,0 +1,180 @@
+/* ==========================================================================
+   Maestro — design tokens
+   Lifted from Brand Book 02 · Studio. Every colour, typeface and radius in the
+   product resolves to a token declared here. Nothing downstream hard-codes a
+   value, which is what makes a second theme a token swap rather than a rewrite.
+
+   THEMES
+   Studio is the identity: indigo, one amber spark, Space Grotesk + Plus Jakarta
+   + IBM Plex Mono. Dark mode is the same identity after dark, NOT the separate
+   Nocturne direction — a theme toggle must not change the typeface or the brand
+   accent, or it stops being the same product. What it does change:
+
+     · neutrals invert onto a layered dark ramp, borrowed from Nocturne's
+       surface-1/2/3 structure so the darks stay in the brand family;
+     · indigo and spark lighten, because the Studio values are tuned for
+       contrast against white and go muddy against near-black;
+     · the six status colours switch to Nocturne's dark-tuned set, which is
+       already built to stay legible on dark surfaces.
+
+   Resolution order: an explicit choice on <html data-theme> always wins; with
+   no choice recorded, the operating system decides.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Neutrals — clean cool light */
+  --canvas: #FAFAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F4F4F8;
+  --surface-3: #EDEDF3;
+  --line: #E9E9F0;
+  --line-2: #D8D8E2;
+
+  /* Indigo — primary brand */
+  --indigo: #5546E8;
+  --indigo-deep: #3A2FB5;
+  --indigo-soft: #EEEBFF;
+  --indigo-edge: #D9D2FF;
+  --indigo-tint: rgba(85, 70, 232, .08);
+  --indigo-wash: #E4DEFF;
+
+  /* Warm spark — the maestro thread. Rationed to ONE element per screen. */
+  --spark: #FF9E44;
+  --spark-deep: #E07A18;
+  --spark-soft: #FFF1E2;
+  --spark-edge: #FBD9AE;
+  --spark-ink: #3d2200;
+
+  /* Text */
+  --ink: #171723;
+  --ink-2: #55566A;
+  --ink-3: #8A8C9E;
+  --on-accent: #FFFFFF;
+
+  /* Semantic status — maps 1:1 to the six availability pills */
+  --ok: #12A150;         --ok-soft: #E7F6EE;      --ok-ink: #0E7A3C;      --ok-edge: #B6E4C9;
+  --neutral: #8A8C9E;    --neutral-soft: #F1F1F5; --neutral-ink: #5C5E70;
+  --info: #2F72E6;       --info-soft: #E6EFFD;    --info-ink: #1D5FCB;
+  --warn: #F59E0B;       --warn-soft: #FEF3E0;    --warn-ink: #B77400;
+  --danger: #E5484D;     --danger-soft: #FDE9EA;  --danger-ink: #C22026;  --danger-edge: #F4C0C2;
+  --mismatch: #F97316;   --mismatch-soft: #FEEBDD; --mismatch-ink: #C8560A;
+
+  /* Overlays and translucency */
+  --topbar-bg: rgba(250, 250, 252, .86);
+  --scrim: rgba(23, 23, 35, .38);
+  --scrim-soft: rgba(23, 23, 35, .32);
+  --glass: rgba(255, 255, 255, .88);
+  --wash-chip: rgba(255, 255, 255, .74);
+  --danger-ring: rgba(229, 72, 77, .12);
+
+  /* Type */
+  --display: "Space Grotesk", system-ui, sans-serif;
+  --sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Elevation */
+  --shadow: 0 1px 2px rgba(23, 23, 35, .04), 0 8px 24px rgba(23, 23, 35, .06);
+  --shadow-lg: 0 4px 12px rgba(23, 23, 35, .06), 0 24px 60px rgba(23, 23, 35, .12);
+  --shadow-indigo: 0 6px 16px rgba(85, 70, 232, .28);
+  --shadow-spark: 0 6px 16px rgba(255, 158, 68, .3);
+
+  /* Geometry */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  /* Layout */
+  --sidebar-w: 244px;
+  --topbar-h: 64px;
+
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --t-fast: 120ms var(--ease);
+  --t-med: 220ms var(--ease);
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────
+   Only ever selected by an explicit data-theme on <html>. When the preference
+   is "system", the app resolves the OS setting and writes the attribute itself
+   — so there is exactly one place where dark is defined, and the explicit and
+   automatic paths cannot drift apart. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Layered warm darks, after Nocturne's surface ramp */
+  --canvas: #0C0B10;
+  --surface: #141319;
+  --surface-2: #1C1B23;
+  --surface-3: #232128;
+  --line: #2A2833;
+  --line-2: #38353F;
+
+  /* Indigo lifted for dark surfaces — the Studio values lose their legibility
+     against near-black, so the ramp is re-anchored rather than reused. */
+  --indigo: #8B7CFF;
+  --indigo-deep: #B9AEFF;
+  --indigo-soft: #241F41;
+  --indigo-edge: #392F63;
+  --indigo-tint: rgba(139, 124, 255, .14);
+  --indigo-wash: #2C2550;
+
+  /* Spark stays warm and stays scarce */
+  --spark: #FFAE5E;
+  --spark-deep: #FFC489;
+  --spark-soft: #33220F;
+  --spark-edge: #5C3D18;
+  --spark-ink: #2A1704;
+
+  /* Text */
+  --ink: #F4F1EA;
+  --ink-2: #B7B3BD;
+  --ink-3: #837F8D;
+  --on-accent: #16121F;
+
+  /* Status — Nocturne's dark-tuned set, with soft/ink derived for each */
+  --ok: #4FD08A;         --ok-soft: #10281C;      --ok-ink: #6FE0A4;      --ok-edge: #1D4432;
+  --neutral: #8C8894;    --neutral-soft: #232128; --neutral-ink: #ABA7B3;
+  --info: #6BA6E0;       --info-soft: #12212F;    --info-ink: #8CC0F0;
+  --warn: #E4A951;       --warn-soft: #2C2010;    --warn-ink: #F2C57E;
+  --danger: #F0616D;     --danger-soft: #2E1318;  --danger-ink: #FF8A93;  --danger-edge: #55212A;
+  --mismatch: #E8894A;   --mismatch-soft: #2D1A0F; --mismatch-ink: #F5A56F;
+
+  --topbar-bg: rgba(12, 11, 16, .82);
+  --scrim: rgba(4, 3, 8, .62);
+  --scrim-soft: rgba(4, 3, 8, .5);
+  --glass: rgba(20, 19, 25, .88);
+  --wash-chip: rgba(12, 11, 16, .55);
+  --danger-ring: rgba(240, 97, 109, .18);
+
+  /* Shadow does almost no work on dark backgrounds; borders and a deeper cast
+     carry the elevation instead. */
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, .45), 0 24px 60px rgba(0, 0, 0, .55);
+  --shadow-indigo: 0 6px 16px rgba(139, 124, 255, .3);
+  --shadow-spark: 0 6px 16px rgba(255, 174, 94, .26);
+}
+
+/* Availability status → token triplet. Referenced by the badge component and by
+   any surface that tints itself to match a status. Theme-independent: the
+   triplets above are what change. */
+[data-status="AVAILABLE"]  { --st: var(--ok);       --st-soft: var(--ok-soft);       --st-ink: var(--ok-ink); }
+[data-status="UNVERIFIED"] { --st: var(--neutral);  --st-soft: var(--neutral-soft);  --st-ink: var(--neutral-ink); }
+[data-status="ARCHIVED"]   { --st: var(--info);     --st-soft: var(--info-soft);     --st-ink: var(--info-ink); }
+[data-status="RESTORING"]  { --st: var(--warn);     --st-soft: var(--warn-soft);     --st-ink: var(--warn-ink); }
+[data-status="MISSING"]    { --st: var(--danger);   --st-soft: var(--danger-soft);   --st-ink: var(--danger-ink); }
+[data-status="MISMATCH"]   { --st: var(--mismatch); --st-soft: var(--mismatch-soft); --st-ink: var(--mismatch-ink); }
+
+/* Asset family accents — used only for the card artwork wash and family icons,
+   never for status. Keeps the four families separable at a glance in a dense grid. */
+[data-family="Audio"]    { --fam-a: #EEEBFF; --fam-b: #E4DEFF; --fam-ink: var(--indigo); }
+[data-family="Video"]    { --fam-a: #FFF1E2; --fam-b: #FFE3C4; --fam-ink: var(--spark-deep); }
+[data-family="Image"]    { --fam-a: #E7F6EE; --fam-b: #D6F0E1; --fam-ink: var(--ok); }
+[data-family="Document"] { --fam-a: #E6EFFD; --fam-b: #D8E6FC; --fam-ink: var(--info); }
+
+:root[data-theme="dark"] [data-family="Audio"]    { --fam-a: #221D3D; --fam-b: #2E2657; }
+:root[data-theme="dark"] [data-family="Video"]    { --fam-a: #33220F; --fam-b: #45301A; }
+:root[data-theme="dark"] [data-family="Image"]    { --fam-a: #10281C; --fam-b: #16382A; }
+:root[data-theme="dark"] [data-family="Document"] { --fam-a: #12212F; --fam-b: #1A2E42; }
