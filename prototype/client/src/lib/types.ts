@@ -103,12 +103,25 @@ export interface ActivityEntry {
   timestamp: string;
 }
 
+// Who a link is for. PUBLIC needs no account; the other two resolve only for a signed-in
+// GCloud user, and RESTRICTED additionally checks the account's email against the list.
+export type ShareAudience = 'PUBLIC' | 'EDITOR' | 'RESTRICTED';
+export type ShareTarget = 'ASSET' | 'FOLDER';
+
 export interface Share {
   _id: string;
-  assetId: string;
+  target: ShareTarget;
+  targetId: string;
+  targetName: string;
+  assetId: string | null;
   assetName: string;
-  songTitle?: string;
-  artistName?: string;
+  fileCount: number;
+  audience: ShareAudience;
+  audienceLabel: string;
+  allowedEmails: string[];
+  canEdit: boolean;
+  songTitle?: string | null;
+  artistName?: string | null;
   token: string;
   url: string;
   createdByName: string;

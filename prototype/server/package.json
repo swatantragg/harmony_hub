@@ -1,9 +1,9 @@
 {
-  "name": "maestro-server",
+  "name": "gcloud-server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Maestro API — Express control plane over an S3-compatible object store",
+  "description": "GCloud API — Express control plane over an S3-compatible object store",
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",

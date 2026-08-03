@@ -1,5 +1,5 @@
 // First-run tour. Five cards, skippable, never shown twice. It exists to compress the
-// learning curve: the goal is that someone who has never seen Maestro can find a file,
+// learning curve: the goal is that someone who has never seen GCloud can find a file,
 // prove it is really in storage, rename it and share it inside their first session.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -26,12 +26,12 @@ const STEPS = [
   {
     anchor: '[data-tour="upload"]',
     title: 'Uploading is a three-step form',
-    body: 'Drop a file, tell Maestro what it is, add tags. Large files upload in parallel chunks and can be paused and resumed — nothing restarts from zero.',
+    body: 'Drop a file, tell GCloud what it is, add tags. Large files upload in parallel chunks and can be paused and resumed — nothing restarts from zero.',
   },
   {
     anchor: '[data-tour="help"]',
     title: 'Help is always one click away',
-    body: 'Every screen explains itself. The “How Maestro works” page walks through the whole product in five minutes, and you can replay this tour from there any time.',
+    body: 'Every screen explains itself. The “How GCloud works” page walks through the whole product in five minutes, and you can replay this tour from there any time.',
   },
 ];
 
@@ -91,7 +91,7 @@ export function Tour({ onDone }: { onDone: () => void }) {
                 Next <ArrowRight size={13} />
               </button>
             ) : (
-              <button className="btn btn-primary btn-sm" onClick={finish}>Start using Maestro</button>
+              <button className="btn btn-primary btn-sm" onClick={finish}>Start using GCloud</button>
             )}
           </div>
         </div>

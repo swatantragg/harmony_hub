@@ -1,4 +1,4 @@
-// Maestro API — Express bootstrap.
+// GCloud API — Express bootstrap.
 //
 // Two surfaces run in this process, and the separation is deliberate:
 //   /api/*  the control plane. JSON only. Never carries a file byte.
@@ -65,7 +65,7 @@ app.post('/api/demo/reset', (_req, res) => {
 
 app.use('/api', (_req, res) =>
   res.status(404).type('application/problem+json').json({
-    type: 'https://maestro.internal/problems/not-found',
+    type: 'https://gcloud.internal/problems/not-found',
     title: 'Not Found', status: 404, detail: 'No such endpoint.',
   }),
 );
@@ -80,7 +80,7 @@ if (fs.existsSync(clientDist)) {
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).type('application/problem+json').json({
-    type: 'https://maestro.internal/problems/internal',
+    type: 'https://gcloud.internal/problems/internal',
     title: 'Internal Server Error', status: 500, detail: err.message,
   });
 });
@@ -88,7 +88,7 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   const assetCount = db.songs.reduce((n, s) => n + s.assets.length, 0) + db.unfiled.length;
   console.log('');
-  console.log('  ▁▃▅▂▄  M A E S T R O   ·   API');
+  console.log('  ▁▃▅▂▄  G C L O U D   ·   API');
   console.log('  ─────────────────────────────────────────────');
   console.log(`  API          http://localhost:${PORT}/api`);
   console.log(`  Storage      http://localhost:${PORT}/s3   (presigned access only)`);
@@ -97,8 +97,8 @@ app.listen(PORT, () => {
   console.log(`  Data         ${path.relative(process.cwd(), PATHS.data)}`);
   if (seeded) console.log(`  Seeded       ${JSON.stringify(stats)}`);
   console.log('  ─────────────────────────────────────────────');
-  console.log('  Sign in with any of: admin@ / editor@ / marketing@ / viewer@maestro.app');
-  console.log('  Password: maestro');
+  console.log('  Sign in with any of: admin@ / editor@ / marketing@ / viewer@gcloud.app');
+  console.log('  Password: gcloud');
   console.log('');
 
   // Nightly reconciliation at 02:00 (§10.11), stood in for here by a long interval.

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Share2, Ban, Clock, Download, ShieldCheck } from 'lucide-react';
+import {
+  Share2, Ban, Clock, Download, ShieldCheck, Globe, PenLine, UserCheck, Folder as FolderIcon, FileIcon,
+} from 'lucide-react';
 import { api } from '../../lib/api';
 import { CopyButton, EmptyState, Skeleton, useToast, ConfirmDialog } from '../../components/ui';
 import { countdown, date, relative } from '../../lib/format';
@@ -27,6 +29,8 @@ export function ShareManager() {
     },
   });
 
+  const AUDIENCE_ICON = { PUBLIC: Globe, EDITOR: PenLine, RESTRICTED: UserCheck } as const;
+
   const state = (s: Share) =>
     s.revokedAt ? { label: 'Revoked', status: 'MISSING' }
       : s.expired ? { label: 'Expired', status: 'UNVERIFIED' }
@@ -39,9 +43,11 @@ export function ShareManager() {
     <div className="page stack-4">
       <div className="page-head">
         <h1 className="t-h1">Share links</h1>
-        <p className="t-body" style={{ maxWidth: '64ch', marginTop: 6 }}>
-          Links you have sent outside the company. Each one expires on its own, can be capped by
-          download count, and can be switched off instantly. Create one from any file’s Share button.
+        <p className="t-body" style={{ maxWidth: '68ch', marginTop: 6 }}>
+          Links you have sent out, for single files and for whole folders. Each one is issued as{' '}
+          <b>Open to all</b>, <b>Editor</b> or <b>Specific allocation</b>; each expires on its own,
+          can be capped by download count, and can be switched off instantly. Create one from any
+          file’s Share button, or from a folder.
         </p>
       </div>
 
@@ -77,20 +83,31 @@ export function ShareManager() {
         <div className="panel" style={{ overflow: 'hidden' }}>
           <table className="tbl">
             <thead>
-              <tr><th>File</th><th>Status</th><th>Expires</th><th>Downloads</th><th>Created by</th><th /></tr>
+              <tr><th>Shared</th><th>Link type</th><th>Status</th><th>Expires</th><th>Downloads</th><th>Created by</th><th /></tr>
             </thead>
             <tbody>
               {data!.data.map((s) => {
                 const st = state(s);
+                const Audience = AUDIENCE_ICON[s.audience ?? 'PUBLIC'] ?? Globe;
+                const isFolder = s.target === 'FOLDER';
                 return (
                   <tr key={s._id} style={{ cursor: 'default' }}>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{s.assetName}</div>
+                      <div className="row-tight" style={{ fontWeight: 600 }}>
+                        {isFolder ? <FolderIcon size={13} color="var(--info)" /> : <FileIcon size={13} color="var(--ink-3)" />}
+                        {s.targetName ?? s.assetName}
+                      </div>
                       <div className="t-small">
-                        {s.songTitle ? `${s.songTitle} · ` : ''}
+                        {isFolder ? `${s.fileCount} files · ` : s.songTitle ? `${s.songTitle} · ` : ''}
                         {s.canDownload ? 'download allowed' : 'preview only'}
                         {s.note ? ` · ${s.note}` : ''}
                       </div>
+                    </td>
+                    <td className="t-small">
+                      <span className="row-tight"><Audience size={12} /> {s.audienceLabel ?? 'Open to all'}</span>
+                      {s.allowedEmails?.length > 0 && (
+                        <div className="t-small" style={{ fontSize: 11 }}>{s.allowedEmails.join(', ')}</div>
+                      )}
                     </td>
                     <td><span className="badge" data-status={st.status}><span className="dot" />{st.label}</span></td>
                     <td className="t-small">
@@ -123,9 +140,11 @@ export function ShareManager() {
       <div className="note indigo">
         <ShieldCheck size={15} />
         <div>
-          <b>How these stay safe.</b> A link never exposes a permanent address. When someone opens it,
-          Maestro checks the file is still really in storage, then issues a signed address that
-          works for an hour at most. Every open is recorded with time and IP.
+          <b>How these stay safe.</b> A link never exposes a permanent address — it carries a random
+          token, and nothing about the bucket or the key. When someone opens it, GCloud re-checks
+          every gate, confirms the file is still really in storage, then issues a signed address that
+          works for an hour at most. Every open is recorded with time and IP; on an Editor or
+          Specific-allocation link it is recorded against the named account.
         </div>
       </div>
 
@@ -135,7 +154,7 @@ export function ShareManager() {
           danger
           body={
             <>
-              <b>{revoking.assetName}</b> becomes unreachable through this link immediately, even for
+              <b>{revoking.targetName ?? revoking.assetName}</b> becomes unreachable through this link immediately, even for
               someone who already has it open. You can always create a new one.
             </>
           }

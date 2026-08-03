@@ -82,7 +82,7 @@ export function Dashboard() {
             <div className="grow">
               <b>New here?</b> Search returns individual files, not folders. Every file carries a
               badge saying whether it is genuinely in storage right now — that badge is the heart of
-              Maestro. Open <Link to="/help">How Maestro works</Link> for a five-minute walkthrough.
+              GCloud. Open <Link to="/help">How GCloud works</Link> for a five-minute walkthrough.
             </div>
             <button className="btn btn-ghost btn-sm" onClick={dismiss}>Got it</button>
           </div>

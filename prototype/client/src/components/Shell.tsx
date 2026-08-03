@@ -113,7 +113,7 @@ export function Shell() {
             <div className="nav-group-label eyebrow">Getting started</div>
             <NavLink to="/help" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tour="help" onClick={() => setNavOpen(false)}>
               <HelpCircle size={17} />
-              How Maestro works
+              How GCloud works
             </NavLink>
           </div>
         </nav>
@@ -163,11 +163,11 @@ export function Shell() {
 
         {/* Build marker. Sits under every overlay and ignores pointer events so it can
             never intercept a click. */}
-        <div className="build-tag" aria-hidden>SK-V1</div>
+        <div className="build-tag" aria-hidden>SK-V2.2</div>
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
-      {showTour && <Tour onDone={() => { setShowTour(false); toast({ kind: 'ok', title: 'You are set up', body: 'Press ⌘K any time, or open “How Maestro works” from the sidebar.' }); }} />}
+      {showTour && <Tour onDone={() => { setShowTour(false); toast({ kind: 'ok', title: 'You are set up', body: 'Press ⌘K any time, or open “How GCloud works” from the sidebar.' }); }} />}
     </div>
   );
 }
@@ -189,7 +189,7 @@ function UserMenu({ name, role, onLogout }: { name: string; role: string; onLogo
             <RotateCcw size={16} /> Replay the tour
           </button>
           <button className="nav-item" onClick={() => { navigate('/help'); setOpen(false); }}>
-            <HelpCircle size={16} /> How Maestro works
+            <HelpCircle size={16} /> How GCloud works
           </button>
           <button className="nav-item" onClick={onLogout} style={{ color: 'var(--danger)' }}>
             <LogOut size={16} /> Sign out

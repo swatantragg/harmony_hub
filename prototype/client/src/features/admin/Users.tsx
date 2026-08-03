@@ -155,7 +155,7 @@ function AddUserDialog({ roles, onClose }: { roles: Role[]; onClose: () => void 
     mutationFn: () => api('/admin/users', { method: 'POST', body: { name, email, jobTitle, role } }),
     onSuccess: () => {
       qc.invalidateQueries();
-      toast({ kind: 'ok', title: 'Account created', body: 'Starting password is “maestro” — they should change it on first sign-in.' });
+      toast({ kind: 'ok', title: 'Account created', body: 'Starting password is “gcloud” — they should change it on first sign-in.' });
       onClose();
     },
     onError: (e: Error) => toast({ kind: 'danger', title: 'Could not create the account', body: e.message }),

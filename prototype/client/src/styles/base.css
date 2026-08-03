@@ -12,8 +12,8 @@ body {
      switch feel laggy on a dense screen, so components change instantly underneath. */
   transition: background-color 200ms var(--ease), color 200ms var(--ease);
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 16.5px;
+  line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -32,19 +32,20 @@ button { font: inherit; color: inherit; }
 
 h1, h2, h3, h4 { margin: 0; }
 
-/* Display face is for headlines and the wordmark only — it never runs a dense table. */
-.t-display { font-family: var(--display); font-weight: 600; letter-spacing: -.035em; line-height: 1.04; }
-.t-h1 { font-family: var(--display); font-weight: 600; font-size: 30px; letter-spacing: -.028em; line-height: 1.12; }
-.t-h2 { font-family: var(--sans); font-weight: 700; font-size: 19px; letter-spacing: -.012em; }
-.t-h3 { font-family: var(--sans); font-weight: 700; font-size: 15px; letter-spacing: -.008em; }
-.t-body { font-size: 15px; color: var(--ink-2); }
-.t-small { font-size: 13px; font-weight: 500; color: var(--ink-3); }
-.t-mono { font-family: var(--mono); font-size: 12.5px; }
+/* One type scale, one family. Sizes are a step up from the original brand-book scale —
+   Poppins runs small for its point size, and the product is read on a desk, not held. */
+.t-display { font-family: var(--display); font-weight: 600; letter-spacing: -.03em; line-height: 1.06; }
+.t-h1 { font-family: var(--display); font-weight: 600; font-size: 34px; letter-spacing: -.024em; line-height: 1.15; }
+.t-h2 { font-family: var(--sans); font-weight: 600; font-size: 22px; letter-spacing: -.01em; }
+.t-h3 { font-family: var(--sans); font-weight: 600; font-size: 17px; letter-spacing: -.006em; }
+.t-body { font-size: 16px; color: var(--ink-2); }
+.t-small { font-size: 14.5px; font-weight: 400; color: var(--ink-3); }
+.t-mono { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: .16em;
+  font-size: 12.5px;
+  letter-spacing: .11em;
   text-transform: uppercase;
   font-weight: 500;
   color: var(--ink-3);
@@ -57,7 +58,8 @@ h1, h2, h3, h4 { margin: 0; }
    available via the title attribute and the copy button beside it. */
 .keytext {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
   color: var(--indigo-deep);
   background: var(--indigo-soft);
   padding: 3px 7px;
