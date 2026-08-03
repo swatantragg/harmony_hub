@@ -66,7 +66,12 @@ export function Dashboard() {
               placeholder="Try “dil se reels”, a filename, an artist, or an ISRC"
               aria-label="Search the library"
             />
-            <button className="btn btn-primary btn-sm" type="submit">Search</button>
+            {/* The label goes on a phone; the icon and the target stay, which leaves the
+                placeholder enough room not to be cut mid-word. */}
+            <button className="btn btn-primary btn-sm" type="submit" aria-label="Search">
+              <Search size={15} />
+              <span className="hide-on-phone">Search</span>
+            </button>
           </div>
         </form>
 

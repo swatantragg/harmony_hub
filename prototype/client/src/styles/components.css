@@ -170,6 +170,10 @@
 
 .sidebar-foot { padding: 12px; border-top: 1px solid var(--line); }
 
+/* Only exists once the sidebar is off-canvas. Tapping anywhere outside closes it, which
+   is what every phone user will try first. */
+.sidebar-scrim { display: none; }
+
 .topbar {
   position: sticky; top: 0; z-index: 20;
   height: var(--topbar-h); display: flex; align-items: center; gap: 16px;
@@ -225,6 +229,16 @@
 .card-foot { margin-top: auto; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 /* ── List (table) view ─────────────────────────────────────────────────── */
+/* A table with six columns cannot shrink to a phone, and clipping it hides the actions
+   at the right-hand end entirely. It scrolls sideways inside its own container instead —
+   the panel around it keeps its rounded corners, and nothing is unreachable. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.table-scroll > .tbl { min-width: max-content; }
+
 .tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
 .tbl th {
   text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -243,12 +257,13 @@
 .hint { font-size: 13.5px; color: var(--ink-3); line-height: 1.55; }
 
 .input, .select, .textarea {
-  width: 100%; font-family: var(--sans); font-size: 14px; color: var(--ink);
+  /* 16px is the threshold below which iOS Safari zooms the page on focus. */
+  width: 100%; font-family: var(--sans); font-size: 16px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-sm);
   padding: 9px 12px; outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
-.input.mono { font-family: var(--mono); font-size: 14px; letter-spacing: .01em; }
+.input.mono { font-family: var(--mono); font-size: 16px; letter-spacing: .01em; }
 .input.invalid, .textarea.invalid { border-color: var(--danger); }
 .input.invalid:focus { box-shadow: 0 0 0 3px var(--danger-ring); }
 .input.valid { border-color: var(--ok); }
@@ -352,7 +367,7 @@
 .modal-body { padding: 24px 26px; overflow-y: auto; flex: 1; min-height: 0; }
 .modal-foot {
   padding: 16px 26px; border-top: 1px solid var(--line); background: var(--surface-2);
-  display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: none;
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: none; flex-wrap: wrap;
 }
 
 /* The asset panel. Same geometry as a modal — it simply carries its own header, tab
@@ -481,7 +496,7 @@
 
 /* ── Guided tour ───────────────────────────────────────────────────────── */
 .tour-card {
-  position: fixed; z-index: 300; width: 340px; background: var(--surface);
+  position: fixed; z-index: 300; width: min(340px, calc(100vw - 28px)); background: var(--surface);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--line);
   padding: 20px; animation: rise var(--t-med);
 }
@@ -567,9 +582,60 @@
 @media (max-width: 1080px) {
   .topbar-menu { display: inline-flex; }
   .shell { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar-w); z-index: 80; transform: translateX(-100%); transition: transform var(--t-med); }
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; width: min(var(--sidebar-w), 82vw); z-index: 80;
+    transform: translateX(-100%); transition: transform var(--t-med);
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
   .sidebar.open { transform: none; box-shadow: var(--shadow-lg); }
+  .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 79; background: var(--scrim-soft); animation: fade var(--t-fast); }
   .toasts { left: 20px; width: min(380px, calc(100vw - 40px)); }
+}
+
+/* ── Phones ────────────────────────────────────────────────────────────────
+   The desktop type scale is set for a screen at arm's length. On a phone the same sizes
+   push four words to a line, so the whole scale steps back down — proportionally, not
+   below where it started. */
+@media (max-width: 720px) {
+  body { font-size: 15.5px; }
+  .t-h1 { font-size: 26px; }
+  .t-h2 { font-size: 19px; }
+  .t-h3 { font-size: 16px; }
+  .t-body { font-size: 15px; }
+  .t-small { font-size: 13.5px; }
+  .eyebrow { font-size: 11.5px; letter-spacing: .09em; }
+  .stat-v { font-size: 27px; }
+  .wordmark { font-size: 20px; }
+  .empty { padding: 40px 18px; }
+  .empty h3 { font-size: 19px; }
+  .dropzone { padding: 30px 16px; }
+  .panel-body, .panel-head { padding: 15px 16px; }
+  .note { padding: 13px 14px; font-size: 14px; }
+  /* The build marker sits over content on a narrow screen and earns nothing there. */
+  .build-tag { display: none; }
+  /* A tall preview inside an 88vh dialog leaves no room for anything else. */
+  .preview-stage { min-height: 150px; }
+  .preview-stage img { max-height: 240px; }
+  /* Seven actions at full width would leave the file itself a sliver of the screen, so
+     they pack tightly and the bar scrolls if a role really has all of them. */
+  .drawer-foot { max-height: 24vh; overflow-y: auto; padding-top: 12px; padding-bottom: 12px; }
+  .drawer-foot .btn { flex: 0 1 auto; padding: 9px 13px; font-size: 14px; min-height: 40px; gap: 6px; }
+}
+
+/* ── Touch ─────────────────────────────────────────────────────────────────
+   Keyed on the pointer, not the width: a small tablet with a mouse does not need
+   44px targets, and a large phone does. */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 38px; padding: 8px 14px; }
+  .btn-icon { min-width: 44px; min-height: 44px; }
+  .nav-item { min-height: 44px; }
+  .tab { min-height: 44px; }
+  .chip, .facet-chip { min-height: 40px; }
+  .check input { width: 20px; height: 20px; }
+  .help { width: 22px; height: 22px; font-size: 12.5px; }
+  /* Hover tooltips never fire on touch; tapping the marker has to work instead. */
+  .help:focus .bubble { display: block; }
 }
 
 @media (max-width: 900px) {
@@ -577,19 +643,49 @@
   .facet-chip { padding: 7px 13px; font-size: 13.5px; }
 }
 @media (max-width: 720px) {
-  .page { padding: 18px 14px; }
+  .page { padding: 16px 14px calc(24px + env(safe-area-inset-bottom)); }
+  .page-head { margin-bottom: 16px; }
   .topbar { padding: 0 12px; gap: 8px; }
   /* A clipped word reads as broken; below this width the search control is icon-only. */
   .topbar-search { flex: none; }
   .topbar-search .kbd, .topbar-search > .grow { display: none; }
-  .tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
-  .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  /* Label drops, icon and target stay — the top bar has five controls and 390px. */
+  .hide-on-phone { display: none; }
+  /* A button label is the one thing in this layout that can still force the page wide:
+     .btn sets white-space: nowrap, so a long label ("See all image for this artist")
+     pushes past the viewport. On a phone labels wrap instead — applied to the class, so
+     no individual string can reintroduce the problem later. */
+  .btn { white-space: normal; max-width: 100%; }
+  .searchbar { padding: 11px 13px; gap: 9px; }
+  .searchbar.lg { padding: 12px 14px; }
+  .searchbar.lg input { font-size: 16px; }
+  .topbar { padding-top: env(safe-area-inset-top); height: calc(var(--topbar-h) + env(safe-area-inset-top)); }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 10px; }
+  .stat { padding: 13px 14px; }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
+  .card-art { height: 96px; }
   .def { grid-template-columns: 1fr; gap: 3px; }
   /* 80% of a phone is not a usable dialog — overlays take the screen instead. */
-  .scrim, .drawer-scrim { padding: 12px; }
-  .modal, .modal.narrow { width: 100%; max-height: 92vh; }
-  .drawer { width: 100%; height: 92vh; }
+  .scrim, .drawer-scrim { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .modal, .modal.narrow, .modal.wide { width: 100%; max-width: none; max-height: 94vh; }
+  .drawer { width: 100%; max-width: none; height: 94vh; }
   .modal-head, .modal-body, .modal-foot,
-  .drawer-head, .drawer-body, .drawer-foot { padding-left: 18px; padding-right: 18px; }
-  .toasts { left: 12px; width: calc(100vw - 24px); }
+  .drawer-head, .drawer-body, .drawer-foot { padding-left: 16px; padding-right: 16px; }
+  .modal-head { padding-top: 16px; padding-bottom: 13px; }
+  .modal-body { padding-top: 18px; padding-bottom: 18px; }
+  .modal-foot { justify-content: stretch; }
+  .modal-foot .btn { flex: 1 1 auto; }
+  .stack-4 > * + * { margin-top: 18px; }
+  .stack-5 > * + * { margin-top: 24px; }
+  .timeline { padding-left: 18px; }
+  .palette { max-height: 84vh; }
+  .palette-list { max-height: 60vh; }
+  .toasts { left: 12px; right: 12px; width: auto; }
+  .theme-toggle-float { top: calc(10px + env(safe-area-inset-top)); right: 10px; }
+}
+
+/* Very narrow — a single column of cards beats two squeezed ones. */
+@media (max-width: 380px) {
+  .cards { grid-template-columns: minmax(0, 1fr); }
+  .tiles { grid-template-columns: minmax(0, 1fr); }
 }

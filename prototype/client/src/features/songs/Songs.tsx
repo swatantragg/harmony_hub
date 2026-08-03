@@ -42,30 +42,32 @@ export function SongList() {
         <Skeleton h={300} />
       ) : (
         <div className="panel" style={{ overflow: 'hidden' }}>
-          <table className="tbl">
-            <thead>
-              <tr><th>Song</th><th>Artist</th><th>Language</th><th>Mood</th><th>Released</th><th>Files</th><th /></tr>
-            </thead>
-            <tbody>
-              {data?.data.map((s) => (
-                <tr key={s._id} onClick={() => navigate(`/songs/${s._id}`)}>
-                  <td style={{ fontWeight: 600 }}>{s.title}</td>
-                  <td className="t-small">{s.artistName}</td>
-                  <td className="t-small">{s.language}</td>
-                  <td className="t-small">{s.mood}</td>
-                  <td className="t-small">{date(s.releaseDate)}</td>
-                  <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>{s.assetCount}</td>
-                  <td>
-                    {(s.needsAttention ?? 0) > 0 && (
-                      <span className="badge" data-status="MISSING" title="Some files on this song need attention">
-                        <AlertTriangle size={11} /> {s.needsAttention}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="tbl">
+              <thead>
+                <tr><th>Song</th><th>Artist</th><th>Language</th><th>Mood</th><th>Released</th><th>Files</th><th /></tr>
+              </thead>
+              <tbody>
+                {data?.data.map((s) => (
+                  <tr key={s._id} onClick={() => navigate(`/songs/${s._id}`)}>
+                    <td style={{ fontWeight: 600 }}>{s.title}</td>
+                    <td className="t-small">{s.artistName}</td>
+                    <td className="t-small">{s.language}</td>
+                    <td className="t-small">{s.mood}</td>
+                    <td className="t-small">{date(s.releaseDate)}</td>
+                    <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>{s.assetCount}</td>
+                    <td>
+                      {(s.needsAttention ?? 0) > 0 && (
+                        <span className="badge" data-status="MISSING" title="Some files on this song need attention">
+                          <AlertTriangle size={11} /> {s.needsAttention}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

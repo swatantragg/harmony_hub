@@ -344,16 +344,18 @@ export function SearchPage() {
             </div>
           ) : (
             <div className="panel" style={{ overflow: 'hidden' }}>
-              <table className="tbl">
-                <thead>
-                  <tr><th>File</th><th>Type</th><th>Version</th><th>Size</th><th>Availability</th></tr>
-                </thead>
-                <tbody>
-                  {data!.data.map((a) => (
-                    <AssetRow key={a.assetId} asset={a} selected={openAsset === a.assetId} onOpen={(x) => setOpenAsset(x.assetId)} />
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="tbl">
+                  <thead>
+                    <tr><th>File</th><th>Type</th><th>Version</th><th>Size</th><th>Availability</th></tr>
+                  </thead>
+                  <tbody>
+                    {data!.data.map((a) => (
+                      <AssetRow key={a.assetId} asset={a} selected={openAsset === a.assetId} onOpen={(x) => setOpenAsset(x.assetId)} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
