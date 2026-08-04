@@ -1,10 +1,10 @@
-// "How Maestro works" — the whole product explained in one scrollable page, in plain
+// "How GCloud works" — the whole product explained in one scrollable page, in plain
 // language, with no jargon and no assumed background. This is the single largest lever
 // on the learning curve: anyone can read it in five minutes and then use everything.
 import { Link } from 'react-router-dom';
 import {
   Search, ShieldCheck, Pencil, UploadCloud, Share2, History, Trash2,
-  Command, RotateCcw, Users,
+  Command, RotateCcw, Users, Globe, PenLine, UserCheck, Eye, Link2,
 } from 'lucide-react';
 import { AvailabilityBadge, Brandmark, useToast } from '../../components/ui';
 import { STATUS_COPY } from '../../lib/assetTypes';
@@ -27,7 +27,7 @@ const CONCEPTS = [
   {
     icon: ShieldCheck,
     title: 'Every file proves it is really there',
-    body: 'A catalogue entry saying a file exists is not the same as the file existing. Maestro checks the storage itself and shows the answer as a coloured badge on every card. Press “Verify now” on any file for a fresh answer in under a second — it reads only the file’s details, never its contents, so it is instant whether the file is 2 KB or 40 GB.',
+    body: 'A catalogue entry saying a file exists is not the same as the file existing. GCloud checks the storage itself and shows the answer as a coloured badge on every card. Press “Verify now” on any file for a fresh answer in under a second — it reads only the file’s details, never its contents, so it is instant whether the file is 2 KB or 40 GB.',
   },
   {
     icon: Pencil,
@@ -37,7 +37,7 @@ const CONCEPTS = [
   {
     icon: UploadCloud,
     title: 'Uploads go straight to storage',
-    body: 'Files travel from your browser directly into storage without passing through Maestro’s servers. Big files are split into chunks that upload four at a time; if one chunk fails it retries by itself, and you can pause and resume without losing progress.',
+    body: 'Files travel from your browser directly into storage without passing through GCloud’s servers. Big files are split into chunks that upload four at a time; if one chunk fails it retries by itself, and you can pause and resume without losing progress.',
   },
   {
     icon: History,
@@ -47,12 +47,76 @@ const CONCEPTS = [
   {
     icon: Share2,
     title: 'Sharing is controlled and reversible',
-    body: 'A share link works without an account, expires on its own, can be capped by download count, and can be switched off instantly. Before handing anything over it confirms the file is still really in storage, and every open is recorded with time and IP.',
+    body: 'A link can go to anyone, to signed-in editors, or to named people only. It expires on its own, can be capped by download count, and can be switched off instantly. Before handing anything over it confirms the file is still really in storage, and every open is recorded with time and IP.',
   },
   {
     icon: Trash2,
-    title: 'Deleting has three levels',
-    body: 'Removing a file puts it in a recycle bin for 30 days and leaves the stored copy alone. Only a permanent purge — which asks you to type the file’s name — actually destroys anything.',
+    title: 'Deleting has two buttons, and only one is permanent',
+    body: 'Delete puts a file in the recycle bin for 30 days and leaves the stored copy exactly where it was. Purge — Admin only, and it asks you to type the file’s name — is the one that destroys the object. Deleting a folder deletes nothing at all.',
+  },
+];
+
+// The three kinds of link, spelled out where someone will look for them.
+const LINK_TYPES = [
+  {
+    icon: Globe,
+    title: 'Open to all',
+    who: 'Anyone holding the link',
+    body: 'No account, no sign-in, no GCloud login screen. This is the link for press, DSPs, sync agencies and anyone outside the company. Control comes from the expiry, the download cap and the revoke button — not from who the visitor is.',
+  },
+  {
+    icon: PenLine,
+    title: 'Editor',
+    who: 'Signed-in GCloud accounts that can edit',
+    body: 'The visitor is sent to sign in first. Once in, the file opens with editing rights — rename, re-tag, replace — not just a download button. An account without edit rights is refused even with the correct link.',
+  },
+  {
+    icon: UserCheck,
+    title: 'Specific allocation',
+    who: 'Only the email addresses you name',
+    body: 'The visitor signs in, and the link resolves only if their account email is on the list attached to it. Forwarding it to anyone else achieves nothing. Every open is logged against the person by name rather than as “external partner”.',
+  },
+];
+
+const DELETE_LEVELS = [
+  {
+    tone: 'warn' as const,
+    label: 'Delete',
+    where: 'On any file · Admin and Editor',
+    api: 'DELETE /api/assets/{id}',
+    what: 'Moves the file to the recycle bin.',
+    points: [
+      'The object in storage is not touched — same key, same bytes, same storage cost.',
+      'The catalogue record keeps everything; a deletedAt date is set on it and nothing else.',
+      'The file leaves search, its song page and its folder immediately.',
+      'Share links pointing at it stop resolving while it is in the bin.',
+      'Recoverable for 30 days, from the song page it belonged to.',
+    ],
+  },
+  {
+    tone: 'danger' as const,
+    label: 'Purge permanently',
+    where: 'On any file · Admin only',
+    api: 'DELETE /api/assets/{id}/purge',
+    what: 'Destroys the object and the record together.',
+    points: [
+      'DeleteObject runs against the object key — the bytes are gone from the bucket.',
+      'The catalogue record is removed outright, not flagged.',
+      'Every share link to the file is deleted with it.',
+      'You must type the file’s exact name to confirm; nothing inside GCloud undoes it.',
+    ],
+  },
+  {
+    tone: 'ok' as const,
+    label: 'Remove folder',
+    where: 'On any folder · Admin and Editor',
+    api: 'DELETE /api/folders/{id}',
+    what: 'Deletes the grouping. Deletes no files.',
+    points: [
+      'Every file inside goes back to the library — folderId is cleared, one field per file.',
+      'Zero objects in storage are touched, exactly as when a folder is renamed.',
+      'The activity log records how many files were released and that nothing was deleted.',
+    ],
   },
 ];
 
@@ -72,10 +136,10 @@ export function Help() {
       <div className="page-head">
         <div style={{ marginBottom: 20 }}><Brandmark size="lg" /></div>
         <h1 className="t-display" style={{ fontSize: 'clamp(30px,4vw,44px)', marginBottom: 14 }}>
-          How Maestro works
+          How GCloud works
         </h1>
         <p className="t-body" style={{ fontSize: 17, maxWidth: '58ch' }}>
-          Maestro keeps every file made for a release — masters, covers, videos, reels, lyric sheets —
+          GCloud keeps every file made for a release — masters, covers, videos, reels, lyric sheets —
           in one place that can be searched, versioned and shared. Five minutes here and you will know
           everything the product does.
         </p>
@@ -108,7 +172,7 @@ export function Help() {
       <section>
         <h2 className="t-h1" style={{ fontSize: 25, marginBottom: 8 }}>The six badges</h2>
         <p className="t-body" style={{ marginBottom: 18, maxWidth: '62ch' }}>
-          This is the only vocabulary Maestro asks you to learn. Every file carries exactly one of
+          This is the only vocabulary GCloud asks you to learn. Every file carries exactly one of
           these, everywhere it appears.
         </p>
         <div className="stack-3">
@@ -131,12 +195,95 @@ export function Help() {
         </div>
       </section>
 
+      {/* Sharing — the three kinds of link, and what the link actually is */}
+      <section>
+        <h2 className="t-h1" style={{ fontSize: 25, marginBottom: 8 }}>Three kinds of share link</h2>
+        <p className="t-body" style={{ marginBottom: 18, maxWidth: '64ch' }}>
+          You choose who a link is for when you create it, on a single file or on a whole folder.
+          Every rule below is enforced by the server on every open — never by the page the visitor sees.
+        </p>
+        <div className="stack-3">
+          {LINK_TYPES.map(({ icon: Icon, title, who, body }) => (
+            <div key={title} className="panel">
+              <div className="panel-body" style={{ display: 'flex', gap: 16 }}>
+                <span
+                  style={{
+                    width: 40, height: 40, borderRadius: 12, flex: 'none',
+                    background: 'var(--indigo-soft)', color: 'var(--indigo)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Icon size={19} />
+                </span>
+                <div>
+                  <h3 className="t-h2" style={{ marginBottom: 2 }}>{title}</h3>
+                  <div className="eyebrow" style={{ marginBottom: 7 }}>{who}</div>
+                  <p className="t-body" style={{ margin: 0, maxWidth: '66ch' }}>{body}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="note indigo" style={{ marginTop: 16 }}>
+          <Link2 size={15} />
+          <div>
+            <b>What the link actually is.</b> A GCloud address — <span className="t-mono">/#/s/&lt;token&gt;</span> — never
+            a storage address. It carries a random token and nothing else: no bucket name, no object key,
+            no account. When someone opens it, GCloud re-checks the expiry, the revocation, the download
+            cap, who the visitor is, and whether the object is still really in storage. Only then does it
+            mint a signed storage URL that lives for minutes. The bytes then travel straight from Amazon S3
+            to the visitor’s browser, without passing through this application — but the S3 address itself
+            is never what you sent, which is exactly why revoking a link works.
+          </div>
+        </div>
+
+        <div className="note" style={{ marginTop: 12 }}>
+          <Eye size={15} />
+          <div>
+            <b>Look before you send.</b> Every file previews in the page — audio, video, images, PDFs,
+            spreadsheets, Word documents, slides, CSVs and plain text — both for you before sharing and
+            for the recipient before downloading. Folder links show the file list beside the viewer, so a
+            recipient can go through the whole kit without downloading any of it.
+          </div>
+        </div>
+      </section>
+
+      {/* Deleting — the two buttons, and the folder case */}
+      <section>
+        <h2 className="t-h1" style={{ fontSize: 25, marginBottom: 8 }}>The delete buttons</h2>
+        <p className="t-body" style={{ marginBottom: 18, maxWidth: '64ch' }}>
+          There are two on a file and one on a folder. Only the middle one destroys anything, and it is
+          the only one that asks you to type a name.
+        </p>
+        <div className="stack-3">
+          {DELETE_LEVELS.map(({ tone, label, where, api, what, points }) => (
+            <div key={label} className="panel">
+              <div className="panel-body">
+                <div className="spread" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  <span className="row-tight">
+                    <Trash2 size={15} color={tone === 'danger' ? 'var(--danger)' : tone === 'warn' ? 'var(--warn)' : 'var(--ok)'} />
+                    <span className="t-h3">{label}</span>
+                  </span>
+                  <span className="t-small">{where}</span>
+                </div>
+                <p className="t-body" style={{ margin: '0 0 8px', fontWeight: 600 }}>{what}</p>
+                <ul className="t-body" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.75, fontSize: 14 }}>
+                  {points.map((point) => <li key={point}>{point}</li>)}
+                </ul>
+                <div className="keytext" style={{ marginTop: 10, display: 'inline-block' }}>{api}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* First tasks */}
       <section>
         <h2 className="t-h1" style={{ fontSize: 25, marginBottom: 8 }}>Try these four things</h2>
         <p className="t-body" style={{ marginBottom: 18, maxWidth: '62ch' }}>
           Doing each one takes under a minute, and between them they cover almost everything you will
-          ever do in Maestro.
+          ever do in GCloud.
         </p>
         <div className="stack-3">
           {[

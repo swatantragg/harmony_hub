@@ -31,7 +31,7 @@ const DESTINATIONS = [
   { to: '/admin/storage', label: 'Storage health', hint: 'Drift between the catalogue and the bucket', icon: ShieldCheck, perm: 'admin:storage' },
   { to: '/admin/activity', label: 'Activity log', hint: 'Who did what, to which file, and when', icon: ScrollText, perm: 'admin:activity' },
   { to: '/admin/users', label: 'People and roles', hint: 'Accounts and what each role may do', icon: UserCog, perm: 'admin:users' },
-  { to: '/help', label: 'How Maestro works', hint: 'A five-minute tour of the whole product', icon: HelpCircle, perm: null },
+  { to: '/help', label: 'How GCloud works', hint: 'A five-minute tour of the whole product', icon: HelpCircle, perm: null },
 ];
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {

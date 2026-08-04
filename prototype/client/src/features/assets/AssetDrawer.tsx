@@ -395,8 +395,13 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
           title="Move to the recycle bin?"
           body={
             <>
-              <b>{asset.displayName}</b> disappears from search and from the song page. The stored file is
-              untouched, and an Admin can put it back for the next 30 days.
+              <b>{asset.displayName}</b> disappears from search, from the song page and from its folder.
+              <ul style={{ margin: '10px 0 0', paddingLeft: 18, lineHeight: 1.7 }}>
+                <li>The object in storage is <b>not</b> touched — same key, same bytes, same cost.</li>
+                <li>The catalogue record keeps everything; only a <span className="t-mono">deletedAt</span> date is set.</li>
+                <li>Anyone with delete rights can put it back for the next 30 days.</li>
+                <li>Existing share links stop resolving while it sits in the bin.</li>
+              </ul>
             </>
           }
           confirmLabel="Move to recycle bin"
@@ -411,8 +416,13 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
           requireTyped={asset.displayName}
           body={
             <>
-              This deletes <b>every stored version</b> of the object. It cannot be undone, and no backup
-              inside Maestro will bring it back.
+              This is the other delete, and it is the irreversible one.
+              <ul style={{ margin: '10px 0 0', paddingLeft: 18, lineHeight: 1.7 }}>
+                <li><b>DeleteObject</b> runs against <span className="t-mono">{asset.s3.key}</span> — the bytes go.</li>
+                <li>The catalogue record is removed outright, not flagged.</li>
+                <li>Every share link to this file is deleted with it.</li>
+                <li>Nothing inside GCloud brings it back. Only a bucket-level backup could.</li>
+              </ul>
             </>
           }
           confirmLabel="Purge permanently"

@@ -19,7 +19,7 @@ export function Brandmark({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   return (
     <div className="row" style={{ gap: size === 'lg' ? 14 : 11 }}>
       <Tile size={size} />
-      <span className="wordmark" style={{ fontSize: size === 'lg' ? 30 : size === 'sm' ? 17 : 20 }}>Maestro</span>
+      <span className="wordmark" style={{ fontSize: size === 'lg' ? 30 : size === 'sm' ? 17 : 20 }}>GCloud</span>
     </div>
   );
 }
@@ -126,18 +126,21 @@ export function Modal({
   );
 }
 
-/* ── Drawer ────────────────────────────────────────────────────────────── */
+/* ── Detail panel ──────────────────────────────────────────────────────────
+   Centred over the page rather than anchored to an edge, and the same 80% geometry as
+   every other overlay. The panel nests inside the scrim so one flex container does the
+   centring; clicking the scrim itself — and only the scrim — closes it. */
 export function Drawer({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
   }, [onClose]);
   return createPortal(
-    <>
-      <div className="drawer-scrim" onClick={onClose} />
+    <div className="drawer-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="drawer" role="dialog" aria-modal aria-label="Asset details">{children}</aside>
-    </>,
+    </div>,
     document.body,
   );
 }

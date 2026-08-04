@@ -1,12 +1,12 @@
 /* ==========================================================================
-   Maestro — design tokens
+   GCloud — design tokens
    Lifted from Brand Book 02 · Studio. Every colour, typeface and radius in the
    product resolves to a token declared here. Nothing downstream hard-codes a
    value, which is what makes a second theme a token swap rather than a rewrite.
 
    THEMES
-   Studio is the identity: indigo, one amber spark, Space Grotesk + Plus Jakarta
-   + IBM Plex Mono. Dark mode is the same identity after dark, NOT the separate
+   Studio is the identity: indigo, one amber spark, Poppins throughout.
+   Dark mode is the same identity after dark, NOT the separate
    Nocturne direction — a theme toggle must not change the typeface or the brand
    accent, or it stops being the same product. What it does change:
 
@@ -40,7 +40,7 @@
   --indigo-tint: rgba(85, 70, 232, .08);
   --indigo-wash: #E4DEFF;
 
-  /* Warm spark — the maestro thread. Rationed to ONE element per screen. */
+  /* Warm spark — the gcloud thread. Rationed to ONE element per screen. */
   --spark: #FF9E44;
   --spark-deep: #E07A18;
   --spark-soft: #FFF1E2;
@@ -69,10 +69,14 @@
   --wash-chip: rgba(255, 255, 255, .74);
   --danger-ring: rgba(229, 72, 77, .12);
 
-  /* Type */
-  --display: "Space Grotesk", system-ui, sans-serif;
-  --sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Type — one family, everywhere. The three variables are kept because every
+     component references them; they now all resolve to Poppins, so there is a single
+     place to change the typeface and no way for a stray face to creep back in.
+     Where the old mono carried alignment (keys, counts, checksums) the components set
+     font-variant-numeric: tabular-nums instead, so columns of figures still line up. */
+  --display: "Poppins", system-ui, sans-serif;
+  --sans: "Poppins", system-ui, -apple-system, sans-serif;
+  --mono: "Poppins", system-ui, sans-serif;
 
   /* Elevation */
   --shadow: 0 1px 2px rgba(23, 23, 35, .04), 0 8px 24px rgba(23, 23, 35, .06);
@@ -88,8 +92,8 @@
   --r-pill: 999px;
 
   /* Layout */
-  --sidebar-w: 244px;
-  --topbar-h: 64px;
+  --sidebar-w: 268px;
+  --topbar-h: 70px;
 
   --ease: cubic-bezier(.22, .61, .36, 1);
   --t-fast: 120ms var(--ease);

@@ -11,7 +11,7 @@ import { create } from 'zustand';
 export type ThemePref = 'light' | 'dark' | 'system';
 export type Resolved = 'light' | 'dark';
 
-const KEY = 'maestro.theme';
+const KEY = 'gcloud.theme';
 
 const query = () => window.matchMedia('(prefers-color-scheme: dark)');
 

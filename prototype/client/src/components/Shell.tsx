@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Home, Search, Users, Disc3, UploadCloud, Share2, ShieldCheck, ScrollText,
@@ -35,12 +35,26 @@ const ADMIN: NavEntry[] = [
 export function Shell() {
   const { user, logout, can } = useSession();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [showTour, setShowTour] = useState(!tour.done());
   const queue = useQueue((s) => s.items);
   const uploading = queue.filter((i) => ['UPLOADING', 'FINALISING', 'HASHING'].includes(i.state)).length;
+
+  // Off-canvas navigation, on a phone, has to behave like every other off-canvas menu:
+  // it closes when the route changes, when Escape is pressed, and when anything outside
+  // it is tapped. The page behind it must not scroll while it is open.
+  useEffect(() => { setNavOpen(false); }, [location.pathname]);
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false); };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+  }, [navOpen]);
 
   const { data: notifications } = useQuery({
     queryKey: ['notifications'],
@@ -92,6 +106,7 @@ export function Shell() {
 
   return (
     <div className="shell">
+      {navOpen && <div className="sidebar-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} data-tour="nav">
         <div className="sidebar-brand">
           <Brandmark />
@@ -113,7 +128,7 @@ export function Shell() {
             <div className="nav-group-label eyebrow">Getting started</div>
             <NavLink to="/help" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tour="help" onClick={() => setNavOpen(false)}>
               <HelpCircle size={17} />
-              How Maestro works
+              How GCloud works
             </NavLink>
           </div>
         </nav>
@@ -152,9 +167,9 @@ export function Shell() {
           {/* Indigo, not spark: the brand keeps one warm signal per view, and each page
               spends it on its own most important action. */}
           {can('asset:upload') && (
-            <button className="btn btn-primary" data-tour="upload" onClick={() => navigate('/upload')}>
+            <button className="btn btn-primary" data-tour="upload" onClick={() => navigate('/upload')} aria-label="Upload">
               <UploadCloud size={16} />
-              Upload
+              <span className="hide-on-phone">Upload</span>
             </button>
           )}
         </header>
@@ -163,11 +178,11 @@ export function Shell() {
 
         {/* Build marker. Sits under every overlay and ignores pointer events so it can
             never intercept a click. */}
-        <div className="build-tag" aria-hidden>SK-V1</div>
+        <div className="build-tag" aria-hidden>SK-V2.2</div>
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
-      {showTour && <Tour onDone={() => { setShowTour(false); toast({ kind: 'ok', title: 'You are set up', body: 'Press ⌘K any time, or open “How Maestro works” from the sidebar.' }); }} />}
+      {showTour && <Tour onDone={() => { setShowTour(false); toast({ kind: 'ok', title: 'You are set up', body: 'Press ⌘K any time, or open “How GCloud works” from the sidebar.' }); }} />}
     </div>
   );
 }
@@ -189,7 +204,7 @@ function UserMenu({ name, role, onLogout }: { name: string; role: string; onLogo
             <RotateCcw size={16} /> Replay the tour
           </button>
           <button className="nav-item" onClick={() => { navigate('/help'); setOpen(false); }}>
-            <HelpCircle size={16} /> How Maestro works
+            <HelpCircle size={16} /> How GCloud works
           </button>
           <button className="nav-item" onClick={onLogout} style={{ color: 'var(--danger)' }}>
             <LogOut size={16} /> Sign out

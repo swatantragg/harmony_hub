@@ -36,7 +36,7 @@ authRouter.post('/login', (req, res) => {
 authRouter.get('/demo-accounts', (_req, res) => {
   res.json(
     db.users.map((u) => ({
-      email: u.email, password: 'maestro', name: u.name, role: u.role, jobTitle: u.jobTitle,
+      email: u.email, password: 'gcloud', name: u.name, role: u.role, jobTitle: u.jobTitle,
       permissions: (PERMISSIONS[u.role] || []).length,
     })),
   );

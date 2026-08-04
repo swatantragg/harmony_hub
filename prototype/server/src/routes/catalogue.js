@@ -46,7 +46,7 @@ typesRouter.post('/', requires('asset:upload'), (req, res) => {
   }
   if (suggestions.length > 0 && !req.body?.force) {
     return res.status(409).type('application/problem+json').json({
-      type: 'https://maestro.internal/problems/similar-type-exists',
+      type: 'https://gcloud.internal/problems/similar-type-exists',
       title: 'Similar type exists',
       status: 409,
       detail: `“${type}” is very close to ${suggestions.map((s) => `“${s.type}”`).join(', ')}. Use one of those, or confirm to add a separate type.`,
@@ -243,7 +243,7 @@ tagsRouter.post('/', requires('asset:upload'), (req, res) => {
   // Close matches are surfaced, not enforced: the caller confirms with `force`.
   if (suggestions.length > 0 && !req.body?.force) {
     return res.status(409).type('application/problem+json').json({
-      type: 'https://maestro.internal/problems/similar-tag-exists',
+      type: 'https://gcloud.internal/problems/similar-tag-exists',
       title: 'Similar tag exists',
       status: 409,
       detail: `“${name}” looks very close to ${suggestions.map((s) => `“${s.name}”`).join(', ')}. Reuse one of those, or confirm to create a separate tag.`,

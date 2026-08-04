@@ -44,38 +44,40 @@ export function ActivityLog() {
         <EmptyState icon={<ScrollText size={25} />} title="Nothing matches" body="Try a different search or clear the action filter." />
       ) : (
         <div className="panel" style={{ overflow: 'hidden' }}>
-          <table className="tbl">
-            <thead>
-              <tr><th>When</th><th>Who</th><th>Did what</th><th>Change</th><th>From</th></tr>
-            </thead>
-            <tbody>
-              {data!.data.map((e) => (
-                <tr key={e._id} style={{ cursor: 'default' }}>
-                  <td className="t-small" title={date(e.timestamp, true)} style={{ whiteSpace: 'nowrap' }}>{relative(e.timestamp)}</td>
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{e.userName}</div>
-                    <div className="t-small" style={{ fontSize: 11 }}>{e.userRole}</div>
-                  </td>
-                  <td>
-                    <div style={{ fontSize: 13 }}>
-                      <span className="muted">{ACTION_COPY[e.action] ?? e.action.toLowerCase()}</span>
-                    </div>
-                    <div className="t-small">{e.label}</div>
-                  </td>
-                  <td style={{ maxWidth: 300 }}>
-                    {e.before || e.after ? (
-                      <div className="t-mono" style={{ fontSize: 11, color: 'var(--ink-3)', wordBreak: 'break-word' }}>
-                        {e.before ? `${JSON.stringify(e.before)} → ` : ''}{JSON.stringify(e.after)}
+          <div className="table-scroll">
+            <table className="tbl">
+              <thead>
+                <tr><th>When</th><th>Who</th><th>Did what</th><th>Change</th><th>From</th></tr>
+              </thead>
+              <tbody>
+                {data!.data.map((e) => (
+                  <tr key={e._id} style={{ cursor: 'default' }}>
+                    <td className="t-small" title={date(e.timestamp, true)} style={{ whiteSpace: 'nowrap' }}>{relative(e.timestamp)}</td>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{e.userName}</div>
+                      <div className="t-small" style={{ fontSize: 11 }}>{e.userRole}</div>
+                    </td>
+                    <td>
+                      <div style={{ fontSize: 13 }}>
+                        <span className="muted">{ACTION_COPY[e.action] ?? e.action.toLowerCase()}</span>
                       </div>
-                    ) : (
-                      <span className="t-small">—</span>
-                    )}
-                  </td>
-                  <td className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{e.ip}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <div className="t-small">{e.label}</div>
+                    </td>
+                    <td style={{ maxWidth: 300 }}>
+                      {e.before || e.after ? (
+                        <div className="t-mono" style={{ fontSize: 11, color: 'var(--ink-3)', wordBreak: 'break-word' }}>
+                          {e.before ? `${JSON.stringify(e.before)} → ` : ''}{JSON.stringify(e.after)}
+                        </div>
+                      ) : (
+                        <span className="t-small">—</span>
+                      )}
+                    </td>
+                    <td className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{e.ip}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

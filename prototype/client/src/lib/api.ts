@@ -1,7 +1,7 @@
 // Typed fetch client. Attaches the access token, unwraps RFC 7807 problem responses
 // into readable Error messages, and keeps every URL in one place.
 
-const TOKEN_KEY = 'maestro.token';
+const TOKEN_KEY = 'gcloud.token';
 
 export const auth = {
   get: () => localStorage.getItem(TOKEN_KEY),

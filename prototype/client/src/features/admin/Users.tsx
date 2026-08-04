@@ -65,45 +65,47 @@ export function Users() {
       </div>
 
       <div className="panel" style={{ overflow: 'hidden' }}>
-        <table className="tbl">
-          <thead><tr><th>Person</th><th>Role</th><th>Last signed in</th><th>Added</th></tr></thead>
-          <tbody>
-            {data.data.map((u) => (
-              <tr key={u._id} style={{ cursor: 'default' }}>
-                <td>
-                  <div className="row-tight">
-                    <span
-                      style={{
-                        width: 32, height: 32, borderRadius: 9, background: 'var(--indigo-soft)',
-                        color: 'var(--indigo-deep)', display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: 12, fontWeight: 700, flex: 'none',
-                      }}
-                    >
-                      {initials(u.name)}
-                    </span>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>{u.name}</div>
-                      <div className="t-small" style={{ fontSize: 11.5 }}>{u.email} · {u.jobTitle}</div>
+        <div className="table-scroll">
+          <table className="tbl">
+            <thead><tr><th>Person</th><th>Role</th><th>Last signed in</th><th>Added</th></tr></thead>
+            <tbody>
+              {data.data.map((u) => (
+                <tr key={u._id} style={{ cursor: 'default' }}>
+                  <td>
+                    <div className="row-tight">
+                      <span
+                        style={{
+                          width: 32, height: 32, borderRadius: 9, background: 'var(--indigo-soft)',
+                          color: 'var(--indigo-deep)', display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', fontSize: 12, fontWeight: 700, flex: 'none',
+                        }}
+                      >
+                        {initials(u.name)}
+                      </span>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{u.name}</div>
+                        <div className="t-small" style={{ fontSize: 11.5 }}>{u.email} · {u.jobTitle}</div>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td>
-                  <select
-                    className="select"
-                    style={{ width: 'auto', paddingRight: 30 }}
-                    value={u.role}
-                    onChange={(e) => changeRole.mutate({ id: u._id, role: e.target.value })}
-                    aria-label={`Role for ${u.name}`}
-                  >
-                    {data.roles.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </td>
-                <td className="t-small">{u.lastLoginAt ? relative(u.lastLoginAt) : 'never'}</td>
-                <td className="t-small">{date(u.createdAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  </td>
+                  <td>
+                    <select
+                      className="select"
+                      style={{ width: 'auto', paddingRight: 30 }}
+                      value={u.role}
+                      onChange={(e) => changeRole.mutate({ id: u._id, role: e.target.value })}
+                      aria-label={`Role for ${u.name}`}
+                    >
+                      {data.roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </td>
+                  <td className="t-small">{u.lastLoginAt ? relative(u.lastLoginAt) : 'never'}</td>
+                  <td className="t-small">{date(u.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <section>
@@ -113,28 +115,30 @@ export function Users() {
           boundary by being refused.
         </p>
         <div className="panel" style={{ overflowX: 'auto' }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th style={{ minWidth: 230 }}>Capability</th>
-                {data.roles.map((r) => <th key={r} style={{ textAlign: 'center' }}>{r}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {ORDER.map((perm) => (
-                <tr key={perm} style={{ cursor: 'default' }}>
-                  <td style={{ fontWeight: 500 }}>{PERMISSION_LABELS[perm]}</td>
-                  {data.roles.map((r) => (
-                    <td key={r} style={{ textAlign: 'center' }}>
-                      {data.permissionMatrix[r]?.includes(perm)
-                        ? <Check size={15} color="var(--ok)" />
-                        : <Minus size={14} color="var(--line-2)" />}
-                    </td>
-                  ))}
+          <div className="table-scroll">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 230 }}>Capability</th>
+                  {data.roles.map((r) => <th key={r} style={{ textAlign: 'center' }}>{r}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ORDER.map((perm) => (
+                  <tr key={perm} style={{ cursor: 'default' }}>
+                    <td style={{ fontWeight: 500 }}>{PERMISSION_LABELS[perm]}</td>
+                    {data.roles.map((r) => (
+                      <td key={r} style={{ textAlign: 'center' }}>
+                        {data.permissionMatrix[r]?.includes(perm)
+                          ? <Check size={15} color="var(--ok)" />
+                          : <Minus size={14} color="var(--line-2)" />}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -155,7 +159,7 @@ function AddUserDialog({ roles, onClose }: { roles: Role[]; onClose: () => void 
     mutationFn: () => api('/admin/users', { method: 'POST', body: { name, email, jobTitle, role } }),
     onSuccess: () => {
       qc.invalidateQueries();
-      toast({ kind: 'ok', title: 'Account created', body: 'Starting password is “maestro” — they should change it on first sign-in.' });
+      toast({ kind: 'ok', title: 'Account created', body: 'Starting password is “gcloud” — they should change it on first sign-in.' });
       onClose();
     },
     onError: (e: Error) => toast({ kind: 'danger', title: 'Could not create the account', body: e.message }),

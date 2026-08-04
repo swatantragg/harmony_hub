@@ -179,7 +179,7 @@ adminRouter.post('/users', requires('admin:users'), (req, res) => {
   }
   const user = {
     _id: `user_${uuid().slice(0, 8)}`, name, email, jobTitle: jobTitle || '',
-    passwordHash: hashPassword('maestro'), role: ROLES.includes(role) ? role : 'Viewer',
+    passwordHash: hashPassword('gcloud'), role: ROLES.includes(role) ? role : 'Viewer',
     status: 'active', createdAt: new Date().toISOString(), lastLoginAt: null,
   };
   db.users.push(user);

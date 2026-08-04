@@ -155,20 +155,22 @@ export function ArtistDetail() {
           <EmptyState icon={<Music4 size={24} />} title="No releases yet" body="Songs added for this artist will appear here." />
         ) : (
           <div className="panel" style={{ overflow: 'hidden' }}>
-            <table className="tbl">
-              <thead><tr><th>Song</th><th>Language</th><th>Mood</th><th>Released</th><th>Files</th></tr></thead>
-              <tbody>
-                {data.songs?.map((s) => (
-                  <tr key={s._id} onClick={() => { window.location.hash = `#/songs/${s._id}`; }}>
-                    <td style={{ fontWeight: 600 }}>{s.title}</td>
-                    <td className="t-small">{s.language}</td>
-                    <td className="t-small">{s.mood}</td>
-                    <td className="t-small">{date(s.releaseDate)}</td>
-                    <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>{s.assetCount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead><tr><th>Song</th><th>Language</th><th>Mood</th><th>Released</th><th>Files</th></tr></thead>
+                <tbody>
+                  {data.songs?.map((s) => (
+                    <tr key={s._id} onClick={() => { window.location.hash = `#/songs/${s._id}`; }}>
+                      <td style={{ fontWeight: 600 }}>{s.title}</td>
+                      <td className="t-small">{s.language}</td>
+                      <td className="t-small">{s.mood}</td>
+                      <td className="t-small">{date(s.releaseDate)}</td>
+                      <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>{s.assetCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>

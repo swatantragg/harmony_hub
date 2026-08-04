@@ -1,6 +1,7 @@
-// Universal search — the screen most people will live in. Facets on the left, results as
-// cards or rows, availability as a first-class filter, and a "check these for real"
-// action that runs a live probe over the current page.
+// Universal search — the screen most people will live in. Results take the full width;
+// filters live in a tabbed dialog so a dense facet list never competes with the grid for
+// space. Availability is a first-class filter, and "verify these N" runs a live probe
+// over the current page.
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,9 +12,8 @@ import { api, qs } from '../../lib/api';
 import { AssetCard, AssetRow } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import {
-  AvailabilityBadge, CardSkeletons, EmptyState, HelpTip, useDebounced, useToast,
+  AvailabilityBadge, CardSkeletons, EmptyState, HelpTip, Modal, useDebounced, useToast,
 } from '../../components/ui';
-import { STATUS_COPY } from '../../lib/assetTypes';
 import { pluralise } from '../../lib/format';
 import type { Availability, FacetValue, SearchResponse } from '../../lib/types';
 
@@ -28,6 +28,17 @@ const FACETS: { key: string; label: string; hint?: string }[] = [
   { key: 'mood', label: 'Mood' },
   { key: 'version', label: 'Version' },
   { key: 'year', label: 'Release year' },
+];
+
+// Ten facets is too many tabs. They group into six questions people actually ask, and
+// each tab carries a count so a filter set two tabs away is never invisible.
+const FILTER_TABS: { id: string; label: string; facets: string[] }[] = [
+  { id: 'assets', label: 'Assets', facets: ['family', 'type', 'version'] },
+  { id: 'tags', label: 'Tags', facets: ['tags'] },
+  { id: 'availability', label: 'Availability', facets: ['availability'] },
+  { id: 'folders', label: 'Folders', facets: ['folder'] },
+  { id: 'people', label: 'Artists', facets: ['artist'] },
+  { id: 'release', label: 'Release', facets: ['language', 'mood', 'year'] },
 ];
 
 const SORTS = [
@@ -97,7 +108,9 @@ function FacetGroup({
         />
       )}
 
-      <div className="stack-2">
+      {/* Values run across, not down: a wrapping row fits three times as many in the same
+          height, and the eye scans a line of labels faster than a column of rows. */}
+      <div className="facet-chips">
         {visible.map((f) => {
           const name = String(f.value);
           const value = resolve(name);
@@ -105,29 +118,24 @@ function FacetGroup({
           return (
             <button
               key={name}
-              className="nav-item"
-              style={{
-                padding: '5px 8px', fontSize: 13,
-                background: on ? 'var(--indigo-soft)' : undefined,
-                color: on ? 'var(--indigo-deep)' : undefined,
-                fontWeight: on ? 700 : 500,
-              }}
+              className={`facet-chip ${on ? 'on' : ''}`}
               onClick={() => onToggle(value)}
               aria-pressed={on}
+              title={name}
             >
               {facetKey === 'availability' ? (
                 <AvailabilityBadge status={name as Availability} />
               ) : (
-                <span className="grow truncate" style={{ textAlign: 'left' }} title={name}>{name}</span>
+                <span className="facet-chip-name">{name}</span>
               )}
-              <span className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{f.count}</span>
+              <span className="facet-chip-count">{f.count}</span>
             </button>
           );
         })}
 
         {filter.trim() && matching.length === 0 && (
-          <div className="t-small" style={{ padding: '4px 8px' }}>
-            Nothing matches “{filter.trim()}”.{visible.length > 0 && ' Selected values stay listed above.'}
+          <div className="t-small">
+            Nothing matches “{filter.trim()}”.{visible.length > 0 && ' Selected values stay listed.'}
           </div>
         )}
       </div>
@@ -152,8 +160,8 @@ export function SearchPage() {
   const [text, setText] = useState(params.get('q') ?? '');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [openAsset, setOpenAsset] = useState<string | null>(params.get('asset'));
-  // Filters take the whole width on a phone, so they start collapsed there.
-  const [showFacets, setShowFacets] = useState(() => window.innerWidth > 900);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterTab, setFilterTab] = useState(FILTER_TABS[0].id);
   const debounced = useDebounced(text, 300);
   const qc = useQueryClient();
   const toast = useToast();
@@ -303,40 +311,17 @@ export function SearchPage() {
               <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} aria-label="List view"><List size={13} /></button>
             </div>
 
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowFacets((v) => !v)}>
-              <SlidersHorizontal size={13} /> Filters
+            <button
+              className={activeCount > 0 ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+              onClick={() => setFiltersOpen(true)}
+            >
+              <SlidersHorizontal size={13} /> Filters{activeCount > 0 ? ` · ${activeCount}` : ''}
             </button>
           </div>
         </div>
       </div>
 
-      <div className={`search-layout ${showFacets ? 'with-facets' : ''}`}>
-        {showFacets && (
-          <aside className="panel facet-panel">
-            <div className="panel-body stack-4">
-              {FACETS.map(({ key, label, hint }) => (
-                <FacetGroup
-                  key={key}
-                  facetKey={key}
-                  label={label}
-                  hint={hint}
-                  values={data?.facets[key] ?? []}
-                  selected={selected[key] ?? []}
-                  resolve={(name) =>
-                    key === 'artist'
-                      ? artistIdByName.get(name) ?? name
-                      : key === 'folder'
-                        ? folderIdByName.get(name) ?? name
-                        : name
-                  }
-                  onToggle={(value) => toggle(key, value)}
-                  resetKey={params.toString()}
-                />
-              ))}
-            </div>
-          </aside>
-        )}
-
+      <div className="search-layout">
         <div>
           {isLoading ? (
             <CardSkeletons n={12} />
@@ -359,16 +344,18 @@ export function SearchPage() {
             </div>
           ) : (
             <div className="panel" style={{ overflow: 'hidden' }}>
-              <table className="tbl">
-                <thead>
-                  <tr><th>File</th><th>Type</th><th>Version</th><th>Size</th><th>Availability</th></tr>
-                </thead>
-                <tbody>
-                  {data!.data.map((a) => (
-                    <AssetRow key={a.assetId} asset={a} selected={openAsset === a.assetId} onOpen={(x) => setOpenAsset(x.assetId)} />
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="tbl">
+                  <thead>
+                    <tr><th>File</th><th>Type</th><th>Version</th><th>Size</th><th>Availability</th></tr>
+                  </thead>
+                  <tbody>
+                    {data!.data.map((a) => (
+                      <AssetRow key={a.assetId} asset={a} selected={openAsset === a.assetId} onOpen={(x) => setOpenAsset(x.assetId)} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -388,6 +375,69 @@ export function SearchPage() {
           )}
         </div>
       </div>
+
+      {filtersOpen && (
+        <Modal
+          title="Filters"
+          subtitle={activeCount > 0 ? `${pluralise(activeCount, 'filter')} on · ${data?.total ?? 0} files match` : `${data?.total ?? 0} files`}
+          onClose={() => setFiltersOpen(false)}
+          footer={
+            <>
+              <button className="btn btn-ghost" disabled={activeCount === 0} onClick={clearAll}>
+                <X size={14} /> Clear all
+              </button>
+              <button className="btn btn-primary" onClick={() => setFiltersOpen(false)}>
+                Show {data?.total ?? 0} {(data?.total ?? 0) === 1 ? 'file' : 'files'}
+              </button>
+            </>
+          }
+        >
+          <div className="tabs" style={{ marginBottom: 20 }}>
+            {FILTER_TABS.map((tab) => {
+              const count = tab.facets.reduce((n, key) => n + (selected[key]?.length ?? 0), 0);
+              return (
+                <button
+                  key={tab.id}
+                  className={`tab ${filterTab === tab.id ? 'on' : ''}`}
+                  onClick={() => setFilterTab(tab.id)}
+                >
+                  {tab.label}
+                  {count > 0 && <span className="badge-count" style={{ marginLeft: 7 }}>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="facet-grid">
+            {(FILTER_TABS.find((t) => t.id === filterTab)?.facets ?? []).map((key) => {
+              const facet = FACETS.find((f) => f.key === key)!;
+              return (
+                <FacetGroup
+                  key={key}
+                  facetKey={key}
+                  label={facet.label}
+                  hint={facet.hint}
+                  values={data?.facets[key] ?? []}
+                  selected={selected[key] ?? []}
+                  resolve={(name) =>
+                    key === 'artist'
+                      ? artistIdByName.get(name) ?? name
+                      : key === 'folder'
+                        ? folderIdByName.get(name) ?? name
+                        : name
+                  }
+                  onToggle={(value) => toggle(key, value)}
+                  resetKey={params.toString()}
+                />
+              );
+            })}
+            {(FILTER_TABS.find((t) => t.id === filterTab)?.facets ?? [])
+              .every((key) => (data?.facets[key] ?? []).length === 0) && (
+              <div className="t-small">Nothing here to filter on for the current results.</div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
     </div>

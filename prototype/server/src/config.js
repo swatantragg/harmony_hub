@@ -13,17 +13,17 @@ export const ORIGIN = process.env.PUBLIC_ORIGIN || `http://localhost:${PORT}`;
 export const APP_ORIGIN = process.env.APP_ORIGIN || ORIGIN;
 
 // Secrets — in production these come from AWS Secrets Manager (§12.1).
-export const JWT_SECRET = process.env.JWT_SECRET || 'maestro-dev-jwt-secret';
-export const SIGNING_KEY = process.env.S3_SIGNING_KEY || 'maestro-dev-s3-signing-key';
+export const JWT_SECRET = process.env.JWT_SECRET || 'gcloud-dev-jwt-secret';
+export const SIGNING_KEY = process.env.S3_SIGNING_KEY || 'gcloud-dev-s3-signing-key';
 
 export const REGION = 'ap-south-1';
 export const ENV = process.env.APP_ENV || 'dev';
 
 export const BUCKETS = {
-  assets: `maestro-assets-${ENV}`,
-  uploads: `maestro-uploads-${ENV}`,
-  backups: `maestro-backups-${ENV}`,
-  logs: `maestro-logs-${ENV}`,
+  assets: `gcloud-assets-${ENV}`,
+  uploads: `gcloud-uploads-${ENV}`,
+  backups: `gcloud-backups-${ENV}`,
+  logs: `gcloud-logs-${ENV}`,
 };
 
 export const PATHS = {

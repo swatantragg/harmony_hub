@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Folder as FolderIcon, FolderPlus, ArrowLeft, UploadCloud, AlertTriangle,
-  Pencil, Trash2, Info, Search, Music2, Film, Image as ImageIcon, FileText,
+  Pencil, Trash2, Info, Search, Music2, Film, Image as ImageIcon, FileText, Share2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
@@ -12,6 +12,7 @@ import {
 import { AssetCard } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { NewFolderDialog } from './FolderPicker';
+import { ShareDialog } from '../shares/ShareDialog';
 import { TagPicker } from '../upload/TagPicker';
 import { bytes, date, pluralise, relative } from '../../lib/format';
 import { useSession } from '../../app/session';
@@ -119,6 +120,7 @@ export function FolderDetail() {
   const [openAsset, setOpenAsset] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
@@ -188,6 +190,11 @@ export function FolderDetail() {
               <Link className="btn btn-spark" to={`/upload?folderId=${data._id}`}>
                 <UploadCloud size={15} /> Add files here
               </Link>
+            )}
+            {can('share:create') && (
+              <button className="btn btn-secondary" onClick={() => setSharing(true)} disabled={data.assetCount === 0}>
+                <Share2 size={14} /> Share folder
+              </button>
             )}
             {can('asset:edit') && (
               <button className="btn btn-secondary" onClick={() => setEditing(true)}>
@@ -262,13 +269,15 @@ export function FolderDetail() {
 
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
       {editing && <EditFolderDialog folder={data} onClose={() => setEditing(false)} />}
+      {sharing && <ShareDialog folder={data} onClose={() => setSharing(false)} />}
       {deleting && (
         <ConfirmDialog
           title="Remove this folder?"
           body={
             <>
               The {pluralise(data.assetCount, 'file')} inside go back to the library — nothing is
-              deleted, and no stored object is touched. Only the grouping disappears.
+              deleted, and no stored object is touched. Only the grouping disappears. Any share link
+              pointing at this folder stops resolving, since the grouping it described is gone.
             </>
           }
           confirmLabel="Remove folder"

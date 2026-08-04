@@ -47,8 +47,8 @@ export const useSession = create<SessionState>((set, get) => ({
 // ── First-run guidance ──────────────────────────────────────────────────────
 // The product tracks what a new user has already been shown so the tour, the tips and
 // the "what is this screen for" banners fade away on their own rather than nagging.
-const TOUR_KEY = 'maestro.tour.done';
-const SEEN_KEY = 'maestro.seen';
+const TOUR_KEY = 'gcloud.tour.done';
+const SEEN_KEY = 'gcloud.seen';
 
 export const tour = {
   done: () => localStorage.getItem(TOUR_KEY) === '1',
