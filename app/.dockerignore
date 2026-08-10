@@ -1,0 +1,25 @@
+# Secrets never enter an image layer. The container gets its environment at run time,
+# through --env-file or the orchestrator, so a leaked image cannot leak credentials.
+.env
+.env.*
+!.env.example
+
+node_modules
+**/node_modules
+client/dist
+**/*.tsbuildinfo
+
+.git
+.gitignore
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+*.log
+npm-debug.log*
+coverage
+.nyc_output
+.vscode
+.idea
+.DS_Store
+README.md

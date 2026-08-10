@@ -1,0 +1,1347 @@
+# Harmony Hub — Architecture & Technical Specification
+
+**Version** 3.0 · **Stack** MERN over Google Drive · **Status** Draft for Review · **Date** July 2026
+
+---
+
+## Document Control
+
+| Field | Value |
+|---|---|
+| Storage platform | Google Drive — exclusive |
+| Delivery method | Browser-direct resumable upload; signed, streamed download |
+| Cost posture | Not a constraint; a personal account's 15 GB or a Workspace Shared Drive pool |
+| Mandatory capabilities | Store · Retrieve · **Rename** · **Verify availability in Drive** |
+
+> **Note on scope.** The application talks to exactly one external API: Google Drive v3. Authentication is either an OAuth 2.0 refresh token for a user account, or a service-account JWT assertion for a Shared Drive. No other Google service is used — no Cloud Storage, no Firebase, no Workspace Admin SDK. Every media operation resolves to a plain Drive API call.
+
+---
+
+## Contents
+
+| | |
+|---|---|
+| 1. Executive Summary | 9. Backend Architecture |
+| 2. Constraints & Governing Principles | 10. Core Workflows *(detailed)* |
+| 3. Technology Stack | 11. API Contract |
+| 4. System Architecture | 12. Security Model |
+| 5. External Service Inventory | 13. Deployment & Operations |
+| 6. Google Drive Storage Design | 14. Development Roadmap |
+| 7. Data Model | 15. Risks & Mitigations |
+| 8. Frontend Architecture | 16. Open Decisions |
+
+---
+
+## 1. Executive Summary
+
+Harmony Hub is an internal web platform for a music company. It centralises every digital asset produced for a release — master audio, demos, cover art, music videos, social reels, banners, lyrics, and behind-the-scenes footage — into one searchable system with rich metadata, manual tagging, role-based access, version tracking, and controlled sharing.
+
+**Storage is Google Drive, exclusively.** The application is a management and search layer over the Drive: it decides what goes where, what it is called, who may see it, and how it is found. Drive holds the bytes. MongoDB holds every searchable attribute plus the Drive file id that links a metadata record to its file. The Express API brokers access; uploads go from the browser straight into Google Drive through a resumable session, and downloads are streamed against a short-lived signed ticket.
+
+A property that shapes the whole design: **the storage tier is a place people can open.** Anyone with access can sign into drive.google.com and rename, move, or bin a file without the application hearing about it. That is not a fault to be prevented — it is a legitimate way to work — so the platform is built to notice, explain, and reconcile it (§10.11).
+
+### 1.1 The Four Mandatory Capabilities
+
+| # | Capability | How it is delivered | Section |
+|---|---|---|---|
+| 1 | **Store** | Browser-direct upload to a Drive resumable session URI | §10.1 |
+| 2 | **Retrieve** | Signed ticket redeemed at `/api/files/:token`, streamed with Range forwarded | §10.2, §10.3 |
+| 3 | **Rename** | One `files.update` — the catalogue and the Drive file together, no bytes moved | §10.4 |
+| 4 | **Verify availability** | `files.get` live probe + nightly recursive walk + drift report | §10.5, §10.11 |
+
+Capability 4 drives the most consequential design work in this document, because Drive gives no native "does the database still match the storage" guarantee, and because the drift it produces is usually somebody rearranging files by hand rather than anything being broken. Both the detection and the remediation vocabulary are specified in full.
+
+---
+
+## 2. Constraints & Governing Principles
+
+### 2.1 Hard Constraints
+
+1. All object storage is Google Drive. No other object store, no external CDN.
+2. No third-party SaaS in the data path beyond Google Drive itself.
+3. Cost is not a design constraint. Correctness, control, and clarity take precedence.
+4. Every file must be renameable through the platform.
+5. The platform must be able to answer, authoritatively, "is this file actually present in Drive right now?"
+
+### 2.2 Governing Principles
+
+**P1 — Drive is the source of truth for bytes; MongoDB is the source of truth for meaning.**
+A file exists if Drive says it exists. A file is *findable* because MongoDB describes it. When the two disagree, Drive wins and the drift is reported (§10.11).
+
+**P2 — Upload bytes never pass through the application server.**
+Not because of cost, but because it is architecturally wrong: a 5 GB upload through Express consumes server memory, holds a connection for minutes, and fails atomically on a dropped packet. Browser↔Drive direct transfer is resumable and keeps the API tier small and stateless.
+
+Downloads are the documented exception, and the reason is stated plainly in §12.3: Drive offers no self-authorising expiring link for a file held under a server credential, so retrieval is streamed through the API. Nothing is buffered and Range is forwarded, but the byte path for reads does traverse the application tier.
+
+**P3 — A Drive file id is immutable; its name is not.**
+The id is generated by Google at upload and never changes for the life of the file. Names, parents, and metadata are all mutable, which is what makes rename and move O(1) operations rather than data migrations (§6.2, §10.4).
+
+**P4 — Every storage mutation is recorded.**
+Upload, rename, move, replace, delete, restore, and share are written to `activityLog` with actor, timestamp, IP, and before/after state. The audit trail is the platform's, not Google's.
+
+**P5 — No file is ever made publicly shared in Drive.**
+Access is granted exclusively through short-lived, HMAC-signed tickets the platform issues and can invalidate. A file's Drive sharing settings are never modified, which is precisely why revoking a Harmony Hub link actually revokes access.
+
+---
+
+## 3. Technology Stack
+
+### 3.1 Frontend
+
+| Concern | Choice | Why |
+|---|---|---|
+| Framework | **React 18** | Component model suits a media-card grid |
+| Language | **TypeScript** | Asset type catalogue is a 21-value union — the compiler enforces it end to end |
+| Build tool | **Vite** | Fast dev server, small production bundle, first-class TS |
+| Styling | **CSS custom properties + design tokens** | One token set drives light and dark without a second stylesheet |
+| Routing | **React Router** | Nested routes map cleanly to Artist → Song → Asset |
+| Server state | **TanStack Query** | Caching, background refetch, and optimistic updates — critical for rename and availability polling |
+| UI state | **Zustand** | Small, unopinionated; holds upload queue, filters, selection |
+| Forms | **React Hook Form + Zod** | One Zod schema validates on the client and again on the server |
+| Uploads | **Custom hook over `XMLHttpRequest` + Drive resumable protocol** | Per-chunk progress, retry, pause/resume, authoritative resume |
+| Audio | **WaveSurfer.js** | Waveform scrubbing for master audio and snippets |
+| Video | **Native `<video>` + HTTP Range** | The file route honours Range, so seeking works without a streaming service |
+| Tables/virtualisation | **TanStack Virtual** | 10,000-asset lists render without jank |
+| Icons | **Lucide React** | Consistent iconography per asset family |
+
+### 3.2 Backend
+
+| Concern | Choice | Why |
+|---|---|---|
+| Runtime | **Node.js 22 LTS** | Native `fetch`, web streams, and `Readable.fromWeb` — the download path needs all three |
+| Framework | **Express.js** | Minimal, well-understood middleware model |
+| Drive access | **Hand-rolled REST client over `fetch`** | The surface needed is eleven endpoints; see §9.2 for why no SDK |
+| Token minting | **`jsonwebtoken`** (RS256 assertions) | Already present for app sessions; signs the service-account JWT too |
+| ODM | **Mongoose** | Schema validation, index definitions, connection management |
+| Database | **MongoDB 7** (replica set or Atlas) | Preserves the document model *and* `$text` indexes; see §3.3 |
+| Auth | **JWT** (`jsonwebtoken` + `bcrypt`) | Stateless, no external identity provider |
+| Validation | **Zod** | Single schema source shared with the frontend; validates the environment at boot |
+| Scheduling | **`node-cron`** | Nightly reconciliation, share expiry sweep |
+| Media analysis *(optional)* | **ffmpeg** | Perceptual de-duplication only (§10.12); every other tier works without it |
+| Testing | **Vitest + Supertest** | Drive calls stubbed in unit tests, a real Drive in integration tests |
+
+### 3.3 Database Decision
+
+MongoDB is retained for three reasons that outweigh the operational burden of running it: the embedded `assets[]` array models a song-with-its-files in a single read, `$text` indexes give relevance ranking without a second search service, and the schema is genuinely irregular across asset families.
+
+| Option | `$text` search | Mongoose | Ops burden | Verdict |
+|---|---|---|---|---|
+| **MongoDB 7 replica set** (self-hosted or Atlas) | ✅ Native | ✅ Full | Medium | **Recommended** |
+| A relational store | ⚠️ Requires a rework of the document model | ❌ | Medium | Rejected — no gain |
+| MongoDB + a dedicated search service | ✅ Better relevance | ✅ | High — dual-write, index sync | Fallback at scale only |
+
+The working set is additionally held in memory and written through to MongoDB (§9.1), because every read path in the product — search facets, the storage health roll-up, the folder manifest, the duplicate scan — is an aggregation over *all* assets at once. That trade is stated explicitly: the catalogue must fit in the task's memory, and a multi-task deployment needs a change notification between tasks.
+
+---
+
+## 4. System Architecture
+
+Three tiers. Upload bytes bypass the application entirely; download bytes stream through it.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  USERS                                                                 │
+│  Admin  ·  Editor  ·  Viewer  ·  Marketing  ·  External Partner        │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │ HTTPS (TLS 1.2+)
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  DNS  →  Load balancer / TLS termination                               │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  PRESENTATION TIER — React 18 + TypeScript (Vite build)                │
+│  Static bundle served by Express `static` from the same container.     │
+│  Search-first dashboard · media-card grid · upload manager             │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │  JSON on /api — never upload bytes
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  APPLICATION TIER — Node.js 22 · Express · stateless containers        │
+│                                                                        │
+│   routes/ ─► services/ ─► repositories/ ─► storage/drive.js           │
+│                    │                              │                    │
+│      ┌─────────────┴───────────────────┐          │                    │
+│      │ AuthService     · JWT + bcrypt  │          │                    │
+│      │ AssetService    · CRUD, rename  │          │                    │
+│      │ StorageService  · the only      │──────────┤                    │
+│      │                   Drive caller  │          │                    │
+│      │ SigningService  · file tickets  │          │                    │
+│      │ SearchService   · text + facets │          │                    │
+│      │ ShareService    · tokens        │          │                    │
+│      │ DedupeService   · four tiers    │          │                    │
+│      │ AuditService    · activityLog   │          │                    │
+│      │ ReconcileSvc    · Drive ↔ DB    │          │                    │
+│      └─────────────────────────────────┘          │                    │
+│                                                    │                   │
+│   /api/files/:token  ── streams ───────────────────┤                   │
+│      no session · ticket is the authorisation      │                   │
+│      Range forwarded · nothing buffered            │                   │
+└──────────────────┬─────────────────────────────────┼───────────────────┘
+                   │                                 │
+                   ▼                                 │
+┌──────────────────────────────┐                     │
+│  DATA TIER                   │                     │
+│  MongoDB 7 replica set       │                     │
+│                              │                     │
+│  users · artists · songs     │                     │
+│  folders · tags · shares     │                     │
+│  activityLog · dedupeIgnores │                     │
+│  reconciliationRuns          │                     │
+└──────────────────────────────┘                     │
+                                                     ▼
+        ┌───────────────────────────────────────────────────────────────┐
+        │  STORAGE TIER — Google Drive v3                               │
+        │                                                               │
+        │   Harmony Hub/                    root folder                 │
+        │     ├── Assets/                   the library, nested folders │
+        │     ├── Quarantine/               set-aside, pending decision │
+        │     ├── Backups/                  mongodump archives          │
+        │     └── Logs/                     exported application logs   │
+        │                                                               │
+        │   Sharing: never modified. Access is by server credential      │
+        │   only, and by platform-issued signed tickets.                 │
+        └───────────────────────────────────────────────────────────────┘
+                          ▲
+                          │  resumable session PUT
+                          │  (browser → Google, bytes bypass the API)
+                          └────────── BROWSER
+```
+
+### 4.1 Responsibility Split
+
+| Google Drive (bytes) | Harmony Hub (meaning) |
+|---|---|
+| Durable storage and replication | Metadata, tags, and the searchable index |
+| Revision history per file | Semantic version lineage (V1 / V2 / Final) |
+| Range-request streaming | Preview and playback orchestration |
+| Encryption at rest | Role-based authorisation |
+| Checksums computed on arrival | **Duplicate detection and resolution** |
+| File existence and integrity | **Availability verification and drift reporting** |
+| Immutable file ids | **Human-facing names and rename operations** |
+| Quota accounting | Artist / song / release management, analytics |
+
+---
+
+## 5. External Service Inventory
+
+The complete list. Nothing outside it is used.
+
+| Service | Role in Harmony Hub |
+|---|---|
+| **Google Drive API v3** | All file storage: assets, folder tree, quarantine, backups, logs |
+| **Google OAuth 2.0 / STS** (`oauth2.googleapis.com`) | Exchanging a refresh token or a signed JWT assertion for an access token |
+| **MongoDB 7** | The catalogue: every searchable attribute, and the file id that links a record to its file |
+| **A container runtime** | Runs the Express API; any host that can run a Node 22 container |
+| **A load balancer + TLS certificate** | Public entry point |
+| **A secrets store** | JWT signing secret, file-ticket secret, Google credentials, MongoDB URI |
+
+Only two hostnames are contacted at runtime: `www.googleapis.com` and `oauth2.googleapis.com`.
+
+---
+
+## 6. Google Drive Storage Design
+
+### 6.1 Folder Layout
+
+Drive has real folders, so the storage layout is a real tree — and deliberately a legible one. Anyone who opens drive.google.com sees the library arranged exactly as the application presents it.
+
+| Folder | Contents | Notes |
+|---|---|---|
+| `Harmony Hub/` | Root. Id pinned in `DRIVE_ROOT_FOLDER_ID` after first bootstrap | Created if absent |
+| `Harmony Hub/Assets/` | The library. Sub-folders mirror Harmony Hub folders, and they nest | Every catalogued file lives under here |
+| `Harmony Hub/Quarantine/` | Files set aside during reconciliation, pending a decision | Nothing is deleted to reach this state |
+| `Harmony Hub/Backups/` | `mongodump` archives | |
+| `Harmony Hub/Logs/` | Exported application logs | |
+
+The tree may live in **My Drive** (quota belongs to one user, 15 GB on a free account) or in a **Shared Drive** (quota belongs to a Google Workspace pool, and every team member sees the same tree). The second is required when authenticating as a service account, which has no storage allowance of its own.
+
+### 6.2 Addressing — Immutable Ids, Mutable Names
+
+This is the most consequential property in the document, because it is what makes rename and move safe.
+
+```
+file id   1BxQ7kZp9mNvR2wE5tYuI8oPaS3dFgHjK      ← immutable, assigned by Google
+name      dilse_bts_reel_v2.mp4                   ← ordinary mutable metadata
+parents   [ 1cF7vVsLstxErA5wH4365_VZWo1Lv-Gar ]   ← ordinary mutable metadata
+```
+
+A Drive file is addressed by its id for the whole of its life. The name and the parent folder are metadata like any other, changed with a single `files.update`. Three consequences follow directly, and the product is built on all three:
+
+| Operation | Cost | Why |
+|---|---|---|
+| Rename a file | One PATCH, no bytes read | The id does not change, so nothing that references it breaks |
+| Move between folders | One PATCH (`addParents`/`removeParents`) | Drive updates an index entry; a 40 GB master moves as fast as a text file |
+| Rename a folder | One PATCH | Every file inside keeps its id and every share link keeps resolving |
+
+Organisation, hierarchy, and human names are therefore shared between Drive and MongoDB rather than owned by one of them: the tree and the names are real in Drive, and everything Drive has nowhere to put — description, tags, asset type, song and artist association, version lineage — lives in the catalogue.
+
+### 6.3 File Metadata (`appProperties`)
+
+Every file carries application metadata so the folder stays self-describing to anyone who opens it in a browser and has never heard of Harmony Hub:
+
+```
+appProperties:
+  app           harmonyhub
+  assetId       1c9de4a7-8b02-4f31-9a55-2d7e6f0b1c33
+  assetType     Reel - BTS/MV
+  family        Video
+  version       V2
+  songId        song_1042
+  song          Dil Se
+  artist        Raju Singh
+  folder        Dil Se — launch kit
+  tags          Reel, BTS, Viral
+  sha256        30b328bb88bd3b11…
+  uploadedBy    user_12
+```
+
+Values may be full UTF-8, so a Hindi or Punjabi song title survives intact. Two limits are enforced by the client: key and value together may not exceed **124 bytes**, and a file may carry at most **100 properties**. Values are therefore truncated by *byte* length rather than character length — cutting a multi-byte character in half is what makes Drive reject the write.
+
+`appProperties` are also queryable, which is what allows a Drive-side search (§10.6) to find a file by tag or artist without the catalogue.
+
+### 6.4 Storage Tiers and the Trash
+
+Drive has **no storage classes**. There is no archival tier, no retrieval latency to manage, and no lifecycle transition to configure. Every file is immediately readable.
+
+What Drive has instead is a **trash**, and it matters more than a cold tier ever did:
+
+| State | Meaning | Recovery |
+|---|---|---|
+| Live | Normal | — |
+| Trashed | Somebody binned it, here or in Drive | One `files.update`, instant and free |
+| Deleted | `files.delete`, skipping the trash | **None.** Every revision goes with it |
+
+A trashed file **still consumes quota** until Google clears it, which happens 30 days after it was binned. Both facts are surfaced in the UI (§8.4), because "deleted but still counting against your space" and "recoverable, but only until a date" are exactly the things users get wrong.
+
+### 6.5 Versioning — Drive Revisions
+
+Drive keeps a revision history per file id. Replacing a file's contents (§10.4.3) writes a new revision rather than creating a new file, so the id, the folder placement, and every share link survive the replacement.
+
+Two limits are worth knowing, because the defaults quietly discard history: Drive keeps **100 revisions or 30 days of them, whichever runs out first**. A master that is replaced twice a week loses its earliest revisions silently. The platform therefore pins the superseded revision with `keepForever` whenever it replaces a file, so the bytes that were just overwritten cannot be swept.
+
+Semantic versions that users see (`V1`, `V2`, `Final`, `Final Master`) are **separate files with separate `assetId` values**, linked by a shared `versionGroupId`. This keeps lineage explicit and every version independently addressable. Drive revisions and semantic versions are different mechanisms answering different questions: revisions answer "what did this file used to contain", the version group answers "which takes of this thing exist".
+
+---
+## 7. Data Model
+
+MongoDB, document-oriented. A song embeds its metadata and an array of asset sub-documents, so loading a song with all its assets is a single read.
+
+### 7.1 Collections
+
+| Collection | Key fields | Purpose |
+|---|---|---|
+| `users` | `_id, name, email, passwordHash, role, status, lastLoginAt` | Accounts and roles |
+| `artists` | `_id, name, slug, label, genre, contact, imageAssetId, socials[], deletedAt` | Artist profiles |
+| `songs` | `_id, title, artistId, featuring[], language, mood, isrc, releaseDate, tags[], assets[], deletedAt` | Songs with embedded assets |
+| `unfiled` | asset sub-documents | Files that belong to the library but to no song |
+| `folders` | `_id, name, description, tags[], parentId, driveFolderId, songId, artistId, deletedAt` | A Harmony Hub folder and the Drive folder behind it |
+| `tags` | `_id, name, type ("controlled"\|"custom"), usageCount` | Manual tagging vocabulary |
+| `shares` | `_id, target, targetId, token, audience, allowedEmails[], createdBy, expiresAt, canDownload, maxDownloads, downloadCount, revokedAt` | External share links |
+| `restoreRequests` | `_id, assetId, requestedBy, status, requestedAt, source` | Restore-from-trash tracking |
+| `reconciliationRuns` | `_id, startedAt, finishedAt, objectsScanned, foldersScanned, counts{}, findings[], quota` | Drive ↔ DB drift reports |
+| `dedupeIgnores` | `_id, kind, names[], ignoredBy, ignoredAt, note` | Duplicate groups an admin has judged and dismissed |
+| `activityLog` | `_id, userId, action, entity, entityId, before, after, ip, userAgent, timestamp` | Full audit trail |
+
+### 7.2 Asset Sub-Document
+
+```jsonc
+{
+  "assetId": "1c9de4a7-8b02-4f31-9a55-2d7e6f0b1c33",
+
+  // ── Human-facing identity — freely renameable ──────────────
+  "displayName": "dilse_bts_reel_v2.mp4",
+  "originalName": "BTS REEL FINAL edit 3 (1).mp4",   // as uploaded, never changed
+  "description": "BTS reel cut for Instagram launch",
+
+  // ── Catalogue classification ──────────────────────────────
+  "type": "Reel - BTS/MV",
+  "family": "Video",
+  "format": "9:16",
+  "folderId": "folder_8fa21c04",
+
+  // ── Google Drive binding ──────────────────────────────────
+  "drive": {
+    "fileId": "1BxQ7kZp9mNvR2wE5tYuI8oPaS3dFgHjK",   // immutable
+    "name": "dilse_bts_reel_v2.mp4",                  // mutable — kept in step
+    "parentId": "1cF7vVsLstxErA5wH4365_VZWo1Lv-Gar",  // mutable — the Drive folder
+    "driveId": null,                                   // set for a Shared Drive
+    "path": "Dil Se — launch kit/dilse_bts_reel_v2.mp4",  // display only
+    "revisionId": "0B5xTqZ1kLmN",
+    "sizeBytes": 48210432,
+    "md5": "9f8e7d6c5b4a3210fedcba9876543210",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb924...",  // computed by Google on arrival
+    "mimeType": "video/mp4",
+    "webViewLink": "https://drive.google.com/file/d/1BxQ.../view",
+    "trashed": false,
+    "googleNative": false,                             // true for Docs/Sheets/Slides
+    "durationSec": 28,
+    "dimensions": "1080×1920",
+    "uploadedAt": "2026-02-10T11:38:02Z",
+    "modifiedAt": "2026-06-04T09:12:44Z"
+  },
+
+  // ── Availability verification (§10.5) ─────────────────────
+  "availability": {
+    "status": "AVAILABLE",           // AVAILABLE | MISSING | TRASHED | RESTORING | MISMATCH | UNVERIFIED
+    "lastCheckedAt": "2026-07-21T02:00:14Z",
+    "lastVerifiedAt": "2026-07-21T02:00:14Z",
+    "checkMethod": "FILES_GET",      // FILES_GET | LIST_RECONCILE
+    "detail": null
+  },
+
+  // ── Version lineage ───────────────────────────────────────
+  "versionGroupId": "vg_88fa21c0",
+  "version": "V2",
+  "isCurrent": true,
+  "supersedes": "0a4b12de-...",
+
+  // ── De-duplication (§10.12) ───────────────────────────────
+  "linkedTo": null,                  // set when this entry shares a Drive file with another
+  "perceptual": null,                // { frames[], sampledFrames, revisionId, computedAt }
+
+  // ── Descriptive metadata ──────────────────────────────────
+  "mimeType": "video/mp4",
+  "durationSec": 28,
+  "dimensions": "1080×1920",
+  "tags": ["Reel", "BTS", "Viral"],
+
+  // ── Provenance ────────────────────────────────────────────
+  "uploadedBy": "user_12",
+  "createdAt": "2026-02-10T11:38:02Z",
+  "updatedAt": "2026-06-04T09:12:44Z",
+  "renamedAt": "2026-06-04T09:12:44Z",
+  "deletedAt": null
+}
+```
+
+**The three-name model** is deliberate and central to §10.4:
+
+| Field | Mutable | Meaning |
+|---|---|---|
+| `drive.fileId` | Never | Which file this is, for the whole of its life |
+| `displayName` | Freely | What every user sees and downloads as; `drive.name` is kept in step with it |
+| `originalName` | Never | What the file was called when first uploaded — forensic record |
+
+**A note on `linkedTo`.** Two catalogue entries may deliberately name the same `drive.fileId` after a de-duplication link (§10.12). This is a supported state, not a corruption: the file legitimately belongs in two folders, and storing it twice would be the error. It is why `drive.fileId` carries no unique index.
+
+### 7.3 Indexes
+
+```js
+songs.createIndex({ title: "text", tags: "text", "assets.displayName": "text" })
+songs.createIndex({ artistId: 1, releaseDate: -1 })
+songs.createIndex({ language: 1 })
+songs.createIndex({ mood: 1 })
+songs.createIndex({ "assets.type": 1 })
+songs.createIndex({ "assets.assetId": 1 })
+songs.createIndex({ "assets.drive.fileId": 1 })       // drift detection
+songs.createIndex({ "assets.drive.parentId": 1 })     // folder membership drift
+songs.createIndex({ "assets.drive.sha256": 1 })       // exact de-duplication
+songs.createIndex({ "assets.drive.md5": 1 })          // ditto, older files
+songs.createIndex({ "assets.availability.status": 1 })       // health dashboard
+songs.createIndex({ "assets.availability.lastCheckedAt": 1 })// stale-check sweep
+songs.createIndex({ "assets.versionGroupId": 1, "assets.isCurrent": 1 })
+folders.createIndex({ driveFolderId: 1 })
+folders.createIndex({ parentId: 1 })
+shares.createIndex({ token: 1 }, { unique: true })
+shares.createIndex({ expiresAt: 1 })
+activityLog.createIndex({ timestamp: -1 })
+activityLog.createIndex({ entityId: 1, timestamp: -1 })
+```
+
+Uniqueness on `assets.assetId` and `assets.drive.fileId` is enforced in the application layer rather than by the index. Both are multikey paths inside an embedded array, and a unique index there would reject two legal states: the moment a file is being moved between songs, and the deliberate shared-file state described above.
+
+---
+
+## 8. Frontend Architecture
+
+### 8.1 Application Structure
+
+```
+src/
+├── app/
+│   ├── session.ts              auth store, permissions, bootstrap
+│   └── theme.ts                light/dark tokens, early paint
+├── features/
+│   ├── auth/                   login, token refresh, session store
+│   ├── artists/                list, detail, form, gallery
+│   ├── songs/                  list, detail, form, asset tray
+│   ├── folders/
+│   │   ├── Folders.tsx             tree, detail, subfolders, Drive link
+│   │   └── FolderPicker.tsx        choose or create, nested indent
+│   ├── assets/
+│   │   ├── AssetCard.tsx           grid card, availability badge
+│   │   ├── AssetDrawer.tsx         metadata, Drive binding, versions, actions
+│   │   ├── RenameDialog.tsx        §10.4 UI
+│   │   ├── AssetPreview.tsx        §10.3 inline media
+│   │   └── EditMetadataDialog.tsx  type, tags, folder
+│   ├── upload/
+│   │   ├── UploadCenter.tsx        dropzone, queue, per-file metadata
+│   │   └── useUploadQueue.ts       core resumable-upload engine
+│   ├── dedupe/
+│   │   └── Dedupe.tsx              §10.12 — four tiers, three resolutions
+│   ├── search/
+│   │   └── SearchPage.tsx          query, facets, virtualised grid
+│   ├── shares/                 create, list, revoke share links
+│   └── admin/
+│       ├── StorageHealth.tsx       quota + drift dashboard (§10.11)
+│       ├── ActivityLog.tsx         audit viewer
+│       └── Users.tsx
+├── components/                 Button, Modal, Table, Toast, EmptyState…
+├── lib/
+│   ├── api.ts                  typed fetch client, auth header, RFC 7807 unwrap
+│   ├── types.ts                shared shapes incl. DriveBinding, DuplicateGroup
+│   └── assetTypes.ts           the 21-type catalogue + plain-language status copy
+└── styles/                     tokens.css, base.css, components.css
+```
+
+### 8.2 Key Screens
+
+| Screen | Purpose |
+|---|---|
+| **Search-first home** | Universal search bar, quick filter chips, recent uploads, **Drive space remaining**, duplicate-storage tile, storage health summary |
+| **Search results** | Virtualised media-card grid; each card shows thumbnail, type badge, version chip, availability badge |
+| **Artist detail** | Profile, image gallery, discography, aggregate asset counts by family |
+| **Song detail** | Metadata panel + asset tray grouped by family; per-asset actions (preview, rename, download, version, share, verify) |
+| **Folder detail** | Breadcrumb, subfolders, files, **Open in Drive**, share-whole-folder |
+| **Asset drawer** | Full metadata, Drive binding (file id, path, revision, checksums), version timeline, availability history, audit entries |
+| **Upload manager** | Dropzone, per-file metadata form with required tag step, live progress, pause/resume with authoritative byte count |
+| **Rename dialog** | Live validation, extension guard, before/after download name, and the Drive name it will be kept in step with |
+| **Duplicates** | Four tiers separated by certainty; link / version / trash / ignore; empty-the-bin action |
+| **Admin — storage health** | Quota panel segmented by consumer, then drift: missing, trashed, untracked, mismatched, moved, renamed |
+| **Share manager** | Active links, expiry countdown, download counts, one-click revoke |
+
+### 8.3 The Resumable Upload Engine
+
+`useUploadQueue` is the most complex piece of frontend logic. Behaviour:
+
+1. Accepts a `File` and computes SHA-256 — `crypto.subtle` for files under 64 MB, an incremental implementation over a stream above that, since `subtle.digest` is all-or-nothing and a 4 GB `ArrayBuffer` is not survivable in a tab.
+2. Calls `POST /api/uploads/initiate` with filename, size, MIME type, checksum, asset type. The response carries a **Drive resumable session URI**, a chunk size, and a duplicate warning if that checksum is already in the library.
+3. PUTs chunks **in order** to the session URI with a `Content-Range` header. The session URI is itself the credential; no access token is exposed to the browser.
+4. Reads each `308 Resume Incomplete` response's `Range` header to learn how many bytes Google now holds, and continues from exactly there. Google's count is authoritative; the client never assumes its own.
+5. On failure, re-queries the session (`Content-Range: bytes */total`) before retrying, so a chunk that was received but whose response was lost is not resent.
+6. Supports pause and resume across page lifetime — the session URI is valid for about a week.
+7. On the final chunk Google returns `200` with the file metadata; the client posts the `fileId` to `POST /api/uploads/complete`.
+8. Surfaces per-file state: `HASHING → READY → UPLOADING → FINALISING → DONE | FAILED | PAUSED`.
+
+Chunks must be a multiple of 256 KiB except the last. The server sends the size rather than trusting the client to know the rule.
+
+### 8.4 Availability in the UI
+
+Every asset card and drawer renders an `<AvailabilityBadge>` driven by `asset.availability.status`:
+
+| Status | Badge | Behaviour |
+|---|---|---|
+| `AVAILABLE` | 🟢 Available | Download and preview enabled |
+| `UNVERIFIED` | ⚪ Not checked | Shown when `lastCheckedAt` is older than 24 h; "Verify now" button |
+| `TRASHED` | 🔵 In the bin | Download replaced by "Restore from the Drive bin", with the 30-day deadline stated |
+| `RESTORING` | 🟡 Restoring | Brief — an untrash is roughly a second |
+| `MISSING` | 🔴 Missing in Drive | Download disabled, banner shown, Admin alerted |
+| `MISMATCH` | 🟠 Changed outside Harmony Hub | Download allowed with warning; flagged for Admin review |
+
+A "Verify now" action calls `POST /api/assets/{id}/verify`, which performs a live `files.get` and returns the fresh status — a definitive answer in under a second.
+
+Quota is surfaced alongside: the home screen shows space remaining, and the storage health page breaks it down by what is consuming it — this library, other files in the Drive, **the bin**, and Gmail/Photos on a consumer account. Trashed files counting against quota is the single most surprising fact about Drive storage, so it is stated rather than left to be discovered.
+
+---
+
+## 9. Backend Architecture
+
+### 9.1 Layered Structure
+
+```
+src/
+├── index.js                    Express bootstrap, middleware chain, boot checks
+├── config.js                   env schema (Zod), credential resolution, folder ids
+├── routes/                     path → handler; validation and status codes
+│   ├── auth.js       ├── songs.js      ├── shares.js     ├── folders.js
+│   ├── artists.js    ├── assets.js     ├── search.js     ├── dedupe.js
+│   ├── uploads.js    ├── admin.js      ├── dashboard.js  └── files.js  ◄── byte path
+├── services/                   ALL business logic
+│   ├── storage.js                  ◄── the only module that talks to Drive
+│   ├── signing.js                  short-lived file tickets (§12.3)
+│   ├── assets.js                   shaping, rename validation
+│   ├── dedupe.js                   four-tier duplicate detection (§10.12)
+│   ├── perceptual.js               optional DCT frame hashing
+│   ├── reconcile.js                Drive ↔ DB drift detection
+│   ├── vocabulary.js               asset types, tag suggestions
+│   └── audit.js                    activityLog writer
+├── storage/
+│   └── drive.js                Google Drive REST client — the only HTTP caller
+├── db/
+│   ├── models.js               Mongoose collections and index definitions
+│   └── store.js                in-memory working set, write-through to MongoDB
+├── middleware/
+│   ├── auth.js                 authenticate, requires(permission), RFC 7807 problem()
+│   └── …
+├── cli/
+│   ├── seed.js                 fill or re-seed the library
+│   ├── reconcile.js            one drift pass
+│   └── dedupe.js               duplicate report to the terminal
+└── util/                       crypto, media generation
+```
+
+### 9.2 `StorageService` — the Google Drive Surface
+
+Every Drive interaction in the entire platform passes through this one module, and only `storage/drive.js` beneath it issues an HTTP request. There is deliberately **no Google SDK**: the surface needed is eleven endpoints, and hand-rolling keeps three things visible that a wrapper hides — which fields are actually requested (Drive returns only what a field mask asks for, and asking for `*` on a 5,000-file listing is the difference between a fast reconciliation and a slow one), where `supportsAllDrives` has to appear, and the exact shape of a resumable session, which is the one piece the browser talks to directly.
+
+| Method | Drive API | Used by |
+|---|---|---|
+| `beginUpload(meta)` | `POST /upload/drive/v3/files?uploadType=resumable` → session URI | §10.1 |
+| `probeUploadSession(uri, total)` | `PUT` with `Content-Range: bytes */total` | §10.1 |
+| `finishUpload(fileId)` | `files.get` | §10.1 |
+| `abortUpload(uri)` | `DELETE` session URI | §10.1 |
+| `signedUrl({fileId, …})` | *(no Drive call)* mints an HMAC ticket | §10.2, §10.3 |
+| `stat(fileId)` | `files.get` with the standard field mask | §10.5 |
+| `rename(fileId, name)` | `files.update` | §10.4.1 |
+| `move(fileId, {to, from})` | `files.update` with `addParents`/`removeParents` | §10.4.2 |
+| `syncMetadata(asset, ctx)` | `files.update` with `appProperties` | §10.4, §10.7 |
+| `trash(fileId)` / `untrash(fileId)` | `files.update` `{trashed}` | §10.8, §10.9 |
+| `destroy(fileId)` | `files.delete` — permanent, all revisions | §10.8 |
+| `copy(fileId, …)` | `files.copy` | §10.11 |
+| `makeFolder` / `renameFolder` / `trashFolder` | `files.*` on a folder mimeType | §10.4.2 |
+| `inventory()` | `files.list`, level-by-level, fully paginated | §10.11 |
+| `revisions(fileId)` / `pinRevision` | `revisions.list` / `revisions.update` | §6.5, §10.4.3 |
+| `quota()` | `about.get` | §8.4, §10.11 |
+| `emptyDriveTrash()` | `files.trash` DELETE | §10.12 |
+
+Access tokens are minted once and cached until a minute before expiry, with a single in-flight refresh however many callers arrive at once. Every request retries on `401` (once, with a forced token refresh) and on the rate limits Google actually applies — 1,000 requests per 100 seconds per user is easy to reach during reconciliation.
+
+### 9.3 Middleware Chain
+
+```
+helmet → cors → requestId → pinoHttp → express.json({ limit: '1mb' })
+      → rateLimit → authenticate → authorize → validate(zodSchema)
+      → controller → errorHandler
+```
+
+The 1 MB JSON body limit is deliberate: the `/api` control plane is structurally incapable of accepting a file upload, which enforces principle **P2** at the framework level.
+
+`/api/files/:token` is mounted **before** this chain. It carries no session — the ticket is the authorisation — and it is exempt from the JSON rate limiter, because a `<video>` element issues one request per seek and counting those against the same budget as a search would throttle scrubbing within seconds.
+
+---
+## 10. Core Workflows
+
+### 10.1 Upload — Storing Data in Google Drive
+
+```
+BROWSER                      EXPRESS API                   GOOGLE DRIVE
+   │                              │                              │
+   │ 1. select file + metadata    │                              │
+   │    + required tag step       │                              │
+   │                              │                              │
+   │ 2. SHA-256 (streamed for     │                              │
+   │    large files)              │                              │
+   │                              │                              │
+   │ 3. POST /uploads/initiate ──►│                              │
+   │    {name,size,mime,sha256,   │ 4. verify JWT + role         │
+   │     type,songId,folderId}    │ 5. validate against          │
+   │                              │    asset-type catalogue      │
+   │                              │ 6. dedup: sha256 already     │
+   │                              │    in DB? → warn, not block  │
+   │                              │ 7. assetId = uuidv4()        │
+   │                              │    parent = folder's Drive id│
+   │                              │ 8. create resumable session ►│
+   │                              │    name, parents,            │
+   │                              │    appProperties, Origin     │
+   │                              │◄─ Location: session URI ─────│
+   │◄── {assetId, uploadUrl,      │                              │
+   │     chunkSize, duplicate}    │                              │
+   │                              │                              │
+   │ 9. PUT chunk ══════════════════ in order, direct ══════════►│
+   │    Content-Range: bytes a-b/N                               │
+   │◄════ 308 + Range: bytes=0-M ════════════════════════════════│
+   │    (bytes bypass the API entirely)                          │
+   │    on failure: re-query the session, resume from M          │
+   │◄════ 200 + file metadata (final chunk) ═════════════════════│
+   │                              │                              │
+   │ 10. POST /uploads/complete ─►│                              │
+   │     {assetId, fileId}        │ 11. files.get (verify) ─────►│
+   │                              │◄── size, checksums, parents ─│
+   │                              │ 12. appProperties.assetId    │
+   │                              │     matches? no → 422        │
+   │                              │ 13. write asset sub-document │
+   │                              │     availability = AVAILABLE │
+   │                              │ 14. syncMetadata: song,      │
+   │                              │     artist, folder, tags ───►│
+   │                              │ 15. activityLog: ASSET_UPLOAD│
+   │◄── 201 { asset } ────────────│                              │
+   │                              │                              │
+   │ 16. card appears in grid     │                              │
+```
+
+**Notes.** Chunks are 8 MB by default and must be a multiple of 256 KiB except the last; the server computes and sends the size. A session URI is valid for about a week, so pause and resume survive a page reload. Step 11 is what stops the catalogue ever gaining a record with no file behind it: the size and checksums are read back from Drive rather than trusted from the browser. Step 12 is the equivalent of a key-prefix check — a `complete` call naming a file this upload did not create is refused. An abandoned session is discarded by the explicit `abort` call; unlike a staged multipart upload it consumes no quota while it waits.
+
+Drive's ceiling for a single file is 5 TB, which the API states rather than leaving to be discovered.
+
+### 10.2 Download — Retrieving Data from Google Drive
+
+```
+BROWSER                      EXPRESS API                   GOOGLE DRIVE
+   │                              │                              │
+   │ 1. click "Download" ────────►│                              │
+   │    POST /assets/{id}/download│ 2. verify JWT                │
+   │                              │ 3. authorize role for this   │
+   │                              │    asset type                │
+   │                              │ 4. load asset from MongoDB   │
+   │                              │ 5. files.get (live check) ──►│
+   │                              │◄── 200 | 404 | trashed ──────│
+   │                              │                              │
+   │                              │  404      → 410 Gone,        │
+   │                              │             mark MISSING     │
+   │                              │  trashed  → 409, offer       │
+   │                              │             restore (§10.9)  │
+   │                              │  200      → continue         │
+   │                              │                              │
+   │                              │ 6. mint a signed ticket      │
+   │                              │    TTL 300 s, purpose=download│
+   │                              │    carries fileId, filename,  │
+   │                              │    export format if native    │
+   │                              │ 7. activityLog: ASSET_DOWNLOAD│
+   │◄── { url, expiresIn,         │                              │
+   │      downloadAs } ───────────│                              │
+   │                              │                              │
+   │ 8. GET /api/files/{ticket} ─►│ 9. verify HMAC + expiry      │
+   │                              │ 10. files.get?alt=media ────►│
+   │◄═══════ streamed through ════╪◄═══ bytes ═══════════════════│
+   │    Content-Disposition:      │     nothing buffered          │
+   │    attachment; filename=…    │     abort propagates upstream │
+```
+
+**`Content-Disposition` is set by this server, from `displayName`.** The file is stored in Drive under whatever name it currently has, but the browser saves it as the catalogue says — so a rename takes effect on the very next download regardless of whether the Drive-side rename succeeded.
+
+A Google Docs, Sheets or Slides file has no bytes of its own. The ticket then carries an **export format**, Drive converts on the way out, and the download name gains the matching extension so the result opens correctly.
+
+### 10.3 Preview & Streaming
+
+The file route forwards the browser's `Range` header to Drive verbatim and relays Drive's `206` with its `Content-Range` intact, so a signed inline URL in a `<video src>` or `<audio src>` gives full seek-and-scrub playback with no streaming service involved.
+
+```
+   <video src={signedUrl} controls />
+             │
+             ├─ browser issues: Range: bytes=0-1048575
+             │  /api/files responds: 206 Partial Content
+             │
+             └─ user drags scrubber to 02:30
+                browser issues: Range: bytes=41943040-43008000
+                /api/files responds: 206 Partial Content
+```
+
+Preview tickets are minted with `inline` disposition and a 1-hour TTL, and are refreshed transparently by TanStack Query before expiry. Three properties the route must hold, and does:
+
+- **Nothing is buffered.** The Drive response body is piped straight through, so a 4 GB video costs a few hundred kilobytes of memory rather than 4 GB.
+- **Aborts propagate.** When the browser seeks elsewhere or closes the tab, the fetch to Drive is aborted rather than running to completion unread.
+- **`HEAD` is answered.** A `<video>` element issues one first to learn the length; answering it saves a wasted full-body request on every preview.
+
+For formats no browser can play, `webViewLink` offers Drive's own preview alongside — Drive renders many things a `<video>` tag will not.
+
+### 10.4 Rename, Move and Replace — Mandatory Capability
+
+A Drive file is addressed by an immutable id, and its name and parents are ordinary mutable metadata (§6.2). All three operations below are therefore single metadata updates that move no bytes.
+
+#### 10.4.1 Rename
+
+```
+BROWSER                      EXPRESS API                   GOOGLE DRIVE
+   │                              │                              │
+   │ 1. open Rename dialog        │                              │
+   │    new name: "dilse_reel_    │                              │
+   │    final.mp4"                │                              │
+   │                              │                              │
+   │ 2. PATCH /assets/{id}/rename ►                              │
+   │    { displayName }           │ 3. verify JWT + Editor role  │
+   │                              │ 4. validate:                 │
+   │                              │    · 1–255 chars             │
+   │                              │    · no / \ : * ? " < > |    │
+   │                              │    · extension preserved     │
+   │                              │      (or explicit override)  │
+   │                              │    · unique within the song  │
+   │                              │ 5. capture `before` state    │
+   │                              │ 6. files.update { name } ───►│
+   │                              │◄── 200 (no bytes moved) ─────│
+   │                              │ 7. MongoDB updateOne:        │
+   │                              │      displayName, drive.name │
+   │                              │      renamedAt, updatedAt    │
+   │                              │ 8. syncMetadata appProperties│
+   │                              │ 9. activityLog: ASSET_RENAME │
+   │                              │    { before, after }         │
+   │◄── 200 { asset } ────────────│                              │
+   │                              │                              │
+   │ 10. UI updates instantly     │                              │
+```
+
+**Properties:** completes in milliseconds; the file id never changes, so no link, share, or cached reference breaks; there is no window in which the file is missing; it works identically for a 2 KB lyric sheet and a 40 GB raw video; and it is fully reversible from the audit log.
+
+If step 6 fails, the catalogue rename still stands and the response says so. `Content-Disposition` is set by this server from `displayName` (§10.2), so downloads are already correct; the two names being briefly out of step is cosmetic, and the next reconciliation reports it as `NAME_DRIFT` with a one-click fix in either direction.
+
+Validation refuses `/ \ : * ? " < > |` even though Drive itself would accept them. The name is what the file downloads as, and a colon or backslash in a filename is a problem on Windows and macOS long after Drive has happily stored it.
+
+#### 10.4.2 Move Between Folders
+
+```
+POST /api/assets/{id}/move   { folderId }
+   │
+   ├─ resolve the destination folder → its Drive folder id
+   ├─ files.update ?addParents={dest}&removeParents={source}
+   ├─ MongoDB: asset.folderId, drive.parentId, drive.path
+   └─ activityLog: ASSET_MOVE { bytesMoved: 0 }
+```
+
+Drive re-parents a file by updating an index entry, so a 40 GB master moves between folders in the same time as a text file. The same call backs drag-and-drop in the folder UI and the bulk `POST /api/folders/{id}/assets`.
+
+Folder operations follow the same shape: creating a Harmony Hub folder creates a real Drive folder; renaming one renames it in Drive; deleting one moves every file inside back to the Assets root **and then** trashes the emptied folder, so losing a grouping can never risk losing a master. Folders nest, and a move into one of the folder's own descendants is refused before Drive can reject it as a cycle.
+
+#### 10.4.3 Replace Contents in Place
+
+"Make changes to a file that is already here." Drive keeps revisions per file id, so a new master can be written over the old one without the asset id, the share links, or the folder placement changing.
+
+```
+POST /api/assets/{id}/replace           → resumable session against the EXISTING fileId
+   │  browser uploads the new bytes exactly as in §10.1
+POST /api/assets/{id}/replace/complete
+   ├─ files.get → new size, checksums, revisionId
+   ├─ revisions.update { keepForever: true } on the SUPERSEDED revision
+   ├─ MongoDB: drive.*, mimeType, durationSec, dimensions, availability
+   └─ activityLog: ASSET_REPLACE { before.revisionId, after.revisionId }
+```
+
+The superseded revision is pinned because Drive prunes revisions after 30 days or 100 versions (§6.5), and a master that was just overwritten is exactly the one nobody wants swept.
+
+#### 10.4.4 Bulk and Cascading Renames
+
+| Operation | Effect on Drive | Effect on MongoDB |
+|---|---|---|
+| Rename an **artist** | **None** | `artists.name` updated; every song and asset reflects it immediately |
+| Rename a **song** | **None** | `songs.title` updated |
+| Rename **one asset** | One `files.update` | `displayName` and `drive.name` updated |
+| Rename **many assets** (pattern) | One `files.update` each | Bulk update, one audit entry per asset |
+| Rename a **folder** | One `files.update` | `folders.name`; every file inside untouched |
+| Move a song to a different artist | **None** | `songs.artistId` reassigned |
+
+### 10.5 Availability Check — Mandatory Capability
+
+Answering "is this file actually in Drive?" at three levels of scope.
+
+#### 10.5.1 Level 1 — Single Asset, On Demand
+
+```
+BROWSER                      EXPRESS API                   GOOGLE DRIVE
+   │                              │                              │
+   │ POST /assets/{id}/verify ───►│                              │
+   │                              │ 1. load asset from MongoDB   │
+   │                              │ 2. files.get(fileId) ───────►│
+   │                              │                              │
+   │                              │◄─────────────────────────────│
+   │                              │                              │
+   │                              │  Response interpretation:    │
+   │                              │  ┌────────────────────────┐  │
+   │                              │  │ 404 notFound           │  │
+   │                              │  │   → MISSING            │  │
+   │                              │  ├────────────────────────┤  │
+   │                              │  │ 403 forbidden          │  │
+   │                              │  │   → UNVERIFIED         │  │
+   │                              │  │  (sharing/credential,  │  │
+   │                              │  │   never "gone")        │  │
+   │                              │  ├────────────────────────┤  │
+   │                              │  │ 200 + trashed: true    │  │
+   │                              │  │   → TRASHED            │  │
+   │                              │  ├────────────────────────┤  │
+   │                              │  │ 200 + Google-native    │  │
+   │                              │  │   mimeType (no bytes)  │  │
+   │                              │  │   → AVAILABLE          │  │
+   │                              │  ├────────────────────────┤  │
+   │                              │  │ 200, size or checksum  │  │
+   │                              │  │   ≠ stored value       │  │
+   │                              │  │   → MISMATCH           │  │
+   │                              │  ├────────────────────────┤  │
+   │                              │  │ 200, all values match  │  │
+   │                              │  │   → AVAILABLE          │  │
+   │                              │  └────────────────────────┘  │
+   │                              │                              │
+   │                              │ 3. persist availability{}    │
+   │                              │ 4. MISSING or TRASHED →      │
+   │                              │    notify, activityLog       │
+   │◄── { status, checkedAt,      │                              │
+   │      drive: {size, sha256,   │                              │
+   │      revisionId, parentId,   │                              │
+   │      trashed} } ─────────────│                              │
+```
+
+`files.get` is the correct primitive: it returns full metadata with **no data transfer**, so verification is fast regardless of whether the file is 2 KB or 40 GB.
+
+A 403 must never be read as "the file is gone". It means the connected account has lost access — a sharing change, a revoked token, a Shared Drive membership removed — and reporting it as `MISSING` would send an administrator hunting for a file that is sitting exactly where it should be.
+
+A Google Docs/Sheets/Slides file has no bytes and no checksum, so presence is the whole check it can support; without this exception every one of them would report `MISMATCH` forever.
+
+#### 10.5.2 Level 2 — Search Filtered by Availability
+
+The universal search accepts availability as a first-class facet, making "which files are actually in Drive?" a normal query rather than an admin task.
+
+```
+GET /api/search?q=dil+se&availability=MISSING
+GET /api/search?availability=TRASHED&family=Video
+GET /api/search?availability=UNVERIFIED
+```
+
+Results carry the stored `availability` snapshot. Adding `&verify=live` forces a real `files.get` for every result in the page (capped at 96) and returns fresh, authoritative status — slower, but definitive.
+
+#### 10.5.3 Level 3 — Bulk Existence Probe
+
+```
+POST /api/assets/verify-batch
+{ "assetIds": ["1c9de4a7-…", "7b2f1088-…", "8f3a2bc5-…"] }
+
+→ 200
+{
+  "checkedAt": "2026-07-21T14:22:08Z",
+  "summary": { "available": 2, "missing": 1, "trashed": 0, "mismatch": 0 },
+  "results": [
+    { "assetId": "1c9de4a7-…", "status": "AVAILABLE", "sizeBytes": 48210432 },
+    { "assetId": "7b2f1088-…", "status": "AVAILABLE", "sizeBytes": 3145728  },
+    { "assetId": "8f3a2bc5-…", "status": "MISSING",
+      "detail": "Google Drive has no file with this id — it was permanently deleted, or the account lost access to it." }
+  ]
+}
+```
+
+`files.get` calls are issued with a concurrency limit of 12 and a batch ceiling of 500 assets per request. The limit is deliberately conservative: Drive allows roughly 1,000 requests per 100 seconds per user, and a wide fan-out is the thing that would reach it.
+
+### 10.6 Search & Discovery
+
+The index lives in MongoDB, not in Drive. Drive's own `q` can match a name, a full-text body and an `appProperties` key, but it knows nothing about artists, songs, asset types, release years or facet counts, and it cannot rank a tag hit above a filename hit.
+
+```
+BROWSER                              EXPRESS API                    MONGODB
+   │                                      │                            │
+   │ "Raju Singh reels"                   │                            │
+   │ + filters: Video, Punjabi, Viral     │                            │
+   │                                      │                            │
+   │ GET /api/search?q=…&family=Video ───►│                            │
+   │   &language=Punjabi&tags=Viral       │ 1. parse + validate params │
+   │   &availability=AVAILABLE&page=1     │ 2. score + filter over the │
+   │                                      │    in-memory working set:  │
+   │                                      │                            │
+   │                                      │  free-text score across    │
+   │                                      │    displayName, tags,      │
+   │                                      │    song, artist, folder,   │
+   │                                      │    type, description       │
+   │                                      │  filter by facet values    │
+   │                                      │  facet counts computed     │
+   │                                      │    against everything      │
+   │                                      │    EXCEPT the facet being  │
+   │                                      │    counted                 │
+   │◄── { data[], facets{}, total } ──────│                            │
+   │                                      │                            │
+   │ 4. virtualised media-card grid       │                            │
+```
+
+Results are **asset-granular** — a query for "9:16 reels tagged Viral" returns individual assets carrying their parent song context, rather than whole song documents.
+
+An exact tag match scores above a filename match. Tagging is the one piece of curation the platform asks people to do, so a term matching a tag exactly should rank at least as highly as one matching a name — otherwise the effort never visibly pays off.
+
+**Facets returned:** asset type, family, language, mood, release year, folder, tags, version label, availability status, artist — each with a live count. Facet counts are computed against everything except the facet being counted, so selecting a filter never zeroes out its own sibling options.
+
+**Drive-side search** is offered separately at `GET /api/search/drive?q=…`, for exactly one question: "I know the file is in the Drive — why can't I find it here?" It queries `name contains`, `fullText contains` (Drive indexes document contents and OCRs images, which the catalogue cannot) and `appProperties has`, and marks which results are already catalogued. Anything uncatalogued can be adopted from Storage Health.
+
+### 10.7 Metadata Update
+
+A straightforward `PATCH /api/assets/{id}`, touching MongoDB and then the Drive file's `appProperties`. Editable fields: `displayName`, `description`, `type`, `tags[]`, `version`. Immutable fields (`drive.*`, `assetId`, `originalName`, `createdAt`) are stripped by the Zod schema before the update reaches the service layer. Every change writes a `before`/`after` pair to `activityLog`.
+
+Pushing tags and type onto the file as `appProperties` is what allows the Drive-side search above to find the same things the catalogue would.
+
+### 10.8 Delete
+
+Two rungs, deliberately separated so that no single action is unrecoverable.
+
+| Level | Trigger | MongoDB | Google Drive |
+|---|---|---|---|
+| **Soft delete** | Editor removes an asset | `deletedAt` set; hidden from all queries | `files.update { trashed: true }` |
+| **Restore** | Anyone undoes it | `deletedAt` cleared | `files.update { trashed: false }` |
+| **Permanent purge** | Admin, with typed confirmation | Sub-document removed | `files.delete` — skips the bin, takes every revision |
+
+The soft delete is recoverable from **either side** — Harmony Hub or drive.google.com — for 30 days, after which Google empties the trash and the file is unrecoverable. Two facts are surfaced rather than left implicit: the deadline, and that trashed files continue to consume quota until it passes.
+
+The purge requires an Admin to type the asset's display name. Unlike a delete marker on a versioned store, `files.delete` is genuinely the end of the file.
+
+Before trashing a file, the platform checks whether another catalogue entry is linked to the same `drive.fileId` (§10.12) — trashing it would take the other entry's bytes with it.
+
+### 10.9 Restore from the Trash
+
+Drive has no archival tier and nothing to thaw. What it has is a bin, and the thing that actually happens to files is that somebody puts them in it.
+
+```
+Asset with availability = TRASHED
+   │
+   │ user clicks "Restore from the Drive bin"
+   ▼
+POST /api/assets/{id}/restore
+   │
+   ├─ files.update { trashed: false }
+   ├─ availability.status = AVAILABLE   (instant — no polling worker)
+   ├─ restoreRequests document, status = COMPLETE, source = DRIVE_TRASH
+   └─ 200 with the refreshed asset
+```
+
+This is instant, but it runs against a **deadline**: if the 30 days elapse first, Google deletes the file and `files.update` returns 404. The UI states the deadline wherever a `TRASHED` badge appears, and reconciliation raises `TRASHED_IN_DRIVE` as a **critical** finding for exactly this reason.
+
+### 10.10 External Sharing
+
+```
+Marketing user
+   │ POST /api/shares { assetId, audience, expiresIn: "7d", canDownload: true, maxDownloads: 10 }
+   ▼
+shares document created — 32-byte cryptographically random token
+   │
+   │ https://hub.company.com/#/s/{token}   →   sent to the partner
+   ▼
+Partner opens the link
+   │ GET /api/s/{token}     (authentication depends on audience)
+   ▼
+Validation gate:
+   ├─ token exists?            no → 404
+   ├─ revokedAt is null?       no → 410 Gone
+   ├─ expiresAt in future?     no → 410 Gone
+   ├─ audience satisfied?      no → 401 / 403
+   ├─ downloadCount < max?     no → 429 Too Many Requests
+   └─ files.get confirms the file is present?   no → 503, owner notified
+   ▼
+Signed ticket issued — TTL = min(remaining share lifetime, 1 hour)
+   ├─ downloadCount incremented atomically
+   └─ activityLog: SHARE_ACCESS { token, ip, userAgent, timestamp }
+   ▼
+Partner downloads through /api/files/{ticket}
+```
+
+Three audiences, chosen when the link is made: **PUBLIC** (no account), **EDITOR** (must sign in and hold `asset:edit`), and **RESTRICTED** (must sign in with an address on the link's recipient list).
+
+Capabilities beyond a plain link: hard expiry, download caps, instant revocation, per-link download-versus-preview permission, and a complete access trail including IP address. The `files.get` check in the gate means a partner never receives a link to a file that has gone missing.
+
+**The link never carries a Drive address, and the file's Drive sharing is never modified.** This is the whole reason revocation works here and does not work when a Drive link is pasted into an email: a Google sharing permission stays granted until somebody remembers to remove it, whereas a Harmony Hub ticket expires on its own and can be killed instantly — for every outstanding link at once, by rotating `FILE_TOKEN_SECRET`.
+
+A folder link resolves to a manifest, each file signed individually at the moment it is opened. Drive offers no zip-a-folder API, and the platform does not pretend otherwise: "download everything" returns one signed URL per file.
+
+### 10.11 Nightly Reconciliation — Drive ↔ Database Drift
+
+The authoritative answer to "does our database still match the Drive?", run every night at 02:00 by the scheduler.
+
+One listing returns the checksum, the size, the trashed flag and the parent folder together, so almost every question is answered without a second call. The hard part is not detection — it is that most of what is found is **not damage**. A Drive is a place people can open and rearrange by hand, and a file that was renamed or dragged into another folder is working exactly as intended; it is the catalogue that is now out of date.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ PHASE 1 — Walk the Drive                                         │
+│   files.list level by level from the Assets root, paginated      │
+│   Trashed files INCLUDED — a binned file is the most common      │
+│   drift, and hiding it would report the file as missing          │
+│   Collect: fileId → { name, size, checksums, parents, trashed }  │
+├──────────────────────────────────────────────────────────────────┤
+│ PHASE 2 — Build the database inventory                           │
+│   Every non-deleted asset across all songs and unfiled           │
+│   Collect: drive.fileId → { assetId, sizeBytes, checksum, … }    │
+├──────────────────────────────────────────────────────────────────┤
+│ PHASE 3 — Compare                                                │
+│                                                                  │
+│   in DB, not in Drive    → MISSING_IN_DRIVE    🔴 critical       │
+│   in DB, trashed in Drive→ TRASHED_IN_DRIVE    🔴 critical       │
+│   in Drive, not in DB    → UNTRACKED_IN_DRIVE  🟠 orphan         │
+│   folder not in DB       → UNTRACKED_FOLDER    🔵 informational  │
+│   size differs           → SIZE_MISMATCH       🟠 integrity      │
+│   checksum differs       → CHECKSUM_MISMATCH   🟠 integrity      │
+│   parent differs         → PARENT_DRIFT        🟠 moved by hand  │
+│   name differs           → NAME_DRIFT          🔵 renamed by hand│
+│   all match              → OK                  🟢                │
+├──────────────────────────────────────────────────────────────────┤
+│ PHASE 4 — Act                                                    │
+│   · Write a reconciliationRuns document with full findings       │
+│   · Derive availability{} from the listing — checkMethod =       │
+│     LIST_RECONCILE. Only files the listing could not settle      │
+│     get an individual files.get                                  │
+│   · Read quota: "everything matched, and you are at 94%" is      │
+│     the pair of facts an admin needs together                    │
+│   · Notify on MISSING, on TRASHED, and at ≥90% quota             │
+│   · Surface everything on Admin → Storage Health                 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Remediation actions available to an Admin from the dashboard.** Where a finding has two defensible answers, both are offered and neither is preselected — guessing whether the operator wants Drive's version or the catalogue's is exactly the decision a tool should not make for them.
+
+| Finding | Available actions |
+|---|---|
+| `MISSING_IN_DRIVE` | Mark permanently lost · re-scan and adopt if it resurfaced |
+| `TRASHED_IN_DRIVE` | Restore from the bin · accept the deletion and mark lost |
+| `UNTRACKED_IN_DRIVE` | Adopt into the catalogue · move to Quarantine · move to the bin |
+| `UNTRACKED_FOLDER` | Adopt the folder · leave it alone |
+| `SIZE_MISMATCH` / `CHECKSUM_MISMATCH` | Accept Drive as truth and update the catalogue |
+| `PARENT_DRIFT` | Follow the move (creating the folder here if new) · move it back in Drive |
+| `NAME_DRIFT` | Use the name from Drive · rename the Drive file back |
+
+### 10.12 De-duplication
+
+The problem, stated the way it turns up: the same music video sits in *Reels*, in *Client delivery* and in *Final exports* under three different names, nobody can tell whether they are the same file or three different edits, so nobody deletes any of them and the Drive fills up.
+
+There is no single test for "the same video", so a ladder of them runs, cheapest and most certain first. **Nothing is ever deleted automatically** — the engine proposes groups, a human decides.
+
+| Tier | Finds | Basis | Certainty | Cost |
+|---|---|---|---|---|
+| **IDENTICAL** | Byte-for-byte the same file | Google's own sha256 | **Fact** | Free |
+| **PERCEPTUAL** | Same footage, different encoding or resolution | DCT hash of sampled frames | Very likely | ffmpeg + full read |
+| **SAME_MEDIA** | Same duration, dimensions and size, different bytes | Metadata | Likely | Free |
+| **SAME_NAME** | Names rhyme once copy suffixes are stripped | Normalised name similarity | Unconfirmed | Free |
+
+Tier 1 is free and cannot be wrong, because Google computes a sha256 for every file on arrival — nothing has to read a byte or trust a client to have hashed honestly. It runs over the in-memory working set in milliseconds, which is why de-duplication is a live screen rather than a nightly job.
+
+**Precision matters more than recall here.** A tool that groups twelve unrelated song covers because they are all 1200×1200 and all named `<song>_song_cover.svg` gets used once and then distrusted. Three guards keep the speculative tiers honest:
+
+1. **Asset-type words are not identity.** The words appearing in the 21 asset-type names — "song cover", "master audio", "reel bts mv" — are structural, and the catalogue already records them in `asset.type`. They are stripped before names are compared, so `dil_se_song_cover` reduces to *dil se* while `dil_se_reel_v1` and `dil_se_reel_v2_FINAL` both reduce to *dil se* and still match each other.
+2. **A declared type disagreement is evidence.** A Master Audio and an Audio Snippet of the same song share a name stem and often a duration; the operator said they are different things by typing them differently.
+3. **Non-overlapping identities are evidence against.** Two files whose names each name something, and name different things, are not duplicates however closely their metadata agrees.
+
+Confidence follows the evidence rather than the tier: a `SAME_MEDIA` pair whose names corroborate scores 0.85 and is described as "almost certainly one file re-encoded"; the same pair with unrelated names scores 0.6 and is described as "the metadata cannot settle this — compare them, or turn on perceptual matching, which can."
+
+**Three resolutions, and deleting is not the first:**
+
+| Action | Effect | Offered for |
+|---|---|---|
+| **Link** | Every catalogue entry stays where it is and they are pointed at one Drive file; the redundant copies go to the bin | `IDENTICAL` only |
+| **Version** | Not duplicates but takes of one thing — folded into a single version history. Deletes nothing | Any tier |
+| **Trash** | Keep one, bin the rest. Recoverable for 30 days | Any tier |
+| **Ignore** | Dismissed; the decision survives future scans | Any tier |
+
+**Link** is the interesting one and usually what somebody actually wants: the video legitimately belongs in all three folders, so it keeps appearing in all three and every share link keeps resolving, while only one copy of the bytes exists. It is offered **only for byte-identical files** — linking two files that merely look alike would silently replace one edit with another, and no confidence score justifies that.
+
+Space is counted once per distinct Drive file, never per catalogue entry, and only the certain tier is reported as guaranteed savings. An overstated number that under-delivers is how a cleanup tool loses its user permanently.
+
+**Getting the space back.** Trashed files keep consuming quota until Google clears them 30 days later. An `EMPTY TRASH` action is offered for when the Drive is full today — behind a typed confirmation, because it empties the whole account bin including files the platform never touched.
+
+**Perceptual matching** (opt-in) samples N evenly-spaced frames per file — not the first N, since the opening seconds of two cuts are the most likely part to differ — reduces each to 32×32 greyscale, takes a 2-D DCT and keeps the top-left 8×8 block as 64 bits against the median. Resolution, bitrate and compression artefacts live in the high frequencies that get discarded, which is exactly why the hash survives a re-encode. Files are compared by matching each frame to its nearest counterpart and taking the median distance, so a different lead-in shifts the alignment without wrecking the score.
+
+---
+## 11. API Contract
+
+REST over HTTPS. All `/api` routes require a valid JWT except `/api/auth/*`, `/api/s/{token}`, `/api/files/{ticket}`, and `/healthz`. Responses are `application/json`. **No `/api` endpoint accepts or returns file bytes** — the one byte-carrying route, `/api/files/{ticket}`, is mounted outside that chain and is described in §9.3.
+
+### 11.1 Endpoints
+
+| Method | Route | Role | Purpose |
+|---|---|---|---|
+| `POST` | `/api/auth/login` | — | Email + password → access token |
+| `POST` | `/api/auth/logout` | any | End the session |
+| `GET` | `/api/me` | any | Current user, role, effective permissions |
+| `GET` | `/api/dashboard` | any | Home screen in one round trip, incl. quota and duplicate summary |
+| `GET` | `/api/artists` | any | List, paginate, filter |
+| `POST` | `/api/artists` | Editor+ | Create |
+| `GET` | `/api/artists/{id}` | any | Profile, discography, gallery |
+| `PATCH` | `/api/artists/{id}` | Editor+ | Update — **includes rename; no Drive impact** |
+| `DELETE` | `/api/artists/{id}` | Admin | Soft delete |
+| `GET` | `/api/songs` | any | List, paginate, filter |
+| `POST` | `/api/songs` | Editor+ | Create |
+| `GET` | `/api/songs/{id}` | any | Song plus all embedded assets |
+| `PATCH` | `/api/songs/{id}` | Editor+ | Update — **includes rename; no Drive impact** |
+| `DELETE` | `/api/songs/{id}` | Admin | Soft delete |
+| `POST` | `/api/uploads/initiate` | Editor+ | Validate, dedup-check, open a resumable session |
+| `POST` | `/api/uploads/resume` | Editor+ | Ask Google how many bytes it holds — §10.1 |
+| `POST` | `/api/uploads/complete` | Editor+ | Read the file back, create the asset |
+| `POST` | `/api/uploads/abort` | Editor+ | Cancel the session, bin the file if it landed |
+| `GET` | `/api/assets/{id}` | any | Asset detail with Drive binding and availability |
+| `PATCH` | `/api/assets/{id}` | Editor+ | Update metadata and tags |
+| **`PATCH`** | **`/api/assets/{id}/rename`** | **Editor+** | **Rename, catalogue + Drive — §10.4.1** |
+| **`POST`** | **`/api/assets/{id}/move`** | **Editor+** | **Re-parent between folders — §10.4.2** |
+| `POST` | `/api/assets/{id}/replace` | Editor+ | Open a session for new contents — §10.4.3 |
+| `POST` | `/api/assets/{id}/replace/complete` | Editor+ | Confirm, pin the superseded revision |
+| **`POST`** | **`/api/assets/{id}/verify`** | **any** | **Live `files.get` availability check — §10.5.1** |
+| **`POST`** | **`/api/assets/verify-batch`** | **any** | **Bulk existence probe, ≤500 — §10.5.3** |
+| `POST` | `/api/assets/{id}/download` | role-gated | Signed ticket, 5-min TTL, audited |
+| `POST` | `/api/assets/{id}/preview` | any | Signed inline ticket, 1-hour TTL, plus `webViewLink` |
+| `POST` | `/api/assets/{id}/restore` | Editor+ | Untrash — §10.9 |
+| `GET` | `/api/assets/{id}/versions` | any | Semantic version lineage |
+| `GET` | `/api/assets/{id}/revisions` | any | Drive revision history for the file |
+| `DELETE` | `/api/assets/{id}` | Editor+ | Soft delete + trash in Drive |
+| `DELETE` | `/api/assets/{id}/purge` | Admin | Permanent — file and all revisions destroyed |
+| `GET` | `/api/folders` | any | List, filter, optionally by parent |
+| `POST` | `/api/folders` | Editor+ | Create here and in Drive |
+| `GET` | `/api/folders/{id}` | any | Breadcrumb, subfolders, files |
+| `PATCH` | `/api/folders/{id}` | Editor+ | Rename, re-tag, re-parent |
+| `DELETE` | `/api/folders/{id}` | Editor+ | Release files to the root, then trash the folder |
+| `POST` | `/api/folders/{id}/assets` | Editor+ | Move files in or out in bulk |
+| `GET` | `/api/folders/lookup/tree` | any | The whole tree, for the sidebar |
+| `GET` | `/api/search` | any | Universal search with facets, incl. `availability` |
+| `GET` | `/api/search/facets` | any | Facet values and counts for the current query |
+| `GET` | `/api/search/quick` | any | Command-palette source |
+| **`GET`** | **`/api/search/drive`** | **any** | **Query Drive directly; marks what is uncatalogued — §10.6** |
+| `GET` | `/api/tags` | any | Controlled and custom tag list |
+| `POST` | `/api/tags` | Editor+ | Create a custom tag |
+| `PATCH` | `/api/tags/{id}/promote` | Admin | Promote a custom tag to controlled |
+| **`GET`** | **`/api/dedupe/scan`** | **any** | **Four-tier duplicate report — §10.12** |
+| **`GET`** | **`/api/dedupe/compare`** | **any** | **Pairwise verdict with the signals behind it** |
+| **`POST`** | **`/api/dedupe/resolve`** | **Editor+** | **link · version · trash · ignore** |
+| `POST` | `/api/dedupe/perceptual/build` | Admin | Compute frame hashes (needs ffmpeg) |
+| `POST` | `/api/dedupe/empty-trash` | Admin | Empty the Drive bin — typed confirmation |
+| `POST` | `/api/shares` | Marketing+ | Create a share link |
+| `GET` | `/api/shares` | Marketing+ | List active shares |
+| `GET` | `/api/s/{token}` | audience-gated | Resolve a share to a signed ticket |
+| `POST` | `/api/s/{token}/download` | audience-gated | One counted download |
+| `DELETE` | `/api/shares/{id}` | Marketing+ | Revoke immediately |
+| `GET` | `/api/activity` | Admin | Audit log, filterable |
+| **`GET`** | **`/api/admin/storage/quota`** | **Admin** | **Space remaining, by consumer — §8.4** |
+| **`GET`** | **`/api/admin/storage/health`** | **Admin** | **Quota + drift summary — §10.11** |
+| **`POST`** | **`/api/admin/storage/reconcile`** | **Admin** | **Trigger reconciliation on demand** |
+| **`GET`** | **`/api/admin/storage/runs`** | **Admin** | **Reconciliation run history and reports** |
+| `POST` | `/api/admin/storage/findings/{id}/resolve` | Admin | Apply a remediation — §10.11 |
+| `GET` | `/api/admin/users` | Admin | User management |
+| `GET` | `/api/files/{ticket}` | ticket | **The byte path.** Streamed, Range forwarded |
+| `GET` | `/healthz` | — | Health check — reports Mongo *and* Drive reachability |
+
+### 11.2 Conventions
+
+- **Pagination** — `?page=1&limit=24`; responses carry `{ data, page, limit, total, hasMore }`.
+- **Errors** — RFC 7807 `application/problem+json`: `{ type, title, status, detail }`.
+- **Rate limits** — per-user, with a tighter budget on `/download`, `/replace`, `/purge`, `/restore`. `/api/files` is exempt, because a `<video>` issues one request per seek.
+- **Soft deletes** — `deletedAt` throughout; Drive files trashed, not destroyed, until an explicit purge.
+- **Storage errors** — a Drive failure surfaces as `502 Bad Gateway` with Google's reason, `507 Insufficient Storage` when the Drive is full, or `410 Gone` when the file is genuinely absent. The three are never conflated.
+
+---
+
+## 12. Security Model
+
+### 12.1 Authentication
+
+Email and password, hashed with bcrypt at cost factor 12. Login issues an access token; the JWT signing secret lives in a secrets store and is rotated on a schedule. Tokens carry `sub`, `role`, and `iat`/`exp` only — never permissions, which are resolved server-side on every request.
+
+The Google credential is separate and never leaves the server: an OAuth refresh token or a service-account private key, exchanged for a short-lived access token that is cached in memory only. No Google credential is ever sent to a browser.
+
+### 12.2 Authorisation
+
+| Role | Permissions |
+|---|---|
+| **Admin** | Everything: user management, purge, reconciliation, duplicate resolution, audit log |
+| **Editor** | Upload, edit metadata, rename, move, replace, tag, soft-delete, restore from the bin |
+| **Viewer** | Search, preview, download (rate-limited); no mutation |
+| **Marketing** | Viewer permissions plus create and revoke external share links |
+
+Enforcement is layered: `requires(permission)` gates every route, and the service layer re-checks ownership and asset-type rules. There is no separate permission for moving a file between folders — Drive re-parents by updating an index entry, so the operation copies nothing and risks nothing that `asset:edit` does not already cover.
+
+### 12.3 Storage Security
+
+- **No file is ever shared publicly in Drive.** The platform never modifies a file's sharing settings. Access is by the server's own credential, and by tickets the platform issues.
+- **Tickets are HMAC-signed, expiring, and purpose-bound.** A preview ticket cannot be replayed as a download; a modified payload fails the signature; and rotating `FILE_TOKEN_SECRET` invalidates every outstanding link at once.
+- **A ticket names no credential and no file id in the clear** — the id is inside the signed payload, not in the URL a person can read off their screen.
+- **Lifetimes by purpose:** 5 minutes for downloads, 1 hour for previews and share resolutions.
+- **The scope is `drive`, not `drive.file`.** The narrower scope only ever sees files the application itself created, which would make adopting a file somebody dropped into the folder impossible — and that is a feature of reconciliation, not an oversight.
+- Files are encrypted at rest by Google. Transport is TLS throughout.
+
+**The deliberate trade.** Because Drive offers no self-authorising expiring link for a server-held credential, download bytes traverse the application tier (§2.2 P2). The alternative — granting `anyone: reader` on the file — was rejected: it is permanent public exposure rather than a time-boxed grant, it survives revocation of the Harmony Hub link, and it would leave the platform unable to honestly claim that revoking a share revokes access.
+
+### 12.4 Network
+
+The API sits behind a load balancer with TLS termination. Only two outbound hostnames are required: `www.googleapis.com` and `oauth2.googleapis.com`. MongoDB is reachable only from the application tier.
+
+### 12.5 Audit
+
+Two independent trails: `activityLog` in MongoDB for business events (who renamed, moved, replaced, downloaded, shared, deleted, or de-duplicated what, with before/after state and IP), and Google Drive's own per-file activity, visible in the Drive UI. Together these answer any question about who did what to which file, and when — including changes made outside the platform.
+
+---
+
+## 13. Deployment & Operations
+
+### 13.1 Environments
+
+| Environment | API | MongoDB | Drive |
+|---|---|---|---|
+| `dev` | 1 container | Single node or Atlas free tier | A personal My Drive, or a folder in a Shared Drive |
+| `staging` | 2 containers | Single node or Atlas | A separate root folder, or a separate Shared Drive |
+| `prod` | 2–6 containers, auto-scaled | 3-node replica set or Atlas | A Shared Drive on Workspace — pooled quota, team-visible |
+
+Environments are separated by `DRIVE_ROOT_FOLDER_ID`, and ideally by account. Two environments sharing a root folder would reconcile each other's files as untracked.
+
+### 13.2 Configuration
+
+Every setting is validated by a Zod schema at boot; the process refuses to start on a bad or missing value rather than failing later inside a request. Secrets — the JWT secret, the file-ticket secret, the Google credential, the MongoDB URI — come from a secrets store in production and from `.env` in development.
+
+Three commands make a working install reproducible: `drive:auth` (mint a refresh token interactively), `bootstrap:drive` (create the folder tree, print the root id), and `drive:check` (a full write / read / range / rename / move / delete round trip against the real Drive). The third is the one that matters — every other check can pass while uploads still fail.
+
+### 13.3 CI/CD
+
+Build → test → container image → registry → rolling deployment, with automatic rollback on failed health checks. `/healthz` reports unhealthy when **either** MongoDB or Drive is unreachable: a container whose refresh token has expired can still answer every JSON route while being unable to serve a single file, and an orchestrator needs to know that before it sends traffic.
+
+### 13.4 Monitoring
+
+| Metric | Alarm threshold |
+|---|---|
+| API 5xx rate | > 1% over 5 minutes |
+| API p99 latency | > 2 s over 5 minutes |
+| Upload failure rate | > 5% over 15 minutes |
+| **`MissingInDrive`** | **> 0 — immediate Admin notification** |
+| **`TrashedInDrive`** | **> 0 — immediate; the 30-day clock is running** |
+| **`DriveQuotaPercent`** | **≥ 90% — uploads stop at 100%** |
+| `Mismatched` | > 0 — daily digest |
+| Drive API 429 rate | sustained — lower `HEAD_CONCURRENCY` |
+| Refresh-token age | > 150 days — re-authorise before the 6-month expiry |
+| MongoDB replica lag | > 10 s |
+
+### 13.5 Backup & Recovery
+
+| Asset | Mechanism | Retention | RPO / RTO |
+|---|---|---|---|
+| Drive files | Drive revisions; trash for 30 days; optional periodic export | 100 revisions / 30 days | ~0 / minutes |
+| MongoDB | Scheduled `mongodump` → the Backups folder | 30 days | 1 h / 2 h |
+| Configuration | Source in Git; secrets in the secrets store | Indefinite | — / 1 h |
+
+**A caveat worth stating.** Drive revisions and the trash protect against accidental change and accidental deletion; neither protects against a compromised credential deliberately issuing `files.delete`, which destroys every revision. A periodic export to independent storage is the only defence against that, and is recommended for the assets folder.
+
+A restore drill is performed quarterly against the staging environment.
+
+---
+
+## 14. Development Roadmap — 16 Weeks
+
+| Phase | Focus | Key deliverables | Duration |
+|---|---|---|---|
+| **0** | **Foundations** | Cloud project, Drive API enabled, OAuth client, credential flow, folder tree bootstrap, container pipeline, MongoDB | 2 weeks |
+| **1** | **Skeleton** | Express skeleton, JWT auth, RBAC middleware, Mongoose schemas, `StorageService` with the full Drive surface, `/healthz` | 3 weeks |
+| **2** | **Upload & Retrieve** | Resumable upload with authoritative resume, dedup warning by checksum, signed tickets, streamed download, Range playback | 3 weeks |
+| **3** | **Core Modules** | Artist, song, asset and folder CRUD; React UI shell; media-card grid; asset drawer; version lineage | 3 weeks |
+| **4** | **Rename & Availability** | Rename, move, replace-in-place, `files.get` verification, batch probe, nightly reconciliation, quota panel, Storage Health | 2 weeks |
+| **5** | **Search & Tags** | Faceted asset-granular search, Drive-side search, controlled and custom tags, search-first home | 2 weeks |
+| **6** | **De-dup, Collaboration & Launch** | Four-tier de-duplication with link/version/trash, share tokens with expiry and caps, activity log, admin screens, cutover | 1 week |
+
+### 14.1 Milestones
+
+- **M0** — Credentials work end to end; `drive:check` passes a full round trip.
+- **M1** — A file uploads from the browser directly into Drive with metadata persisted to MongoDB.
+- **M2** — That file downloads back under its display name and streams with working seek.
+- **M3** — Full CRUD across artists, songs, folders and assets in the React UI.
+- **M4** — **Rename and move work instantly; availability verification, quota and drift reporting are live.**
+- **M5** — Universal search returns asset-granular results with facets.
+- **M6** — De-duplication, sharing, audit and admin tooling complete; cutover done.
+
+---
+
+## 15. Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| **Refresh token expires** | The app answers JSON but cannot serve a byte | Publish the OAuth consent screen — a Testing-mode token dies after 7 days; alarm on token age; `/healthz` reports Drive unreachable so the orchestrator stops routing (§13.3) |
+| **Drive fills up** | Every upload fails with `storageQuotaExceeded` | Quota on the home screen and in reconciliation; alarm at 90%; de-duplication and empty-the-bin as the two levers; a Shared Drive with pooled quota as the structural fix |
+| **Trashed files silently expire** | Permanent loss 30 days after somebody binned a master | `TRASHED_IN_DRIVE` is a **critical** reconciliation finding, not informational; the deadline is stated wherever the badge appears (§10.9) |
+| **Somebody rearranges the Drive by hand** | Catalogue points at the wrong folder or name | Treated as normal, not as corruption: `PARENT_DRIFT` and `NAME_DRIFT` findings with a one-click fix in either direction (§10.11) |
+| **Download bytes traverse the API** | Bandwidth and memory on the application tier | Streamed, never buffered; Range forwarded; aborts propagate. Accepted deliberately — the alternative is permanent public sharing (§12.3) |
+| **Drive API rate limits** | Reconciliation or batch verify throttled | Bounded fan-out (12 concurrent), exponential backoff on 429, single-pass listing rather than per-file reads |
+| **Service account has no storage** | Uploads fail immediately in a "correct-looking" setup | `drive:check` detects and explains it; the documentation leads with OAuth for exactly this reason (§1, §6.1) |
+| **A duplicate scan proposes deleting a real edit** | Irreversible loss of work | Certainty is visible and tiered; destructive action is default only for byte-identical files; type and identity conflicts veto a grouping; **link** is offered ahead of delete (§10.12) |
+| **Accidental permanent deletion** | Irrecoverable data loss | Two-rung delete ladder, typed confirmation for purge, trash recoverable from either side, link-aware trashing (§10.8) |
+| **Compromised credential issues `files.delete`** | Revisions and trash are both bypassed | Periodic export to independent storage; least-privilege credential; full audit trail (§13.5) |
+| **Inconsistent manual tags** | Degraded search quality | Controlled vocabulary, required tag step at upload, Admin promotion queue for custom tags |
+
+---
+
+## 16. Open Decisions
+
+| # | Decision | Why it matters | Owner |
+|---|---|---|---|
+| 1 | **My Drive vs a Shared Drive for production** | A Shared Drive gives pooled Workspace quota, team visibility, and survives one person leaving. A personal Drive is free and immediate. Recommendation: Shared Drive for anything beyond a trial | Project owner |
+| 2 | **OAuth user vs service account with domain-wide delegation** | Determines whose Drive the files live in and who can see them without the app | Architecture + IT |
+| 3 | **Periodic export to independent storage** | The only defence against a credential that deliberately deletes; revisions and trash do not cover it (§13.5) | Project owner |
+| 4 | **Enable perceptual de-duplication?** | Needs ffmpeg and reads every video back out of Drive. Worth it if the library has many re-encodes; unnecessary if uploads are disciplined | Content team |
+| 5 | **Reconciliation frequency** | Nightly is right for a library people rearrange by hand; less often risks a trashed master expiring unnoticed | Architecture |
+
+---

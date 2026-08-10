@@ -1,0 +1,39 @@
+{
+  "name": "harmonyhub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Harmony Hub \u2014 music asset management on Google Drive and MongoDB",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run --workspace client build",
+    "drive:auth": "node infra/drive-auth.mjs",
+    "bootstrap:drive": "node infra/bootstrap-drive.mjs --apply",
+    "drive:check": "node infra/bootstrap-drive.mjs --apply --check",
+    "drive:plan": "node infra/bootstrap-drive.mjs",
+    "dev": "npm run --workspace server dev",
+    "dev:web": "npm run --workspace client dev",
+    "build": "npm run --workspace client build",
+    "start": "npm run --workspace server start",
+    "seed": "npm run --workspace server seed",
+    "reseed": "npm run --workspace server reseed",
+    "reconcile": "npm run --workspace server reconcile",
+    "dedupe": "npm run --workspace server dedupe",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:ui": "npm run --workspace client smoke:ui",
+    "docker:build": "docker compose build app",
+    "docker:up": "docker compose up -d --build app",
+    "docker:up:local": "docker compose --profile local up -d --build",
+    "docker:logs": "docker compose logs -f app",
+    "docker:down": "docker compose down"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
