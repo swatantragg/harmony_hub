@@ -1,0 +1,30 @@
+{
+  "name": "harmonyhub-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Harmony Hub API \u2014 Express control plane over Google Drive and MongoDB",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed": "node src/cli/seed.js",
+    "reseed": "node src/cli/seed.js --force",
+    "reconcile": "node src/cli/reconcile.js",
+    "dedupe": "node src/cli/dedupe.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.7.0",
+    "node-cron": "^4.6.0",
+    "zod": "^3.23.8"
+  }
+}

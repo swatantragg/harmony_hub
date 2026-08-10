@@ -1,0 +1,60 @@
+# ── Secrets — never commit any of these ──────────────────────────────────────
+.env
+
+# Google service-account key files.
+secrets/
+*.serviceaccount.json
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials
+*secret*.json
+!app/infra/iam-policy.json
+!app/infra/iam-bootstrap-policy.json
+
+# ── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# ── Build output ─────────────────────────────────────────────────────────────
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ── Local data ───────────────────────────────────────────────────────────────
+# Local scratch data.
+prototype/server/data/
+# Anything the production app writes locally.
+app/server/data/
+app/**/tmp/
+*.sqlite
+*.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Editors and OS ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# ── Office lock files sitting next to the docs ───────────────────────────────
+.~lock.*#
+~$*
+
+# ── Test and coverage ────────────────────────────────────────────────────────
+coverage/
+.nyc_output/

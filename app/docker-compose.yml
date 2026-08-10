@@ -1,0 +1,82 @@
+# Harmony Hub — local stack.
+#
+#   docker compose up -d --build app        the app on :8100, using .env as it stands
+#   docker compose --profile local up -d    + MongoDB, for a run that touches no Atlas
+#
+# Ports on this machine: Cleaner on 8080, JGCR on 8090, cuesync on 80/8000.
+# Harmony Hub takes 8100 for the whole application — the API and the front end share one
+# origin, because the Express task serves the built React bundle itself. There is no
+# separate front-end port and no second container. 8101 exists only while the Vite dev
+# server is running, and only on the host.
+#
+# There is no storage service in this file. Google Drive is the same public API from
+# inside a container as from outside, so nothing has to be emulated locally and nothing
+# has to be addressed differently depending on which side of the network is calling.
+#
+# ── One thing to know about DOCKER_MONGODB_URI ───────────────────────────────
+# Inside a container, 127.0.0.1 is the container itself. A .env that points MongoDB at
+# localhost works when you run `npm start` on the host and silently fails in Docker.
+# Rather than rewriting the URL behind your back, the setting that differs is named
+# explicitly in .env, and only the container reads it.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: harmonyhub:latest
+    container_name: harmonyhub-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # NODE_ENV deliberately comes from .env rather than being pinned here. The image
+      # defaults to production; leaving it to .env means this same compose file runs the
+      # container in development mode locally — sign-in role cards on, /api/demo/reset
+      # available — without a second file.
+      PORT: 8100
+      CLIENT_DIST: /app/client/dist
+      # Empty is meaningful: it falls back to the .env value.
+      MONGODB_URI: ${DOCKER_MONGODB_URI:-${MONGODB_URI}}
+    ports:
+      - '8100:8100'
+    # Lets a container reach something listening on the host — useful if you run MongoDB
+    # outside compose:  DOCKER_MONGODB_URI=mongodb://host.docker.internal:27017
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    # A service-account key file, when one is used instead of pasted credentials. Mounted
+    # read-only, and the path inside the container is what GOOGLE_SERVICE_ACCOUNT_KEY_FILE
+    # must name. Harmless when the directory does not exist and oauth mode is in use.
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      # /healthz reports unhealthy when Google Drive is unreachable as well as when Mongo
+      # is, so a container that cannot serve files does not sit in the pool pretending it
+      # can.
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8100/healthz').then(r=>r.json()).then(j=>process.exit(j.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  mongo:
+    image: mongo:7
+    container_name: harmonyhub-mongo
+    profiles: ['local']
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mongo-data:
