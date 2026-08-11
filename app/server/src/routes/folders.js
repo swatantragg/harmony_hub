@@ -1,6 +1,6 @@
 // Folders — real Google Drive folders, mirrored by a catalogue row.
 //
-// A Harmony Hub folder *is* a Drive folder: open drive.google.com and the library is laid
+// A GCloud folder *is* a Drive folder: open drive.google.com and the library is laid
 // out exactly as the app shows it, which is what makes the storage legible to someone who
 // never signs in here. The catalogue row carries what Drive has nowhere to put — the
 // description, the tags, the song and artist association.
@@ -134,7 +134,7 @@ foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
   if (parentId && !parent) return problem(res, 404, 'Not Found', 'The parent folder no longer exists.');
 
   // Drive is perfectly happy with two folders of the same name in the same place, which is
-  // a well-known way to lose files. Harmony Hub is not.
+  // a well-known way to lose files. GCloud is not.
   const clash = db.folders.find((f) =>
     !f.deletedAt && (f.parentId ?? null) === parentId && f.name.toLowerCase() === name.toLowerCase());
   if (clash && !req.body?.allowDuplicateName) {

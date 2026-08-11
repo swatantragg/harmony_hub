@@ -1,7 +1,7 @@
 // Re-seed the library from the command line.
 //
 //   npm run seed            fills an empty library, refuses to touch one that has data
-//   npm run seed -- --force wipes MongoDB and every file under the Drive's Harmony Hub
+//   npm run seed -- --force wipes MongoDB and every file under the Drive's GCloud
 //                           folder
 //
 // The force path is destructive on purpose and says so before it runs.
@@ -44,7 +44,7 @@ async function main() {
   // seed() clears the library folder itself, so MongoDB and the Drive can never end up
   // describing two different libraries.
   const stats = await seed();
-  console.log('\nSeeded Harmony Hub:', stats);
+  console.log('\nSeeded GCloud:', stats);
   const quota = await storage.quota().catch(() => null);
   if (quota && !quota.unlimited) {
     const gb = (n) => `${(n / 1024 ** 3).toFixed(2)} GB`;

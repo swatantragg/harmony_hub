@@ -303,7 +303,7 @@ function UploadRow({
                 : <FileUp size={15} color="var(--ink-3)" />}
               <input
                 className="input"
-                style={{ fontFamily: 'var(--mono)', fontSize: 13, border: 'none', padding: '2px 0', background: 'transparent', fontWeight: 600 }}
+                style={{ fontFamily: 'var(--mono)', fontSize: 15, border: 'none', padding: '2px 0', background: 'transparent', fontWeight: 600 }}
                 value={item.displayName}
                 onChange={(e) => onChange({ displayName: e.target.value })}
                 disabled={busy || complete}
@@ -423,7 +423,7 @@ function UploadRow({
               )}
               {item.result.folderName && (
                 <div className="t-small" style={{ marginTop: 4 }}>
-                  <FolderIcon size={11} style={{ verticalAlign: -1 }} /> Filed in the “{item.result.folderName}” folder — in Harmony Hub and in Drive.
+                  <FolderIcon size={11} style={{ verticalAlign: -1 }} /> Filed in the “{item.result.folderName}” folder — in GCloud and in Drive.
                 </div>
               )}
             </div>

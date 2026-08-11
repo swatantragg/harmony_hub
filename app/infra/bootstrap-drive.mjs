@@ -1,4 +1,4 @@
-// Prepares a Google Drive for Harmony Hub, and proves it works (§6.1).
+// Prepares a Google Drive for GCloud, and proves it works (§6.1).
 //
 //   node infra/bootstrap-drive.mjs          show what it would do, change nothing
 //   node infra/bootstrap-drive.mjs --apply  create the folder tree
@@ -21,7 +21,7 @@ for (const file of [path.resolve(here, '../.env'), path.resolve(here, '../server
 }
 
 // The server's own modules, so this script and the running app can never disagree about
-// what "the Harmony Hub folder" means.
+// what "the GCloud folder" means.
 const { GOOGLE, GOOGLE_CONFIGURED, DRIVE_ID, DRIVE_ROOT_FOLDER_NAME, ROOTS } =
   await import('../server/src/config.js');
 const storage = await import('../server/src/services/storage.js');
@@ -54,7 +54,7 @@ async function step(label, fn) {
   }
 }
 
-console.log(`\n${bold('Harmony Hub — Google Drive bootstrap')}`);
+console.log(`\n${bold('GCloud — Google Drive bootstrap')}`);
 console.log(dim(APPLY ? 'apply mode — changes will be made' : CHECK ? 'check mode — a temporary file will be written and deleted' : 'dry run — nothing will be changed\n'));
 
 // ── 1. Credentials ──────────────────────────────────────────────────────────
@@ -160,16 +160,16 @@ for (const [role, folder] of Object.entries(folders)) {
 // deletes it, in the same code paths the product uses.
 if (CHECK) {
   console.log(bold('\nRound trip'));
-  const body = Buffer.from(`Harmony Hub connectivity check — ${new Date().toISOString()}\n`, 'utf8');
+  const body = Buffer.from(`GCloud connectivity check — ${new Date().toISOString()}\n`, 'utf8');
   let file = null;
 
   const wrote = await step('write a file', async () => {
     file = await storage.putFile({
-      name: `harmonyhub-check-${Date.now()}.txt`,
+      name: `gcloud-check-${Date.now()}.txt`,
       parentId: ROOTS.assets,
       mimeType: 'text/plain',
       body,
-      appProperties: { app: 'harmonyhub', check: 'connectivity' },
+      appProperties: { app: 'gcloud', check: 'connectivity' },
     });
     return `${file.sizeBytes} bytes`;
   });
@@ -196,7 +196,7 @@ if (CHECK) {
     });
 
     await step('rename', async () => {
-      const renamed = await storage.rename(file.fileId, 'harmonyhub-check-renamed.txt');
+      const renamed = await storage.rename(file.fileId, 'gcloud-check-renamed.txt');
       return `${renamed.name} — same file id, no bytes copied`;
     });
 
@@ -208,7 +208,7 @@ if (CHECK) {
 
     await step('open a resumable upload session', async () => {
       const session = await storage.beginUpload({
-        name: 'harmonyhub-check-session.bin',
+        name: 'gcloud-check-session.bin',
         parentId: ROOTS.assets,
         mimeType: 'application/octet-stream',
         sizeBytes: 1024,

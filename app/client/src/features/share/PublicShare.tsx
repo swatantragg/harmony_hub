@@ -181,7 +181,7 @@ export function PublicShare() {
         )}
 
         <p className="t-small" style={{ textAlign: 'center', marginTop: 22 }}>
-          Delivered by SK-V2.2. This link expires on its own and can be revoked at any time.
+          Delivered by SK-V1.4.1. This link expires on its own and can be revoked at any time.
         </p>
       </div>
     </div>
@@ -198,7 +198,7 @@ function ShareMeta({ data }: { data: Resolved }) {
       <div>
         Shared by <b>{data.share.sharedBy}</b> · {countdown(Date.parse(data.share.expiresAt) - Date.now())}
         {data.share.downloadsRemaining != null && ` · ${data.share.downloadsRemaining} downloads left`}
-        <div className="row-tight" style={{ marginTop: 5, fontSize: 11.5 }}>
+        <div className="row-tight" style={{ marginTop: 5, fontSize: 14 }}>
           <Icon size={12} />
           {data.share.audienceLabel}
           {data.viewer ? ` · opened as ${data.viewer.name}` : ' · no account needed'}
@@ -330,10 +330,10 @@ function FolderShare({
                 onClick={() => setOpen(f.assetId)}
               >
                 <span className="grow" style={{ minWidth: 0, textAlign: 'left' }}>
-                  <span className="truncate" style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                  <span className="truncate" style={{ display: 'block', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
                     {f.displayName}
                   </span>
-                  <span className="t-small" style={{ display: 'block', fontSize: 11 }}>
+                  <span className="t-small" style={{ display: 'block', fontSize: 13.5 }}>
                     {KIND_LABEL[previewKind(f.mimeType, f.displayName)]} · {bytes(f.sizeBytes)}
                     {f.availability !== 'AVAILABLE' ? ` · ${f.availability.toLowerCase()}` : ''}
                   </span>

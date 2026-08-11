@@ -75,7 +75,7 @@ export const STATUS_COPY: Record<Availability, { label: string; short: string; m
   MISMATCH: {
     label: 'Mismatch',
     short: 'Differs from the record',
-    meaning: 'The file is in Drive but its size or checksum differs from what was catalogued — somebody replaced it in Google Drive rather than through Harmony Hub.',
+    meaning: 'The file is in Drive but its size or checksum differs from what was catalogued — somebody replaced it in Google Drive rather than through GCloud.',
     next: 'Preview it, then accept Drive as the truth or restore an earlier revision.',
   },
 };
@@ -86,7 +86,7 @@ export const STATUS_COPY: Record<Availability, { label: string; short: string; m
 export const FINDING_COPY: Record<string, { label: string; meaning: string }> = {
   MISSING_IN_DRIVE: {
     label: 'Missing in Google Drive',
-    meaning: 'Catalogued here, but Google Drive has no file with this id. Either it was deleted permanently, or it was moved outside the Harmony Hub folder where this account can no longer see it.',
+    meaning: 'Catalogued here, but Google Drive has no file with this id. Either it was deleted permanently, or it was moved outside the GCloud folder where this account can no longer see it.',
   },
   TRASHED_IN_DRIVE: {
     label: 'In the Drive bin',
@@ -94,15 +94,15 @@ export const FINDING_COPY: Record<string, { label: string; meaning: string }> = 
   },
   UNTRACKED_IN_DRIVE: {
     label: 'Untracked file',
-    meaning: 'A file sits in the Harmony Hub Drive folder with no catalogue record — dropped in through Google Drive rather than uploaded here. It is invisible to search until it is adopted.',
+    meaning: 'A file sits in the GCloud Drive folder with no catalogue record — dropped in through Google Drive rather than uploaded here. It is invisible to search until it is adopted.',
   },
   UNTRACKED_FOLDER: {
     label: 'Untracked folder',
-    meaning: 'A folder exists in Drive with no Harmony Hub folder behind it. Adopt it to make its contents browsable and searchable here.',
+    meaning: 'A folder exists in Drive with no GCloud folder behind it. Adopt it to make its contents browsable and searchable here.',
   },
   SIZE_MISMATCH: {
     label: 'Size mismatch',
-    meaning: 'The file is a different size from the one that was catalogued — it was replaced in Google Drive rather than through Harmony Hub.',
+    meaning: 'The file is a different size from the one that was catalogued — it was replaced in Google Drive rather than through GCloud.',
   },
   CHECKSUM_MISMATCH: {
     label: 'Checksum mismatch',

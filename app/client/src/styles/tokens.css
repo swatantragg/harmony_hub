@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Harmony Hub — design tokens
+   GCloud — design tokens
    Lifted from Brand Book 02 · Studio. Every colour, typeface and radius in the
    product resolves to a token declared here. Nothing downstream hard-codes a
    value, which is what makes a second theme a token swap rather than a rewrite.

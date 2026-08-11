@@ -96,19 +96,68 @@ artistsRouter.get('/', (req, res) => {
 artistsRouter.get('/:id', (req, res) => {
   const artist = db.artists.find((a) => a._id === req.params.id && !a.deletedAt);
   if (!artist) return problem(res, 404, 'Not Found', 'No artist with that id.');
-  const songs = live(db.songs)
-    .filter((s) => s.artistId === artist._id)
+
+  const artistSongs = live(db.songs).filter((s) => s.artistId === artist._id);
+
+  const songs = [...artistSongs]
     .sort((a, b) => Date.parse(b.releaseDate) - Date.parse(a.releaseDate))
     .map((s) => ({
       _id: s._id, title: s.title, language: s.language, mood: s.mood, releaseDate: s.releaseDate,
       assetCount: s.assets.filter((a) => !a.deletedAt).length,
       coverAssetId: s.assets.find((a) => a.type === 'Song Cover' && !a.deletedAt)?.assetId ?? null,
     }));
-  const gallery = live(db.songs)
-    .filter((s) => s.artistId === artist._id)
+
+  const assets = artistSongs.flatMap((s) => s.assets.filter((a) => !a.deletedAt));
+
+  // What the artist's page can offer as a tab. These are counts of what genuinely exists,
+  // so a tab is never shown leading to an empty list — and the reader can see, before
+  // clicking, how much is behind each one.
+  const byType = {};
+  for (const a of assets) byType[a.type] = (byType[a.type] || 0) + 1;
+
+  // The folders this artist's files are actually stored in. A folder here is a real Google
+  // Drive folder, so this answers "where does their work live?" rather than just "what do
+  // they have?" — the two are different questions and people ask both.
+  const folderCounts = new Map();
+  let looseCount = 0;
+  for (const a of assets) {
+    if (!a.folderId) { looseCount += 1; continue; }
+    folderCounts.set(a.folderId, (folderCounts.get(a.folderId) || 0) + 1);
+  }
+  const folders = [...folderCounts.entries()]
+    .map(([folderId, count]) => {
+      const folder = db.folders.find((f) => f._id === folderId && !f.deletedAt);
+      if (!folder) return null;
+      return {
+        _id: folder._id,
+        name: folder.name,
+        description: folder.description,
+        tags: folder.tags,
+        parentName: folder.parentId
+          ? db.folders.find((f) => f._id === folder.parentId)?.name ?? null
+          : null,
+        driveWebViewLink: folder.driveWebViewLink,
+        // Files by this artist in that folder — not the folder's whole contents, which is
+        // a different and here misleading number.
+        assetCount: count,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.assetCount - a.assetCount || a.name.localeCompare(b.name));
+
+  const gallery = artistSongs
     .flatMap((s) => s.assets.filter((a) => !a.deletedAt && a.family === 'Image').map((a) => shape({ asset: a, song: s, artist })))
     .slice(0, 12);
-  res.json({ ...artist, ...artistStats(artist), songs, gallery });
+
+  res.json({
+    ...artist,
+    ...artistStats(artist),
+    songs,
+    gallery,
+    folders,
+    byType,
+    looseCount,
+  });
 });
 
 artistsRouter.post('/', requires('catalogue:edit'), (req, res) => {

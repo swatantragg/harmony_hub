@@ -1,68 +1,58 @@
-import { useEffect, useState } from 'react';
+// File lists. The product renders every file as a row in a table: a card grid showed
+// four things about six files where a list shows five things about thirty, and the
+// question people bring to a media library is nearly always "where is this one file".
 import { FileText, Film, Image as ImageIcon, Music2 } from 'lucide-react';
 import type { Asset, Family } from '../../lib/types';
-import { AvailabilityBadge, FamilyArt } from '../../components/ui';
-import { bytes, midTruncate } from '../../lib/format';
-import { api } from '../../lib/api';
+import { AvailabilityBadge } from '../../components/ui';
+import { bytes } from '../../lib/format';
 
 export const FAMILY_ICON: Record<Family, typeof Music2> = {
   Audio: Music2, Video: Film, Image: ImageIcon, Document: FileText,
 };
 
-// Image assets show their real bytes, fetched through a short-lived signed URL. Everything
-// else falls back to the family waveform wash so the grid stays visually even.
-function useThumbnail(asset: Asset, enabled: boolean) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!enabled || asset.family !== 'Image' || asset.availability.status !== 'AVAILABLE') return;
-    let alive = true;
-    api<{ url: string }>(`/assets/${asset.assetId}/preview`, { method: 'POST' })
-      .then((r) => alive && setUrl(r.url))
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [asset.assetId, asset.family, asset.availability.status, enabled]);
-  return url;
-}
-
-export function AssetCard({
-  asset, onOpen, selected, showThumbnails = true,
-}: { asset: Asset; onOpen: (a: Asset) => void; selected?: boolean; showThumbnails?: boolean }) {
-  const thumb = useThumbnail(asset, showThumbnails);
-  const Icon = FAMILY_ICON[asset.family];
-
+// Every list of files in the product, in one place.
+//
+// Files used to render as a grid of cards in some screens and a table in others, which
+// meant the same file looked like two different kinds of object depending on where you
+// met it. A row also does what a card cannot: it lines type, version, size and
+// availability into columns you can compare down, and fits four times as many files on a
+// screen — which is the whole job when you are looking for one known name among hundreds.
+export function AssetList({
+  assets, onOpen, selectedId, dense = false,
+}: {
+  assets: Asset[];
+  onOpen: (a: Asset) => void;
+  selectedId?: string | null;
+  /** Drops the columns that stop being worth their width inside a narrow panel. */
+  dense?: boolean;
+}) {
   return (
-    <button
-      className={`card ${selected ? 'selected' : ''}`}
-      onClick={() => onOpen(asset)}
-      aria-label={`${asset.displayName} — ${asset.type}, ${asset.availability.status.toLowerCase()}`}
-    >
-      <FamilyArt family={asset.family} seed={asset.assetId}>
-        {thumb && <img src={thumb} alt="" loading="lazy" />}
-        <span className="type-badge">{asset.type}</span>
-        <span className="ver-badge">{asset.version}</span>
-      </FamilyArt>
-
-      <div className="card-body">
-        <div className="card-title" title={asset.displayName}>{asset.displayName}</div>
-        <div className="card-sub row-tight">
-          <Icon size={12} color="var(--ink-3)" />
-          <span className="truncate">
-            {asset.songTitle ? `${asset.songTitle} · ${asset.artistName}` : asset.folderName ?? 'Not tied to a song'}
-          </span>
-        </div>
-        <div className="card-key" title={asset.drive.path ?? asset.drive.name}>
-          {midTruncate(asset.drive.path ?? asset.drive.name, 20, 12)}
-        </div>
-        <div className="card-foot">
-          <AvailabilityBadge status={asset.availability.status} />
-          <span className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{bytes(asset.drive.sizeBytes)}</span>
-        </div>
+    <div className="panel" style={{ overflow: 'hidden' }}>
+      <div className="table-scroll">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Type</th>
+              {!dense && <th>Version</th>}
+              <th>Size</th>
+              <th>Availability</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assets.map((a) => (
+              <AssetRow key={a.assetId} asset={a} selected={selectedId === a.assetId} onOpen={onOpen} dense={dense} />
+            ))}
+          </tbody>
+        </table>
       </div>
-    </button>
+    </div>
   );
 }
 
-export function AssetRow({ asset, onOpen, selected }: { asset: Asset; onOpen: (a: Asset) => void; selected?: boolean }) {
+export function AssetRow({
+  asset, onOpen, selected, dense = false,
+}: { asset: Asset; onOpen: (a: Asset) => void; selected?: boolean; dense?: boolean }) {
   const Icon = FAMILY_ICON[asset.family];
   return (
     <tr className={selected ? 'selected' : ''} onClick={() => onOpen(asset)}>
@@ -80,14 +70,14 @@ export function AssetRow({ asset, onOpen, selected }: { asset: Asset; onOpen: (a
           </span>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600 }} className="truncate">{asset.displayName}</div>
-            <div className="t-small" style={{ fontSize: 11.5 }}>
+            <div className="t-small" style={{ fontSize: 14 }}>
               {asset.songTitle ? `${asset.songTitle} · ${asset.artistName}` : asset.folderName ?? 'Not tied to a song'}
             </div>
           </div>
         </div>
       </td>
       <td className="t-small">{asset.type}</td>
-      <td><span className="vchip">{asset.version}</span></td>
+      {!dense && <td><span className="vchip">{asset.version}</span></td>}
       <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>{bytes(asset.drive.sizeBytes)}</td>
       <td><AvailabilityBadge status={asset.availability.status} /></td>
     </tr>

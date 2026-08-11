@@ -24,14 +24,14 @@ export function signJwt(payload, ttlSec = ACCESS_TTL_SEC) {
   return jwt.sign(payload, JWT_SECRET, {
     algorithm: 'HS256',
     expiresIn: ttlSec,
-    issuer: 'harmony-hub',
+    issuer: 'gcloud',
   });
 }
 
 export function verifyJwt(value) {
   if (!value) return null;
   try {
-    return jwt.verify(String(value), JWT_SECRET, { algorithms: ['HS256'], issuer: 'harmony-hub' });
+    return jwt.verify(String(value), JWT_SECRET, { algorithms: ['HS256'], issuer: 'gcloud' });
   } catch {
     return null;
   }

@@ -1,4 +1,4 @@
-# Harmony Hub — one image, one process, one port.
+# GCloud — one image, one process, one port.
 #
 # The API serves the built client from the same origin (§4): the browser sees one hostname.
 # The only other host it ever talks to is googleapis.com, directly, when it PUTs upload
@@ -6,8 +6,8 @@
 # Google Drive offers no self-authorising expiring link for a server credential
 # (see server/src/services/signing.js).
 #
-#   docker build -t harmonyhub:latest .
-#   docker run --env-file .env -p 8100:8100 harmonyhub:latest
+#   docker build -t gcloud:latest .
+#   docker run --env-file .env -p 8100:8100 gcloud:latest
 
 # ── Stage 1: install every dependency, including dev, and build the client ───
 FROM node:22-alpine AS build

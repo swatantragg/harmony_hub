@@ -22,7 +22,7 @@ interface Quick {
 
 const DESTINATIONS = [
   { to: '/', label: 'Home', hint: 'Search, storage health and what changed recently', icon: Home, perm: null },
-  { to: '/search', label: 'Search the library', hint: 'Every asset, filtered by type, family, tag or availability', icon: Search, perm: null },
+  { to: '/', label: 'Search the library', hint: 'Every asset, filtered by type, family, tag or availability', icon: Search, perm: null },
   { to: '/artists', label: 'Artists', hint: 'Profiles, discography and image galleries', icon: Users, perm: null },
   { to: '/songs', label: 'Songs', hint: 'Releases and the assets attached to each', icon: Disc3, perm: null },
   { to: '/folders', label: 'Folders', hint: 'Grouped files — launch kits, shoots, paperwork', icon: Folder, perm: null },
@@ -32,7 +32,7 @@ const DESTINATIONS = [
   { to: '/admin/storage', label: 'Storage health', hint: 'Drive space, and drift between the catalogue and Google Drive', icon: ShieldCheck, perm: 'admin:storage' },
   { to: '/admin/activity', label: 'Activity log', hint: 'Who did what, to which file, and when', icon: ScrollText, perm: 'admin:activity' },
   { to: '/admin/users', label: 'People and roles', hint: 'Accounts and what each role may do', icon: UserCog, perm: 'admin:users' },
-  { to: '/help', label: 'How Harmony Hub works', hint: 'A five-minute tour of the whole product', icon: HelpCircle, perm: null },
+  { to: '/help', label: 'How GCloud works', hint: 'A five-minute tour of the whole product', icon: HelpCircle, perm: null },
 ];
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
@@ -61,8 +61,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const rows = useMemo(() => [
     ...destinations.map((d) => ({ kind: 'go' as const, key: d.to, go: () => navigate(d.to), payload: d })),
-    ...quick.tags.map((t) => ({ kind: 'tag' as const, key: `tag-${t.name}`, go: () => navigate(`/search?tags=${encodeURIComponent(t.name)}`), payload: t })),
-    ...quick.assets.map((a) => ({ kind: 'asset' as const, key: a.assetId, go: () => navigate(`/search?asset=${a.assetId}`), payload: a })),
+    ...quick.tags.map((t) => ({ kind: 'tag' as const, key: `tag-${t.name}`, go: () => navigate(`/?tags=${encodeURIComponent(t.name)}`), payload: t })),
+    ...quick.assets.map((a) => ({ kind: 'asset' as const, key: a.assetId, go: () => navigate(`/?asset=${a.assetId}`), payload: a })),
     ...quick.folders.map((f) => ({ kind: 'folder' as const, key: f._id, go: () => navigate(`/folders/${f._id}`), payload: f })),
     ...quick.songs.map((s) => ({ kind: 'song' as const, key: s._id, go: () => navigate(`/songs/${s._id}`), payload: s })),
     ...quick.artists.map((a) => ({ kind: 'artist' as const, key: a._id, go: () => navigate(`/artists/${a._id}`), payload: a })),
@@ -78,7 +78,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       if (e.key === 'Enter') {
         e.preventDefault();
         if (rows[cursor]) { rows[cursor].go(); onClose(); }
-        else if (q.trim()) { navigate(`/search?q=${encodeURIComponent(q)}`); onClose(); }
+        else if (q.trim()) { navigate(`/?q=${encodeURIComponent(q)}`); onClose(); }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -128,7 +128,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           {quick.tags.map((t) => {
             const i = nextIndex();
             return (
-              <button key={t.name} className={`palette-item ${i === cursor ? 'cursor' : ''}`} onMouseEnter={() => setCursor(i)} onClick={() => { navigate(`/search?tags=${encodeURIComponent(t.name)}`); onClose(); }}>
+              <button key={t.name} className={`palette-item ${i === cursor ? 'cursor' : ''}`} onMouseEnter={() => setCursor(i)} onClick={() => { navigate(`/?tags=${encodeURIComponent(t.name)}`); onClose(); }}>
                 <Tag size={16} color="var(--ink-3)" />
                 <span className="grow">
                   <span style={{ fontWeight: 600 }}>{t.name}</span>
@@ -143,7 +143,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           {quick.assets.map((a) => {
             const i = nextIndex();
             return (
-              <button key={a.assetId} className={`palette-item ${i === cursor ? 'cursor' : ''}`} onMouseEnter={() => setCursor(i)} onClick={() => { navigate(`/search?asset=${a.assetId}`); onClose(); }}>
+              <button key={a.assetId} className={`palette-item ${i === cursor ? 'cursor' : ''}`} onMouseEnter={() => setCursor(i)} onClick={() => { navigate(`/?asset=${a.assetId}`); onClose(); }}>
                 <FileAudio size={16} color="var(--ink-3)" />
                 <span className="grow truncate">
                   <span style={{ fontWeight: 600 }}>{a.displayName}</span>

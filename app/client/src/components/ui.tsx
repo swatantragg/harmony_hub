@@ -19,7 +19,7 @@ export function Brandmark({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   return (
     <div className="row" style={{ gap: size === 'lg' ? 14 : 11 }}>
       <Tile size={size} />
-      <span className="wordmark" style={{ fontSize: size === 'lg' ? 30 : size === 'sm' ? 17 : 20 }}>Harmony Hub</span>
+      <span className="wordmark" style={{ fontSize: size === 'lg' ? 30 : size === 'sm' ? 17 : 20 }}>GCloud</span>
     </div>
   );
 }

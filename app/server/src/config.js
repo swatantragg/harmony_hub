@@ -60,7 +60,7 @@ const Env = z.object({
 
   // ── MongoDB (§3.3) ────────────────────────────────────────────────────────
   MONGODB_URI: blankIsUnset(z.string().min(1, 'MONGODB_URI is required')),
-  MONGODB_DB: z.string().default('harmonyhub'),
+  MONGODB_DB: z.string().default('gcloud'),
 
   // ── Google Drive (§6) ─────────────────────────────────────────────────────
   // Two ways to reach a Drive, and they are genuinely different accounts:
@@ -90,7 +90,7 @@ const Env = z.object({
   // The folder everything lives under. Blank means "find or create DRIVE_ROOT_FOLDER_NAME
   // at the top of the Drive" — `npm run bootstrap:drive` prints the id it settled on.
   DRIVE_ROOT_FOLDER_ID: blankIsUnset(z.string().optional()),
-  DRIVE_ROOT_FOLDER_NAME: z.string().default('Harmony Hub'),
+  DRIVE_ROOT_FOLDER_NAME: z.string().default('GCloud'),
 
   // Resumable uploads are sent in chunks. Google requires every chunk except the last to
   // be a multiple of 256 KiB; the value here is rounded down to one at load.
@@ -129,11 +129,20 @@ const Env = z.object({
   // Seeding. SEED_ON_BOOT fills an empty database on first start; it never overwrites a
   // library that already has documents unless `npm run seed -- --force` is used.
   SEED_ON_BOOT: bool(true),
-  // The sign-in screen's one-click role cards. Handy while the library is being shown to
-  // stakeholders, and a credential leak in production — so it is opt-in, and the seeded
-  // password is required to be set explicitly alongside it.
-  DEMO_ACCOUNTS: bool(true),
-  SEED_PASSWORD: z.string().min(4).default('harmonyhub'),
+  // The password the seeded accounts are created with. Every seeded account except the
+  // founding administrator is created holding it and required to replace it at first
+  // sign-in, so it is a handover value rather than a credential.
+  SEED_PASSWORD: z.string().min(8).default('changeme123'),
+
+  // The founding administrator, created on an empty database. This is the only account in
+  // the product that is born with a password of its own and no forced change.
+  ADMIN_EMAIL: z.string().default('swatantra.goongoonalo@gmail.com'),
+  ADMIN_NAME: z.string().default('Swatantra Goongoonalo'),
+  ADMIN_PASSWORD: z.string().min(8).default('12345678'),
+
+  // The one password rule. Length is the only requirement that reliably buys entropy;
+  // character-class matrices push people towards predictable patterns instead.
+  MIN_PASSWORD_LENGTH: int(8, 6),
 
   RATE_LIMIT_WINDOW_SEC: int(60, 1),
   RATE_LIMIT_MAX: int(600, 1),
@@ -147,7 +156,7 @@ const Env = z.object({
 const parsed = Env.safeParse(process.env);
 if (!parsed.success) {
   const lines = parsed.error.issues.map((i) => `  · ${i.path.join('.')}: ${i.message}`);
-  console.error(`\nHarmony Hub cannot start — the environment is incomplete:\n${lines.join('\n')}\n`);
+  console.error(`\nGCloud cannot start — the environment is incomplete:\n${lines.join('\n')}\n`);
   console.error('Copy app/.env.example to app/.env and fill it in.\n');
   process.exit(1);
 }
@@ -260,8 +269,13 @@ export const DEDUPE = {
 
 export const SEED_ON_BOOT = env.SEED_ON_BOOT;
 export const SEED_PASSWORD = env.SEED_PASSWORD;
-// Never expose the role cards from a production build, whatever the flag says.
-export const DEMO_ACCOUNTS = env.DEMO_ACCOUNTS && env.NODE_ENV !== 'production';
+export const MIN_PASSWORD_LENGTH = env.MIN_PASSWORD_LENGTH;
+
+export const FOUNDING_ADMIN = {
+  email: env.ADMIN_EMAIL.trim().toLowerCase(),
+  name: env.ADMIN_NAME,
+  password: env.ADMIN_PASSWORD,
+};
 
 export const RECONCILE_CRON = env.RECONCILE_CRON;
 export const RECONCILE_ENABLED = env.RECONCILE_ENABLED;

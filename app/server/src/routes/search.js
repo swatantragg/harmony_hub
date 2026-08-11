@@ -136,12 +136,19 @@ export function runSearch(query) {
   };
 
   const sort = query.sort || (terms.length ? 'relevance' : 'newest');
+  // Every order is offered in both directions. A one-way sort forces the reader to page to
+  // the end to answer "which is the oldest?", which is the same question asked backwards.
+  const updatedAt = (row) => Date.parse(row.asset.updatedAt || row.asset.createdAt);
   const sorters = {
     relevance: (a, b) => (b._score ?? 0) - (a._score ?? 0) || Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
     newest: (a, b) => Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
     oldest: (a, b) => Date.parse(a.asset.createdAt) - Date.parse(b.asset.createdAt),
+    updated: (a, b) => updatedAt(b) - updatedAt(a),
+    updatedOldest: (a, b) => updatedAt(a) - updatedAt(b),
     name: (a, b) => a.asset.displayName.localeCompare(b.asset.displayName),
+    nameDesc: (a, b) => b.asset.displayName.localeCompare(a.asset.displayName),
     largest: (a, b) => (b.asset.drive?.sizeBytes || 0) - (a.asset.drive?.sizeBytes || 0),
+    smallest: (a, b) => (a.asset.drive?.sizeBytes || 0) - (b.asset.drive?.sizeBytes || 0),
   };
   results.sort(sorters[sort] || sorters.newest);
 
@@ -150,7 +157,10 @@ export function runSearch(query) {
 
 searchRouter.get('/', async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(96, Math.max(1, Number(req.query.limit) || 24));
+  // The ceiling exists to stop one request rendering the whole library into a single JSON
+  // body, not to dictate a page size. It is high enough for the "All rows" option the UI
+  // offers on a library of this scale, and the search itself is an in-memory pass either way.
+  const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 24));
   const { results, facets, sort } = runSearch(req.query);
 
   const slice = results.slice((page - 1) * limit, page * limit);
@@ -223,7 +233,7 @@ searchRouter.get('/quick', (req, res) => {
 //
 // This exists for exactly one question: "I know the file is in the Drive — why can't I
 // find it here?" The answer is almost always that somebody dropped it into the folder
-// without uploading it through Harmony Hub, so it has no catalogue record and the normal
+// without uploading it through GCloud, so it has no catalogue record and the normal
 // search cannot see it. Anything this turns up that is not already catalogued can be
 // adopted from Storage Health.
 searchRouter.get('/drive', async (req, res) => {
@@ -237,7 +247,7 @@ searchRouter.get('/drive', async (req, res) => {
     // capability the catalogue simply does not have.
     `fullText contains '${escaped}'`,
   ];
-  // appProperties are how Harmony Hub writes tags, artist and song onto the file itself,
+  // appProperties are how GCloud writes tags, artist and song onto the file itself,
   // so a Drive-side search can match them too.
   for (const key of ['tags', 'artist', 'song', 'assetType']) {
     clauses.push(`appProperties has { key='${key}' and value='${escaped}' }`);

@@ -172,7 +172,7 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
               <div className="t-small" style={{ color: 'var(--st-ink)', fontWeight: 500 }}>
                 {asset.availability.detail || copy.meaning}
               </div>
-              <div className="t-small" style={{ marginTop: 4, fontSize: 11.5 }}>
+              <div className="t-small" style={{ marginTop: 4, fontSize: 14 }}>
                 {copy.next} · Last checked {relative(asset.availability.lastCheckedAt)}
                 {asset.availability.checkMethod ? ` (${asset.availability.checkMethod === 'HEAD_OBJECT' ? 'live probe' : 'nightly reconciliation'})` : ''}
               </div>
@@ -364,17 +364,17 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
                   <div key={e._id} className="panel" style={{ boxShadow: 'none' }}>
                     <div className="panel-body" style={{ padding: 13 }}>
                       <div className="spread">
-                        <span style={{ fontSize: 13 }}>
+                        <span style={{ fontSize: 15 }}>
                           <b>{e.userName}</b> {ACTION_COPY[e.action] ?? e.action.toLowerCase()}
                         </span>
                         <span className="t-small">{relative(e.timestamp)}</span>
                       </div>
                       {Boolean(e.before) && (
-                        <div className="t-small t-mono" style={{ marginTop: 5, fontSize: 11 }}>
+                        <div className="t-small t-mono" style={{ marginTop: 5, fontSize: 13.5 }}>
                           {JSON.stringify(e.before)} → {JSON.stringify(e.after)}
                         </div>
                       )}
-                      <div className="t-small" style={{ fontSize: 11, marginTop: 3 }}>{e.userRole} · {e.ip}</div>
+                      <div className="t-small" style={{ fontSize: 13.5, marginTop: 3 }}>{e.userRole} · {e.ip}</div>
                     </div>
                   </div>
                 ))

@@ -60,7 +60,20 @@ export const FINDING_KINDS = [
   'SIZE_MISMATCH', 'CHECKSUM_MISMATCH', 'PARENT_DRIFT', 'NAME_DRIFT',
 ];
 
-export const ROLES = ['Admin', 'Editor', 'Marketing', 'Viewer'];
+// Two roles, and only one thing separates them. A User does everything an Admin does —
+// uploads, edits, deletes, shares, reads the activity log, fixes storage drift — because
+// splitting a small team's library into tiers of read-only spectators cost more in
+// "who can do this for me?" than it ever saved. What a User cannot do is create another
+// account, so the roster stays a deliberate decision by one person.
+export const ROLES = ['Admin', 'User'];
+
+// The permission every capability is checked against. `admin:users` is the single entry
+// that appears under Admin and not under User — everything above it is shared.
+const SHARED = [
+  'asset:read', 'asset:upload', 'asset:edit', 'asset:rename', 'asset:delete', 'asset:purge',
+  'asset:download', 'asset:restore', 'share:create', 'share:revoke',
+  'catalogue:edit', 'admin:storage', 'admin:activity',
+];
 
 // Role → capability matrix. The authorize() middleware reads this; the client reads the
 // same shape from GET /api/me so a button is never shown that the server would reject.
@@ -68,17 +81,13 @@ export const ROLES = ['Admin', 'Editor', 'Marketing', 'Viewer'];
 // own: Drive moves a file by re-parenting it, so it copies nothing, risks nothing, and
 // needs no special ceremony.
 export const PERMISSIONS = {
-  Admin: [
-    'asset:read', 'asset:upload', 'asset:edit', 'asset:rename', 'asset:delete', 'asset:purge',
-    'asset:download', 'asset:restore', 'share:create', 'share:revoke',
-    'catalogue:edit', 'admin:storage', 'admin:activity', 'admin:users',
-  ],
-  Editor: [
-    'asset:read', 'asset:upload', 'asset:edit', 'asset:rename', 'asset:delete',
-    'asset:download', 'asset:restore', 'catalogue:edit', 'share:create',
-  ],
-  Marketing: ['asset:read', 'asset:download', 'share:create', 'share:revoke'],
-  Viewer: ['asset:read', 'asset:download'],
+  Admin: [...SHARED, 'admin:users'],
+  User: [...SHARED],
 };
 
-export const can = (role, permission) => (PERMISSIONS[role] || []).includes(permission);
+// Accounts created before the roster collapsed to two roles still carry Editor, Marketing
+// or Viewer. Rather than migrate the database and hope nothing was missed, every read of a
+// role goes through here: an unrecognised role is a User, which is exactly the intent.
+export const normaliseRole = (role) => (ROLES.includes(role) ? role : 'User');
+
+export const can = (role, permission) => PERMISSIONS[normaliseRole(role)].includes(permission);

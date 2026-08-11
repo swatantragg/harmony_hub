@@ -1,9 +1,9 @@
 {
-  "name": "harmonyhub",
+  "name": "gcloud",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Harmony Hub \u2014 music asset management on Google Drive and MongoDB",
+  "description": "GCloud \u2014 music asset management on Google Drive and MongoDB",
   "engines": {
     "node": ">=22"
   },

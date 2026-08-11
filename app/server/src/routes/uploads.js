@@ -80,7 +80,7 @@ uploadsRouter.post('/initiate', requires('asset:upload'), async (req, res) => {
       mimeType: contentType || 'application/octet-stream',
       sizeBytes: Number(sizeBytes || 0),
       appProperties: properties({
-        app: 'harmonyhub',
+        app: 'gcloud',
         assetId,
         assetType,
         family: resolveFamily(assetType),
@@ -100,7 +100,7 @@ uploadsRouter.post('/initiate', requires('asset:upload'), async (req, res) => {
     }
     if (storage.isAccessDenied(err)) {
       return problem(res, 502, 'Bad Gateway',
-        'Google refused to open an upload. Check that the connected account can write to the Harmony Hub folder.');
+        'Google refused to open an upload. Check that the connected account can write to the GCloud folder.');
     }
     return problem(res, 502, 'Bad Gateway', `Google Drive would not start the upload: ${err.message}`);
   }

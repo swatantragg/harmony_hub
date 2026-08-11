@@ -2,16 +2,19 @@
 // itself after 30 days, so it is the one state with a deadline attached.
 export type Availability = 'AVAILABLE' | 'UNVERIFIED' | 'TRASHED' | 'RESTORING' | 'MISSING' | 'MISMATCH';
 export type Family = 'Audio' | 'Video' | 'Image' | 'Document';
-export type Role = 'Admin' | 'Editor' | 'Marketing' | 'Viewer';
+// Two roles. A User can do everything an Admin can except create another account, which
+// is the only capability the split exists to protect.
+export type Role = 'Admin' | 'User';
 
 export interface User {
   _id: string;
   name: string;
   email: string;
   role: Role;
-  jobTitle: string;
   status: string;
   lastLoginAt: string | null;
+  /** Still holding the password an administrator handed over. Gates the whole app. */
+  mustChangePassword: boolean;
   permissions: string[];
 }
 
@@ -126,7 +129,7 @@ export interface ActivityEntry {
 }
 
 // Who a link is for. PUBLIC needs no account; the other two resolve only for a signed-in
-// Harmony Hub user, and RESTRICTED additionally checks the account's email against the list.
+// GCloud user, and RESTRICTED additionally checks the account's email against the list.
 export type ShareAudience = 'PUBLIC' | 'EDITOR' | 'RESTRICTED';
 export type ShareTarget = 'ASSET' | 'FOLDER';
 
@@ -138,6 +141,9 @@ export interface Share {
   assetId: string | null;
   assetName: string;
   fileCount: number;
+  /** The family of the shared file — null for a folder link. Drives the category tabs. */
+  family: Family | null;
+  assetType: string | null;
   audience: ShareAudience;
   audienceLabel: string;
   allowedEmails: string[];
@@ -246,6 +252,22 @@ export interface Artist {
   byFamily: Record<string, number>;
   songs?: SongRow[];
   gallery?: Asset[];
+  /** Real Drive folders this artist's files sit in, with their share of the contents. */
+  folders?: ArtistFolder[];
+  /** Asset type → how many this artist has. Drives which sub-tabs the page offers. */
+  byType?: Record<string, number>;
+  /** Files of theirs not filed in any folder. */
+  looseCount?: number;
+}
+
+export interface ArtistFolder {
+  _id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  parentName: string | null;
+  driveWebViewLink: string | null;
+  assetCount: number;
 }
 
 export interface SongRow {
@@ -461,11 +483,12 @@ export interface Dashboard {
     artists: number; songs: number; assets: number;
     staleVerification: number; activeShares: number; openFindings: number;
     folders: number; unfiled: number; duplicateGroups: number;
+    /** Files catalogued but missing from or mismatched against storage. The true total. */
+    needsReview: number;
   };
   recent: Asset[];
-  attention: Asset[];
   trendingTags: { _id: string; name: string; type: string; usageCount: number }[];
-  topArtists: { _id: string; name: string; genre: string; imageAssetId: string | null; songCount: number; assetCount: number; totalBytes: number }[];
+  artists: { _id: string; name: string; genre: string; imageAssetId: string | null; songCount: number; assetCount: number; totalBytes: number }[];
   canUpload: boolean;
   canSeeStorage: boolean;
   activity: ActivityEntry[];

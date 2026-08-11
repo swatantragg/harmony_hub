@@ -1,7 +1,7 @@
 // Typed fetch client. Attaches the access token, unwraps RFC 7807 problem responses
 // into readable Error messages, and keeps every URL in one place.
 
-const TOKEN_KEY = 'harmonyhub.token';
+const TOKEN_KEY = 'gcloud.token';
 
 // Same-origin by default: in development Vite proxies /api, and in the deployed
 // architecture the built bundle is served by the same task that answers /api. Set

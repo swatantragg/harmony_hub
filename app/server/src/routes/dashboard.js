@@ -11,6 +11,9 @@ import { can } from '../catalogue.js';
 export const dashboardRouter = express.Router();
 dashboardRouter.use(authenticate);
 
+// How many of the most recently added files Home shows before "See all" takes over.
+const RECENT_ON_HOME = 5;
+
 dashboardRouter.get('/', async (req, res) => {
   const rows = allAssets();
   const health = healthSummary();
@@ -24,15 +27,18 @@ dashboardRouter.get('/', async (req, res) => {
   // holds, so surfacing "you are storing 14 GB twice" costs nothing.
   const duplicates = scan({ level: 'exact' });
 
+  // Home shows five and a way to see the rest, so five is what it is sent.
   const recent = [...rows]
     .sort((a, b) => Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt))
-    .slice(0, 8)
+    .slice(0, RECENT_ON_HOME)
     .map(shape);
 
-  const attention = rows
-    .filter(({ asset }) => ['MISSING', 'MISMATCH'].includes(asset.availability?.status))
-    .map(shape)
-    .slice(0, 6);
+  // Home no longer lists these — it states how many there are and sends the reader to
+  // Storage health, where each one can actually be resolved. So the count is the whole
+  // payload, and it is the true count rather than the length of a truncated page.
+  const needsReview = rows.filter(
+    ({ asset }) => ['MISSING', 'MISMATCH'].includes(asset.availability?.status),
+  ).length;
 
   const stale = rows.filter(({ asset }) => (asset.availability?.status ?? 'UNVERIFIED') === 'UNVERIFIED').length;
 
@@ -43,7 +49,10 @@ dashboardRouter.get('/', async (req, res) => {
     .sort((a, b) => b.usageCount - a.usageCount)
     .slice(0, 10);
 
-  const topArtists = live(db.artists)
+  // A roster, not a leaderboard: a name and how many files sit behind it. Ordered by name
+  // so a given artist is always in the same place on the list rather than moving every
+  // time somebody uploads.
+  const artists = live(db.artists)
     .map((artist) => {
       const songs = live(db.songs).filter((s) => s.artistId === artist._id);
       const assets = songs.flatMap((s) => s.assets.filter((a) => !a.deletedAt));
@@ -54,7 +63,7 @@ dashboardRouter.get('/', async (req, res) => {
         totalBytes: assets.reduce((n, a) => n + (a.drive?.sizeBytes || 0), 0),
       };
     })
-    .sort((a, b) => b.assetCount - a.assetCount);
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   res.json({
     greetingName: req.user.name.split(' ')[0],
@@ -77,11 +86,11 @@ dashboardRouter.get('/', async (req, res) => {
       unfiled: db.unfiled.filter((a) => !a.deletedAt).length,
       openFindings: health.openFindings,
       duplicateGroups: duplicates.totals.groups,
+      needsReview,
     },
     recent,
-    attention,
     trendingTags,
-    topArtists,
+    artists,
     canUpload: can(req.user.role, 'asset:upload'),
     canSeeStorage: can(req.user.role, 'admin:storage'),
     activity: db.activityLog.slice(0, 6),

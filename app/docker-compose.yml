@@ -1,10 +1,10 @@
-# Harmony Hub — local stack.
+# GCloud — local stack.
 #
 #   docker compose up -d --build app        the app on :8100, using .env as it stands
 #   docker compose --profile local up -d    + MongoDB, for a run that touches no Atlas
 #
 # Ports on this machine: Cleaner on 8080, JGCR on 8090, cuesync on 80/8000.
-# Harmony Hub takes 8100 for the whole application — the API and the front end share one
+# GCloud takes 8100 for the whole application — the API and the front end share one
 # origin, because the Express task serves the built React bundle itself. There is no
 # separate front-end port and no second container. 8101 exists only while the Vite dev
 # server is running, and only on the host.
@@ -24,16 +24,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: harmonyhub:latest
-    container_name: harmonyhub-app
+    image: gcloud:latest
+    container_name: gcloud-app
     restart: unless-stopped
     env_file:
       - .env
     environment:
       # NODE_ENV deliberately comes from .env rather than being pinned here. The image
       # defaults to production; leaving it to .env means this same compose file runs the
-      # container in development mode locally — sign-in role cards on, /api/demo/reset
-      # available — without a second file.
+      # container in development mode locally — /api/demo/reset available, the founding
+      # administrator named in the boot banner — without a second file.
       PORT: 8100
       CLIENT_DIST: /app/client/dist
       # Empty is meaningful: it falls back to the .env value.
@@ -65,7 +65,7 @@ services:
 
   mongo:
     image: mongo:7
-    container_name: harmonyhub-mongo
+    container_name: gcloud-mongo
     profiles: ['local']
     restart: unless-stopped
     ports:

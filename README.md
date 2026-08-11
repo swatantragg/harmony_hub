@@ -1,4 +1,4 @@
-# Harmony Hub
+# GCloud
 
 An internal platform for a music company: every digital asset produced for a release —
 master audio, demos, cover art, music videos, social reels, banners, lyrics, behind-the-scenes
@@ -85,5 +85,5 @@ cd app && npm run docker:up      # http://localhost:8100
 ```
 
 Ports on this machine: 80 and 8000 are cuesync, 8001 and 8090 are JGC3.
-Harmony Hub uses **8100** (app) and **8101** (Vite dev server). `drive:auth` briefly uses
+GCloud uses **8100** (app) and **8101** (Vite dev server). `drive:auth` briefly uses
 **8107** for the OAuth redirect.

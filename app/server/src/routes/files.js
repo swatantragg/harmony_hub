@@ -34,7 +34,7 @@ filesRouter.get('/:token', async (req, res) => {
   const grant = verifyFileToken(req.params.token);
   if (!grant.ok) {
     const detail = grant.reason === 'expired'
-      ? 'This link has expired. Links are deliberately short-lived — reopen the file in Harmony Hub for a fresh one.'
+      ? 'This link has expired. Links are deliberately short-lived — reopen the file in GCloud for a fresh one.'
       : 'This link is not valid.';
     return problem(res, grant.reason === 'expired' ? 410 : 403, grant.reason === 'expired' ? 'Gone' : 'Forbidden', detail);
   }
@@ -55,7 +55,7 @@ filesRouter.get('/:token', async (req, res) => {
     });
   } catch (err) {
     if (isNotFound(err)) {
-      return problem(res, 410, 'Gone', 'Google Drive no longer has this file. Harmony Hub will flag it as missing on the next check.');
+      return problem(res, 410, 'Gone', 'Google Drive no longer has this file. GCloud will flag it as missing on the next check.');
     }
     return problem(res, 502, 'Bad Gateway', `Google Drive refused the read: ${driveErrorCode(err)}`);
   }
