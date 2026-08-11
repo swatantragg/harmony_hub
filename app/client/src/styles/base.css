@@ -12,7 +12,7 @@ body {
      switch feel laggy on a dense screen, so components change instantly underneath. */
   transition: background-color 200ms var(--ease), color 200ms var(--ease);
   font-family: var(--sans);
-  font-size: 16.5px;
+  font-size: 18px;
   line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -35,16 +35,16 @@ h1, h2, h3, h4 { margin: 0; }
 /* One type scale, one family. Sizes are a step up from the original brand-book scale —
    Poppins runs small for its point size, and the product is read on a desk, not held. */
 .t-display { font-family: var(--display); font-weight: 600; letter-spacing: -.03em; line-height: 1.06; }
-.t-h1 { font-family: var(--display); font-weight: 600; font-size: 34px; letter-spacing: -.024em; line-height: 1.15; }
-.t-h2 { font-family: var(--sans); font-weight: 600; font-size: 22px; letter-spacing: -.01em; }
-.t-h3 { font-family: var(--sans); font-weight: 600; font-size: 17px; letter-spacing: -.006em; }
-.t-body { font-size: 16px; color: var(--ink-2); }
-.t-small { font-size: 14.5px; font-weight: 400; color: var(--ink-3); }
-.t-mono { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+.t-h1 { font-family: var(--display); font-weight: 600; font-size: 36px; letter-spacing: -.024em; line-height: 1.15; }
+.t-h2 { font-family: var(--sans); font-weight: 600; font-size: 23px; letter-spacing: -.01em; }
+.t-h3 { font-family: var(--sans); font-weight: 600; font-size: 18.5px; letter-spacing: -.006em; }
+.t-body { font-size: 18px; color: var(--ink-2); }
+.t-small { font-size: 16.5px; font-weight: 400; color: var(--ink-3); }
+.t-mono { font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; }
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 14.5px;
   letter-spacing: .11em;
   text-transform: uppercase;
   font-weight: 500;
@@ -58,7 +58,7 @@ h1, h2, h3, h4 { margin: 0; }
    available via the title attribute and the copy button beside it. */
 .keytext {
   font-family: var(--mono);
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-variant-numeric: tabular-nums;
   color: var(--indigo-deep);
   background: var(--indigo-soft);

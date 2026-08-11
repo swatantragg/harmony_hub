@@ -7,7 +7,7 @@
 //
 // ── Four properties of Drive that shape everything above this file ───────────
 //
-//  1. Folders are real. A Harmony Hub folder is backed by an actual Drive folder: open
+//  1. Folders are real. A GCloud folder is backed by an actual Drive folder: open
 //     drive.google.com and the library is laid out the way the app shows it. Moving a file
 //     between folders is a parent swap, so no bytes move however large the file is.
 //
@@ -106,10 +106,10 @@ export function binding(file, { path = null } = {}) {
 export const fingerprintOf = (drive) => drive?.sha256 || (drive?.md5 ? `md5:${drive.md5}` : null);
 
 // The metadata written onto the Drive file itself, so the folder stays self-describing to
-// anyone who opens it in a browser and never heard of Harmony Hub.
+// anyone who opens it in a browser and never heard of GCloud.
 export const assetProperties = (asset, { song, artist, folder } = {}) =>
   properties({
-    app: 'harmonyhub',
+    app: 'gcloud',
     assetId: asset.assetId,
     assetType: asset.type,
     family: asset.family,
@@ -220,7 +220,7 @@ export const pinRevision = keepRevisionForever;
 
 // Trashed files keep occupying Drive quota until Google's own sweep, so this is the only
 // way to actually get the space back today. It empties the *whole* account trash, not only
-// what Harmony Hub put there, which is why the route that calls it demands a typed
+// what GCloud put there, which is why the route that calls it demands a typed
 // confirmation (§10.12).
 export const emptyDriveTrash = () => emptyTrash();
 
@@ -281,7 +281,7 @@ export async function renameFolder(folderId, name) {
   return binding(file);
 }
 
-// Deleting a Harmony Hub folder never deletes files (§10.8) — they are moved back to the
+// Deleting a GCloud folder never deletes files (§10.8) — they are moved back to the
 // Assets root first, and only the now-empty Drive folder is trashed.
 export async function trashFolder(folderId) {
   await trashFile(folderId);
@@ -430,7 +430,7 @@ export async function probe(asset) {
         ...base,
         status: 'MISMATCH',
         lastVerifiedAt: now,
-        detail: `The file was changed in Google Drive outside Harmony Hub (${reasons.join('; ')})`,
+        detail: `The file was changed in Google Drive outside GCloud (${reasons.join('; ')})`,
       },
       head,
     };

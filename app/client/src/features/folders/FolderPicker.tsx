@@ -125,7 +125,7 @@ export function NewFolderDialog({
             <Info size={15} />
             <div>
               <b>This creates a real folder in Google Drive.</b> Open drive.google.com and it will be
-              there, laid out the way Harmony Hub shows it. Moving files in and out re-parents them
+              there, laid out the way GCloud shows it. Moving files in and out re-parents them
               in Drive without copying anything, so renaming this folder, moving files between
               folders, or deleting it later never touches a single byte.
             </div>

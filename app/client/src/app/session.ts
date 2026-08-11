@@ -6,7 +6,9 @@ interface SessionState {
   user: User | null;
   loading: boolean;
   bootstrap: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
+  /** Replaces the password on the signed-in account and clears the first-run gate. */
+  setPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   can: (permission: string) => boolean;
 }
@@ -33,6 +35,20 @@ export const useSession = create<SessionState>((set, get) => ({
     });
     auth.set(res.accessToken);
     set({ user: res.user, loading: false });
+    // Handed back so the caller can route straight to the set-a-password screen without
+    // waiting for a re-render to tell it what just happened.
+    return res.user;
+  },
+
+  // The server issues a fresh token here, because the one in hand was minted for an
+  // account that had not yet cleared the gate.
+  setPassword: async (currentPassword, newPassword) => {
+    const res = await api<{ accessToken: string; user: User }>('/auth/password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+    });
+    auth.set(res.accessToken);
+    set({ user: res.user, loading: false });
   },
 
   logout: async () => {
@@ -47,8 +63,8 @@ export const useSession = create<SessionState>((set, get) => ({
 // ── First-run guidance ──────────────────────────────────────────────────────
 // The product tracks what a new user has already been shown so the tour, the tips and
 // the "what is this screen for" banners fade away on their own rather than nagging.
-const TOUR_KEY = 'harmonyhub.tour.done';
-const SEEN_KEY = 'harmonyhub.seen';
+const TOUR_KEY = 'gcloud.tour.done';
+const SEEN_KEY = 'gcloud.seen';
 
 export const tour = {
   done: () => localStorage.getItem(TOUR_KEY) === '1',

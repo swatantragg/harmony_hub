@@ -6,9 +6,10 @@ import { runReconciliation, latestRun, healthSummary } from '../services/reconci
 import { record } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
 import * as storage from '../services/storage.js';
-import { DRIVE_ID, GOOGLE, GOOGLE_CONFIGURED, ROOTS, SEED_PASSWORD, TRASH_DAYS } from '../config.js';
+import { DRIVE_ID, GOOGLE, GOOGLE_CONFIGURED, MIN_PASSWORD_LENGTH, ROOTS, SEED_PASSWORD, TRASH_DAYS } from '../config.js';
 import { uuid, hashPassword } from '../util/crypto.js';
-import { ROLES, PERMISSIONS, familyOf } from '../catalogue.js';
+import { ROLES, PERMISSIONS, familyOf, normaliseRole } from '../catalogue.js';
+import { passwordProblem } from './auth.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(authenticate);
@@ -23,7 +24,7 @@ adminRouter.get('/storage/quota', requires('admin:storage'), async (_req, res) =
     const libraryBytes = rows.reduce((n, { asset }) => n + (asset.drive?.sizeBytes ?? 0), 0);
     res.json({
       ...quota,
-      // What Harmony Hub itself is responsible for, versus what else is in the Drive.
+      // What GCloud itself is responsible for, versus what else is in the Drive.
       libraryBytes,
       libraryFileCount: rows.length,
       otherDriveBytes: Math.max(0, quota.usageInDrive - libraryBytes),
@@ -155,7 +156,7 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
       }
 
       // A file dragged into a different Drive folder. Move the catalogue to follow it,
-      // creating the Harmony Hub folder if that Drive folder is new to us.
+      // creating the GCloud folder if that Drive folder is new to us.
       case 'follow-drive-folder': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -293,58 +294,106 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
 
 // ── Activity log ────────────────────────────────────────────────────────────
 adminRouter.get('/activity', requires('admin:activity'), (req, res) => {
-  const { action, userId, entity, q } = req.query;
+  const { action, userId, entity, q, from, to } = req.query;
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(200, Number(req.query.limit) || 50);
+  const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 50));
+
+  // A date filter on an audit trail is almost always "what happened on the day X went
+  // wrong?", so `to` is inclusive of the whole day rather than of midnight on it.
+  const fromMs = from ? Date.parse(`${from}T00:00:00`) : null;
+  const toMs = to ? Date.parse(`${to}T23:59:59.999`) : null;
+
   const rows = db.activityLog.filter((e) => {
     if (action && e.action !== action) return false;
     if (userId && e.userId !== userId) return false;
     if (entity && e.entity !== entity) return false;
     if (q && !`${e.label} ${e.userName} ${e.action}`.toLowerCase().includes(String(q).toLowerCase())) return false;
+    const at = Date.parse(e.timestamp);
+    if (fromMs != null && !Number.isNaN(fromMs) && at < fromMs) return false;
+    if (toMs != null && !Number.isNaN(toMs) && at > toMs) return false;
     return true;
   });
+
+  const sorters = {
+    newest: (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    oldest: (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+    // Alphabetical by the person, then by time, so one person's entries stay together and
+    // read in order rather than being shuffled within their own block.
+    person: (a, b) => a.userName.localeCompare(b.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    personDesc: (a, b) => b.userName.localeCompare(a.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    label: (a, b) => String(a.label).localeCompare(String(b.label)),
+    labelDesc: (a, b) => String(b.label).localeCompare(String(a.label)),
+  };
+  const sort = sorters[req.query.sort] ? req.query.sort : 'newest';
+  const sorted = [...rows].sort(sorters[sort]);
+
   res.json({
-    data: rows.slice((page - 1) * limit, page * limit),
-    total: rows.length,
+    data: sorted.slice((page - 1) * limit, page * limit),
+    total: sorted.length,
     page,
     limit,
+    sort,
+    hasMore: page * limit < sorted.length,
     actions: [...new Set(db.activityLog.map((e) => e.action))].sort(),
+    // The window the log actually covers, so a date picker can be bounded to it rather
+    // than letting somebody choose a range that cannot contain anything.
+    earliest: db.activityLog.length
+      ? db.activityLog.reduce((min, e) => (e.timestamp < min ? e.timestamp : min), db.activityLog[0].timestamp)
+      : null,
   });
 });
 
 // ── Users ───────────────────────────────────────────────────────────────────
+// Creating an account is the one capability an Admin holds and a User does not, so every
+// route below sits behind `admin:users` and nothing else in the product does.
 const publicUser = (u) => ({
-  _id: u._id, name: u.name, email: u.email, role: u.role, jobTitle: u.jobTitle,
+  _id: u._id, name: u.name, email: u.email, role: normaliseRole(u.role),
   status: u.status, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt,
-  permissions: PERMISSIONS[u.role],
+  // Surfaced so the People table can say "has not set their own password yet" rather
+  // than leaving an administrator to guess whether a handover landed.
+  mustChangePassword: Boolean(u.mustChangePassword),
+  permissions: PERMISSIONS[normaliseRole(u.role)],
 });
+
+const admins = () => db.users.filter((u) => normaliseRole(u.role) === 'Admin' && u.status === 'active');
 
 adminRouter.get('/users', requires('admin:users'), (_req, res) => {
   res.json({
     data: db.users.map(publicUser),
     roles: ROLES,
     permissionMatrix: PERMISSIONS,
+    minPasswordLength: MIN_PASSWORD_LENGTH,
   });
 });
 
 adminRouter.post('/users', requires('admin:users'), async (req, res) => {
-  const { name, email, role, jobTitle, password } = req.body || {};
-  if (!name || !email) return problem(res, 422, 'Unprocessable Entity', 'A name and an email are required.');
-  if (db.users.some((u) => u.email.toLowerCase() === String(email).toLowerCase())) {
+  const { name, email, role, password } = req.body || {};
+  if (!name?.trim() || !email?.trim()) {
+    return problem(res, 422, 'Unprocessable Entity', 'A name and an email are required.');
+  }
+  const address = String(email).trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+    return problem(res, 422, 'Unprocessable Entity', 'That does not look like an email address.');
+  }
+  if (db.users.some((u) => u.email.toLowerCase() === address)) {
     return problem(res, 409, 'Conflict', 'That email address already has an account.');
   }
+
   const initial = String(password || SEED_PASSWORD);
-  if (initial.length < 8 && password) {
-    return problem(res, 422, 'Unprocessable Entity', 'A password must be at least 8 characters.');
-  }
+  const invalid = passwordProblem(initial);
+  if (invalid) return problem(res, 422, 'Unprocessable Entity', invalid);
+
   const user = {
     _id: `user_${uuid().slice(0, 8)}`,
-    name,
-    email: String(email).toLowerCase(),
-    jobTitle: jobTitle || '',
+    name: name.trim(),
+    email: address,
     passwordHash: await hashPassword(initial),
-    role: ROLES.includes(role) ? role : 'Viewer',
+    role: ROLES.includes(role) ? role : 'User',
     status: 'active',
+    // The starting password is a handover, not a credential: it is good for exactly one
+    // sign-in, and every route stays closed until the person replaces it.
+    mustChangePassword: true,
+    passwordChangedAt: null,
     createdAt: new Date().toISOString(),
     lastLoginAt: null,
   };
@@ -357,14 +406,30 @@ adminRouter.post('/users', requires('admin:users'), async (req, res) => {
 adminRouter.patch('/users/:id', requires('admin:users'), (req, res) => {
   const user = db.users.find((u) => u._id === req.params.id);
   if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
-  const before = { role: user.role, status: user.status };
-  if (req.body?.role && ROLES.includes(req.body.role)) user.role = req.body.role;
-  if (req.body?.status) user.status = req.body.status;
-  if (req.body?.jobTitle != null) user.jobTitle = req.body.jobTitle;
+
+  const nextRole = req.body?.role && ROLES.includes(req.body.role) ? req.body.role : null;
+  const nextStatus = req.body?.status ?? null;
+
+  // A library with no administrator has no way back: nobody left can create an account or
+  // restore the role. So the last active Admin cannot be demoted or suspended, including
+  // by themselves.
+  const losingAdmin =
+    normaliseRole(user.role) === 'Admin'
+    && ((nextRole && nextRole !== 'Admin') || (nextStatus && nextStatus !== 'active'));
+  if (losingAdmin && admins().length <= 1) {
+    return problem(
+      res, 409, 'Conflict',
+      'This is the only administrator. Give somebody else the Admin role first — otherwise no account could add one back.',
+    );
+  }
+
+  const before = { role: normaliseRole(user.role), status: user.status };
+  if (nextRole) user.role = nextRole;
+  if (nextStatus) user.status = nextStatus;
   persist();
   record(req, {
     action: 'USER_UPDATE', entity: 'user', entityId: user._id,
-    label: `Updated ${user.name}`, before, after: { role: user.role, status: user.status },
+    label: `Updated ${user.name}`, before, after: { role: normaliseRole(user.role), status: user.status },
   });
   res.json(publicUser(user));
 });

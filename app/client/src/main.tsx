@@ -12,8 +12,8 @@ import { ToastHost } from './components/ui';
 import { useSession } from './app/session';
 import { applyStoredThemeEarly, useTheme } from './app/theme';
 import { Login } from './features/auth/Login';
+import { SetPassword } from './features/auth/SetPassword';
 import { Dashboard } from './features/home/Dashboard';
-import { SearchPage } from './features/search/SearchPage';
 import { ArtistDetail, ArtistList } from './features/artists/Artists';
 import { SongDetailPage, SongList } from './features/songs/Songs';
 import { FolderDetail, FolderList } from './features/folders/Folders';
@@ -37,6 +37,20 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   if (loading) return <BootSplash />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  // The server closes every route below to an account that has not replaced the password
+  // it was handed. This mirrors that, so the reader lands on the screen that fixes it
+  // rather than on a page that would answer 403 to everything it tried to load.
+  if (user.mustChangePassword) return <Navigate to="/set-password" replace />;
+  return <>{children}</>;
+}
+
+// The set-a-password screen needs a signed-in account, and needs the pending flag — an
+// account that has already chosen a password has no business here.
+function RequirePendingPassword({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useSession();
+  if (loading) return <BootSplash />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.mustChangePassword) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -67,11 +81,14 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/set-password" element={<RequirePendingPassword><SetPassword /></RequirePendingPassword>} />
       <Route path="/s/:token" element={<PublicShare />} />
 
       <Route element={<RequireAuth><Shell /></RequireAuth>}>
+        {/* Home is the search screen. `/search` used to be a second one with a second
+            search bar; every link that pointed at it now points here. */}
         <Route index element={<Dashboard />} />
-        <Route path="search" element={<SearchPage />} />
+        <Route path="search" element={<Navigate to="/" replace />} />
         <Route path="artists" element={<ArtistList />} />
         <Route path="artists/:id" element={<ArtistDetail />} />
         <Route path="songs" element={<SongList />} />

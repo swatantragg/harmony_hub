@@ -1,50 +1,83 @@
-// Search-first home. The prominent search bar comes first, the honest storage picture
-// second, and what changed recently third — in that order, because that is the order a
-// person actually needs them.
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+// Home. The only search bar in the product lives here, and so do the controls that used
+// to sit on a search screen of its own — running a live check, ordering, grid or list,
+// and the facets. Type something and the results replace everything below the bar; clear
+// it and the library summary comes back.
+//
+// What is deliberately *not* here any more: the storage-health breakdown, which belongs on
+// the page that can act on it, and the list of files needing a decision, which is a
+// sentence and a button rather than a wall of cards somebody has to scroll past to reach
+// the work they actually came for.
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
 import {
-  Search, ArrowRight, ShieldCheck, UploadCloud, Users, Disc3, Share2, Clock,
-  AlertTriangle, Sparkles, HardDrive, Copy,
+  Search, ArrowRight, UploadCloud, Users as UsersIcon, Disc3, Share2, Clock,
+  AlertTriangle, Sparkles, X,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { AvailabilityBadge, CardSkeletons, HelpTip } from '../../components/ui';
-import { AssetCard } from '../assets/AssetCard';
+import { Skeleton, useDebounced } from '../../components/ui';
+import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, pluralise, relative } from '../../lib/format';
-import { ACTION_COPY, STATUS_COPY } from '../../lib/assetTypes';
-import type { Dashboard as DashboardData, Availability } from '../../lib/types';
+import { ACTION_COPY } from '../../lib/assetTypes';
+import type { Dashboard as DashboardData } from '../../lib/types';
 import { useSession, useSeen } from '../../app/session';
+import {
+  FiltersDialog, SearchResults, SearchToolbar, useAssetSearch,
+} from '../search/searchControls';
 
 const QUICK_FILTERS = [
-  { label: 'Master audio', to: '/search?type=Master+Audio' },
-  { label: 'Reels', to: '/search?type=Reel+-+BTS%2FMV' },
-  { label: 'Cover art', to: '/search?family=Image' },
-  { label: 'Added this month', to: '/search?sort=newest' },
-  { label: 'Needs checking', to: '/search?availability=UNVERIFIED' },
+  { label: 'Master audio', to: '/?type=Master+Audio' },
+  { label: 'Reels', to: '/?type=Reel+-+BTS%2FMV' },
+  { label: 'Cover art', to: '/?family=Image' },
+  { label: 'Added this month', to: '/?sort=newest' },
+  { label: 'Needs checking', to: '/?availability=UNVERIFIED' },
 ];
+
+// How many artists the roster shows before "View all" takes over.
+const ARTISTS_ON_HOME = 5;
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const [q, setQ] = useState('');
-  const [openAsset, setOpenAsset] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const [text, setText] = useState(params.get('q') ?? '');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [openAsset, setOpenAsset] = useState<string | null>(params.get('asset'));
   const { user } = useSession();
   const [dismissed, dismiss] = useSeen('home-intro');
+  const debounced = useDebounced(text, 300);
+
+  const search = useAssetSearch(params, setParams);
+
+  // The URL is the source of truth for a query — every search is shareable as a link.
+  useEffect(() => {
+    const next = new URLSearchParams(params);
+    if (debounced.trim()) next.set('q', debounced.trim());
+    else next.delete('q');
+    next.delete('page');
+    if (next.toString() !== params.toString()) setParams(next, { replace: true });
+  }, [debounced]);
+
+  // Someone arriving back on Home from a link — a browser Back, a quick filter — must see
+  // the box agree with what is actually being searched.
+  useEffect(() => {
+    const fromUrl = params.get('q') ?? '';
+    if (fromUrl !== debounced.trim()) setText(fromUrl);
+  }, [params.get('q')]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api<DashboardData>('/dashboard'),
   });
 
-  const go = (e: React.FormEvent) => {
-    e.preventDefault();
-    navigate(`/search${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`);
+  const clearSearch = () => {
+    setText('');
+    setParams(new URLSearchParams(), { replace: true });
   };
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const needsReview = data?.counts.needsReview ?? 0;
 
   return (
     <div className="page stack-5">
@@ -57,252 +90,191 @@ export function Dashboard() {
           What are you looking for?
         </h1>
 
-        <form onSubmit={go} data-tour="search" style={{ maxWidth: 680 }}>
+        <form onSubmit={(e) => e.preventDefault()} data-tour="search" style={{ maxWidth: 680 }}>
           <div className="searchbar lg">
             <Search size={20} color="var(--ink-3)" />
             <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
               placeholder="Try “dil se reels”, a filename, an artist, or an ISRC"
               aria-label="Search the library"
             />
-            {/* The label goes on a phone; the icon and the target stay, which leaves the
-                placeholder enough room not to be cut mid-word. */}
-            <button className="btn btn-primary btn-sm" type="submit" aria-label="Search">
-              <Search size={15} />
-              <span className="hide-on-phone">Search</span>
-            </button>
+            {(text || search.isSearching) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={clearSearch}
+                aria-label="Clear the search"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
         </form>
 
-        <div className="wrap-gap" style={{ marginTop: 14 }}>
-          {QUICK_FILTERS.map((f) => (
-            <Link key={f.label} className="chip" to={f.to}>{f.label}</Link>
-          ))}
+        {/* The controls belong to the bar, not to a page of their own, so they sit in the
+            bar's own column and line up with its left edge. Once a search is running the
+            row widens to the results grid, which puts the result count hard left and the
+            controls hard right — the arrangement a results screen wants. */}
+        <div style={{ marginTop: 12, maxWidth: search.isSearching ? undefined : 680 }}>
+          <SearchToolbar
+            search={search}
+            onOpenFilters={() => setFiltersOpen(true)}
+            showCount={search.isSearching}
+          />
         </div>
 
-        {!dismissed && (
+        {!search.isSearching && (
+          <div className="wrap-gap" style={{ marginTop: 14 }}>
+            {QUICK_FILTERS.map((f) => (
+              <Link key={f.label} className="chip" to={f.to}>{f.label}</Link>
+            ))}
+          </div>
+        )}
+
+        {!dismissed && !search.isSearching && (
           <div className="note indigo" style={{ marginTop: 18, maxWidth: 760 }}>
             <Sparkles size={15} />
             <div className="grow">
               <b>New here?</b> Search returns individual files, not folders. Every file carries a
               badge saying whether it is genuinely in storage right now — that badge is the heart of
-              Harmony Hub. Open <Link to="/help">How Harmony Hub works</Link> for a five-minute walkthrough.
+              GCloud. Open <Link to="/help">How GCloud works</Link> for a five-minute walkthrough.
             </div>
             <button className="btn btn-ghost btn-sm" onClick={dismiss}>Got it</button>
           </div>
         )}
       </section>
 
-      {/* ── Counts + storage health ─────────────────────────────────────── */}
-      <section className="stack-3">
-        <div className="tiles">
-          <button className="stat" onClick={() => navigate('/search')}>
-            <div className="stat-k">Files</div>
-            <div className="stat-v">{data?.counts.assets ?? '—'}</div>
-            <div className="stat-n">{bytes(data?.health.totalBytes ?? 0)} in Google Drive</div>
-          </button>
-          <button className="stat" onClick={() => navigate('/artists')}>
-            <div className="stat-k">Artists</div>
-            <div className="stat-v">{data?.counts.artists ?? '—'}</div>
-            <div className="stat-n"><Users size={11} style={{ verticalAlign: -1 }} /> across the roster</div>
-          </button>
-          <button className="stat" onClick={() => navigate('/songs')}>
-            <div className="stat-k">Songs</div>
-            <div className="stat-v">{data?.counts.songs ?? '—'}</div>
-            <div className="stat-n"><Disc3 size={11} style={{ verticalAlign: -1 }} /> releases catalogued</div>
-          </button>
-          <button
-            className="stat"
-            data-tour="health"
-            onClick={() => navigate(data?.canSeeStorage ? '/admin/storage' : '/search?availability=AVAILABLE')}
-          >
-            <div className="stat-k row-tight">
-              Verified in Drive
-              <HelpTip text="The share of files confirmed present in Google Drive with matching size and checksum. Anything below 100% has an explanation on the storage health page." />
-            </div>
-            <div className={`stat-v ${(data?.health.healthPct ?? 100) >= 98 ? 'ok' : 'warn'}`}>
-              {data ? `${data.health.healthPct}%` : '—'}
-            </div>
-            <div className="stat-n">
-              {data ? `${pluralise(data.counts.staleVerification, 'file')} not checked recently` : ' '}
-            </div>
-          </button>
-          {/* Space left — the number that decides whether anybody can upload tomorrow,
-              so it belongs on the home screen rather than in an admin page. */}
-          {data?.quota && !data.quota.unlimited && (
-            <button
-              className="stat"
-              onClick={() => navigate(data.canSeeStorage ? '/admin/storage' : '/dedupe')}
-            >
-              <div className="stat-k row-tight">
-                Drive space left
-                <HelpTip text="Google Drive storage remaining. Uploads stop working when this reaches zero — and files in the bin still count towards it until Google clears them." />
-              </div>
-              <div className={`stat-v ${data.quota.percentUsed >= 90 ? 'warn' : ''}`}>
-                {bytes(data.quota.available ?? 0)}
-              </div>
-              <div className="stat-n">
-                <HardDrive size={11} style={{ verticalAlign: -1 }} /> {data.quota.percentUsed}% of{' '}
-                {bytes(data.quota.limit ?? 0)} used
-              </div>
+      {/* ── Results, once anything is being searched ────────────────────── */}
+      {search.isSearching ? (
+        <section>
+          <SearchResults
+            search={search}
+            openAsset={openAsset}
+            onOpen={(a) => setOpenAsset(a.assetId)}
+          />
+        </section>
+      ) : (
+        <>
+          {/* ── Library at a glance ──────────────────────────────────────── */}
+          <section className="tiles">
+            <button className="stat" onClick={() => navigate('/?sort=newest')}>
+              <div className="stat-k">Files</div>
+              <div className="stat-v">{data?.counts.assets ?? '—'}</div>
+              <div className="stat-n">{bytes(data?.health.totalBytes ?? 0)} in Google Drive</div>
             </button>
-          )}
-          {/* Duplicate storage, but only when there is some — an always-present zero is noise. */}
-          {data && data.duplicates.reclaimableBytes > 0 && (
-            <button className="stat" onClick={() => navigate('/dedupe')}>
-              <div className="stat-k row-tight">
-                Stored twice
-                <HelpTip text="Files whose contents are byte-for-byte identical to another file in the library, confirmed by Google's own checksum. Removing the copies frees exactly this much." />
-              </div>
-              <div className="stat-v warn">{bytes(data.duplicates.reclaimableBytes)}</div>
-              <div className="stat-n">
-                <Copy size={11} style={{ verticalAlign: -1 }} />{' '}
-                {pluralise(data.duplicates.groups, 'duplicate set')}
-                {data.duplicates.crossFolderGroups > 0 && ' across folders'}
-              </div>
+            <button className="stat" onClick={() => navigate('/artists')}>
+              <div className="stat-k">Artists</div>
+              <div className="stat-v">{data?.counts.artists ?? '—'}</div>
+              <div className="stat-n"><UsersIcon size={11} style={{ verticalAlign: -1 }} /> across the roster</div>
             </button>
-          )}
-          {data && data.counts.activeShares > 0 && (
-            <button className="stat" onClick={() => navigate('/shares')}>
-              <div className="stat-k">Live share links</div>
-              <div className="stat-v indigo">{data.counts.activeShares}</div>
-              <div className="stat-n"><Share2 size={11} style={{ verticalAlign: -1 }} /> out with partners</div>
+            <button className="stat" onClick={() => navigate('/songs')}>
+              <div className="stat-k">Songs</div>
+              <div className="stat-v">{data?.counts.songs ?? '—'}</div>
+              <div className="stat-n"><Disc3 size={11} style={{ verticalAlign: -1 }} /> releases catalogued</div>
             </button>
+            {data && data.counts.activeShares > 0 && (
+              <button className="stat" onClick={() => navigate('/shares')}>
+                <div className="stat-k">Live share links</div>
+                <div className="stat-v indigo">{data.counts.activeShares}</div>
+                <div className="stat-n"><Share2 size={11} style={{ verticalAlign: -1 }} /> out with partners</div>
+              </button>
+            )}
+          </section>
+
+          {/* ── Needs a decision ─────────────────────────────────────────── */}
+          {/* One line and one button. The files themselves, and everything that can be
+              done about them, are on Storage health — which is where the reader ends up
+              rather than being shown a problem here that cannot be solved here. */}
+          {needsReview > 0 && data?.canSeeStorage && (
+            <section>
+              <div className="note danger">
+                <AlertTriangle size={15} />
+                <div className="grow">
+                  <b>{needsReview} {needsReview === 1 ? 'file needs' : 'files need'} review</b>
+                </div>
+                <Link className="btn btn-secondary btn-sm" to="/admin/storage?focus=review">Review</Link>
+              </div>
+            </section>
           )}
-        </div>
 
-        {/* Status ribbon — the six states, always visible, always clickable. */}
-        {data && (
-          <div className="panel">
-            <div className="panel-body">
-              <div className="spread" style={{ marginBottom: 12 }}>
-                <span className="t-h3 row-tight">
-                  <ShieldCheck size={15} color="var(--indigo)" /> Where every file stands
-                </span>
-                {data.canSeeStorage && (
-                  <Link className="btn btn-ghost btn-sm" to="/admin/storage">Storage health <ArrowRight size={13} /></Link>
-                )}
+          {/* ── Recently added ───────────────────────────────────────────── */}
+          <section>
+            <div className="spread" style={{ marginBottom: 14 }}>
+              <h2 className="t-h2 row-tight"><Clock size={16} color="var(--ink-3)" /> Added recently</h2>
+              <Link className="btn btn-ghost btn-sm" to="/?sort=newest">See all <ArrowRight size={13} /></Link>
+            </div>
+            {isLoading ? <Skeleton h={260} /> : (
+              <AssetList
+                assets={data?.recent ?? []}
+                selectedId={openAsset}
+                onOpen={(a) => setOpenAsset(a.assetId)}
+              />
+            )}
+          </section>
+
+          {/* ── Artists + activity, side by side ─────────────────────────── */}
+          <section className="home-split">
+            <div className="panel">
+              <div className="panel-head">
+                <span className="t-h3">Artists</span>
+                <Link className="btn btn-ghost btn-sm" to="/artists">View all <ArrowRight size={13} /></Link>
               </div>
-
-              <div className="meter" style={{ marginBottom: 14 }}>
-                {(Object.entries(data.health.byStatus) as [Availability, number][])
-                  .filter(([, n]) => n > 0)
-                  .map(([status, n]) => (
-                    <i
-                      key={status}
-                      data-status={status}
-                      title={`${STATUS_COPY[status].label}: ${n}`}
-                      style={{ width: `${(n / data.health.totalAssets) * 100}%`, background: 'var(--st)' }}
-                    />
-                  ))}
-              </div>
-
-              <div className="wrap-gap">
-                {(Object.entries(data.health.byStatus) as [Availability, number][]).map(([status, n]) => (
+              <div>
+                {/* A name and a number. Anything else here — a genre, a size, a rank — is
+                    detail the artist's own page carries better. */}
+                {data?.artists.slice(0, ARTISTS_ON_HOME).map((a) => (
                   <Link
-                    key={status}
-                    to={`/search?availability=${status}`}
-                    className="row-tight"
-                    style={{ textDecoration: 'none', opacity: n === 0 ? 0.4 : 1 }}
+                    key={a._id}
+                    to={`/artists/${a._id}`}
+                    className="nav-item"
+                    style={{ borderRadius: 0, padding: '12px 18px', borderBottom: '1px solid var(--line)' }}
                   >
-                    <AvailabilityBadge status={status} />
-                    <span className="t-small" style={{ fontFamily: 'var(--mono)' }}>{n}</span>
+                    <span
+                      style={{
+                        width: 34, height: 34, borderRadius: 10, flex: 'none',
+                        background: 'linear-gradient(135deg, var(--indigo-soft), var(--indigo-wash))',
+                        color: 'var(--indigo-deep)', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', fontWeight: 700, fontSize: 14.5,
+                      }}
+                    >
+                      {a.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="grow truncate" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15.5 }}>
+                      {a.name}
+                    </span>
+                    <span className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 14, flex: 'none' }}>
+                      {pluralise(a.assetCount, 'file')}
+                    </span>
                   </Link>
                 ))}
               </div>
             </div>
-          </div>
-        )}
-      </section>
 
-      {/* ── Needs attention ─────────────────────────────────────────────── */}
-      {data && data.attention.length > 0 && (
-        <section>
-          <div className="note danger" style={{ marginBottom: 14 }}>
-            <AlertTriangle size={15} />
-            <div className="grow">
-              <b>{pluralise(data.attention.length, 'file needs', 'files need')} a decision.</b>{' '}
-              These are catalogued but their stored object is missing or does not match. Nothing else
-              in the library is affected.
+            <div className="panel">
+              <div className="panel-head"><span className="t-h3">Latest activity</span></div>
+              <div className="panel-body stack-3">
+                {data?.activity.map((e) => (
+                  <div key={e._id} style={{ fontSize: 15 }}>
+                    <b>{e.userName}</b> <span className="muted">{ACTION_COPY[e.action] ?? e.action.toLowerCase()}</span>
+                    <div className="t-small truncate" title={e.label}>{e.label}</div>
+                    <div className="t-small" style={{ fontSize: 13.5 }}>{relative(e.timestamp)}</div>
+                  </div>
+                ))}
+                {data?.canUpload && (
+                  <Link className="btn btn-secondary btn-sm btn-block" to="/upload">
+                    <UploadCloud size={14} /> Add a file
+                  </Link>
+                )}
+              </div>
             </div>
-            {data.canSeeStorage && <Link className="btn btn-secondary btn-sm" to="/admin/storage">Review</Link>}
-          </div>
-          <div className="cards">
-            {data.attention.map((a) => <AssetCard key={a.assetId} asset={a} onOpen={(x) => setOpenAsset(x.assetId)} />)}
-          </div>
-        </section>
+          </section>
+        </>
       )}
 
-      {/* ── Recent uploads ──────────────────────────────────────────────── */}
-      <section>
-        <div className="spread" style={{ marginBottom: 14 }}>
-          <h2 className="t-h2 row-tight"><Clock size={16} color="var(--ink-3)" /> Added recently</h2>
-          <Link className="btn btn-ghost btn-sm" to="/search?sort=newest">See all <ArrowRight size={13} /></Link>
-        </div>
-        {isLoading ? <CardSkeletons n={4} /> : (
-          <div className="cards">
-            {data?.recent.map((a) => <AssetCard key={a.assetId} asset={a} onOpen={(x) => setOpenAsset(x.assetId)} />)}
-          </div>
-        )}
-      </section>
-
-      {/* ── Artists + activity, side by side ────────────────────────────── */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(0,1fr)', gap: 18 }}>
-        <div className="panel">
-          <div className="panel-head">
-            <span className="t-h3">Busiest artists</span>
-            <Link className="btn btn-ghost btn-sm" to="/artists">All artists</Link>
-          </div>
-          <div>
-            {data?.topArtists.slice(0, 5).map((a) => (
-              <Link
-                key={a._id}
-                to={`/artists/${a._id}`}
-                className="nav-item"
-                style={{ borderRadius: 0, padding: '12px 18px', borderBottom: '1px solid var(--line)' }}
-              >
-                <span
-                  style={{
-                    width: 34, height: 34, borderRadius: 10, flex: 'none',
-                    background: 'linear-gradient(135deg, var(--indigo-soft), var(--indigo-wash))',
-                    color: 'var(--indigo-deep)', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontWeight: 700, fontSize: 12,
-                  }}
-                >
-                  {a.name.slice(0, 2).toUpperCase()}
-                </span>
-                <span className="grow">
-                  <span style={{ display: 'block', fontWeight: 600, color: 'var(--ink)', fontSize: 13.5 }}>{a.name}</span>
-                  <span className="t-small" style={{ fontWeight: 400 }}>{a.genre}</span>
-                </span>
-                <span className="t-small" style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11.5 }}>
-                  {a.assetCount} files<br />{bytes(a.totalBytes)}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-head"><span className="t-h3">Latest activity</span></div>
-          <div className="panel-body stack-3">
-            {data?.activity.map((e) => (
-              <div key={e._id} style={{ fontSize: 13 }}>
-                <b>{e.userName}</b> <span className="muted">{ACTION_COPY[e.action] ?? e.action.toLowerCase()}</span>
-                <div className="t-small truncate" title={e.label}>{e.label}</div>
-                <div className="t-small" style={{ fontSize: 11 }}>{relative(e.timestamp)}</div>
-              </div>
-            ))}
-            {data?.canUpload && (
-              <Link className="btn btn-secondary btn-sm btn-block" to="/upload">
-                <UploadCloud size={14} /> Add a file
-              </Link>
-            )}
-          </div>
-        </div>
-      </section>
-
+      {filtersOpen && (
+        <FiltersDialog search={search} onClose={() => setFiltersOpen(false)} resetKey={params.toString()} />
+      )}
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
     </div>
   );

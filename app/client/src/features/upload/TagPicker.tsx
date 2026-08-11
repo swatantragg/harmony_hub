@@ -188,7 +188,7 @@ export function TagPicker({
             <Check size={15} />
             <div className="grow">
               <b>“{exact}” already exists.</b> Adding it as written would create a second tag
-              meaning the same thing, so Harmony Hub will use the existing one.
+              meaning the same thing, so GCloud will use the existing one.
             </div>
             <button type="button" className="btn btn-primary btn-sm" onClick={() => use(exact)}>
               Use “{exact}”

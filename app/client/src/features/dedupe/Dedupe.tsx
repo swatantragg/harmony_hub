@@ -30,6 +30,56 @@ import { useSession } from '../../app/session';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import type { DuplicateGroup, DuplicateMember, DuplicateReport } from '../../lib/types';
 
+// What the scan found, said plainly once it has finished.
+//
+// The interesting case is the boring one. When a re-scan changes nothing the page looks
+// exactly as it did before it was pressed, and without this the only honest reading is
+// "the button did not work" — so "nothing to clean up" is stated as a result in its own
+// right rather than left to be inferred from an unchanged screen.
+function ScanResultDialog({ report, onClose }: { report: DuplicateReport; onClose: () => void }) {
+  const certain = report.groups.filter((g) => g.kind === 'IDENTICAL').length;
+  const suspected = report.groups.length - certain;
+  const clean = certain === 0 && suspected === 0;
+
+  return (
+    <Modal
+      title={clean ? 'Everything is up to date' : 'Scan finished'}
+      subtitle={`${report.assetsScanned} files compared in ${report.durationMs}ms`}
+      onClose={onClose}
+      footer={<button className="btn btn-primary" onClick={onClose}>Close</button>}
+    >
+      <div className={`note ${clean ? 'ok' : 'warn'}`}>
+        {clean ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+        <div>
+          {clean ? (
+            <>
+              <b>No duplicates in the library.</b> Every file has a distinct checksum, and nothing
+              looks like a re-export of anything else. There is nothing to clean up.
+            </>
+          ) : (
+            <>
+              {certain > 0 && (
+                <>
+                  <b>{pluralise(certain, 'group')} of byte-identical copies</b>, holding{' '}
+                  {bytes(report.totals.certainReclaimableBytes)} that could be freed.
+                </>
+              )}
+              {certain > 0 && suspected > 0 && ' '}
+              {suspected > 0 && (
+                <>{pluralise(suspected, 'further set')} look similar and are worth a glance.</>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <div className="t-small" style={{ marginTop: 12 }}>
+        The comparison runs against checksums Google computed when each file was uploaded, so it
+        needs no Drive calls and can be re-run as often as you like.
+      </div>
+    </Modal>
+  );
+}
+
 // The language each tier is allowed to use. Getting this right is most of the feature:
 // "identical" is a statement of fact, "worth a look" is an invitation to check.
 const KIND: Record<string, {
@@ -83,10 +133,27 @@ export function Dedupe() {
   const qc = useQueryClient();
   const toast = useToast();
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['dedupe', level, family],
     queryFn: () => api<DuplicateReport>(`/dedupe/scan${qs({ level, family })}`),
   });
+
+  // "Scan again" used to fire an invalidation and return nothing: the table might not
+  // change, and a button that looks identical before and after reads as broken. So the
+  // scan is awaited, the button says it is working, and the result is stated outright —
+  // including, especially, the result "nothing changed", which is the common one.
+  const [scanning, setScanning] = useState(false);
+  const [scanReport, setScanReport] = useState<DuplicateReport | null>(null);
+
+  const runScan = async () => {
+    setScanning(true);
+    try {
+      const r = await refetch();
+      if (r.data) setScanReport(r.data);
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const buildHashes = useMutation({
     mutationFn: () => api<{ total: number }>('/dedupe/perceptual/build', { method: 'POST' }),
@@ -116,9 +183,9 @@ export function Dedupe() {
             answers that, and separates what it knows from what it merely suspects.
           </p>
         </div>
-        <button className="btn btn-secondary" disabled={isFetching} onClick={() => qc.invalidateQueries({ queryKey: ['dedupe'] })}>
-          {isFetching ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-          Scan again
+        <button className="btn btn-secondary" disabled={scanning || isFetching} onClick={runScan}>
+          {scanning || isFetching ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+          {scanning || isFetching ? 'Scanning…' : 'Scan again'}
         </button>
       </div>
 
@@ -153,13 +220,16 @@ export function Dedupe() {
       </div>
 
       {/* Filters */}
-      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-        <div className="segmented">
+      {/* `.seg` is the product's segmented switch. This row used to ask for `.segmented`
+          with an `.active` child, neither of which the stylesheet defines — so these three
+          rendered as bare unstyled buttons next to a properly styled select. */}
+      <div className="toolbar">
+        <div className="seg">
           {([['all', 'Everything'], ['exact', 'Identical only'], ['near', 'Identical + same media']] as const).map(([v, label]) => (
-            <button key={v} className={level === v ? 'active' : ''} onClick={() => setLevel(v)}>{label}</button>
+            <button key={v} className={level === v ? 'on' : ''} onClick={() => setLevel(v)} aria-pressed={level === v}>{label}</button>
           ))}
         </div>
-        <select className="select" style={{ maxWidth: 190 }} value={family} onChange={(e) => setFamily(e.target.value)}>
+        <select className="select" style={{ maxWidth: 190 }} value={family} onChange={(e) => setFamily(e.target.value)} aria-label="Filter by kind of file">
           <option value="">Every kind of file</option>
           {['Video', 'Audio', 'Image', 'Document'].map((f) => <option key={f} value={f}>{f} only</option>)}
         </select>
@@ -173,7 +243,7 @@ export function Dedupe() {
             return (
               <div key={kind} className="stat plain" style={{ borderLeft: `3px solid ${meta?.colour ?? 'var(--line)'}` }}>
                 <div className="eyebrow" style={{ marginBottom: 6, color: meta?.colour }}>{meta?.certainty ?? kind}</div>
-                <div className="stat-v" style={{ fontSize: 24 }}>{v.groups}</div>
+                <div className="stat-v" style={{ fontSize: 25 }}>{v.groups}</div>
                 <div className="stat-n" style={{ whiteSpace: 'normal' }}>
                   {meta?.label ?? kind} · {pluralise(v.files, 'file')}
                   {v.reclaimableBytes > 0 && <> · {bytes(v.reclaimableBytes)}</>}
@@ -208,7 +278,7 @@ export function Dedupe() {
       <section className="panel">
         <div className="panel-head"><span className="t-h3 row-tight"><Sparkles size={15} color="var(--ink-3)" /> Find the same footage at different resolutions</span></div>
         <div className="panel-body stack-3">
-          <p className="t-body" style={{ fontSize: 13.5, margin: 0, maxWidth: '70ch' }}>
+          <p className="t-body" style={{ fontSize: 15.5, margin: 0, maxWidth: '70ch' }}>
             Everything above compares checksums, sizes and names. None of that can tell you a 1080p
             master and its 720p re-encode are the same video — every byte differs. Perceptual
             hashing can: it samples frames from each file, reduces them to their broad light-and-dark
@@ -242,6 +312,7 @@ export function Dedupe() {
 
       {can('asset:purge') && <EmptyTrashPanel />}
 
+      {scanReport && <ScanResultDialog report={scanReport} onClose={() => setScanReport(null)} />}
       {resolving && <ResolveDialog group={resolving} onClose={() => setResolving(null)} />}
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
     </div>
@@ -274,14 +345,14 @@ function GroupCard({
                 <span className="tag">across {pluralise(group.folders.length, 'folder')}</span>
               )}
             </div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{meta.label}</div>
+            <div style={{ fontWeight: 700, fontSize: 17 }}>{meta.label}</div>
             {/* The reason, in full. Never a score, never a percentage — a sentence saying
                 what was compared and what it found. */}
-            <p className="t-body" style={{ fontSize: 13, margin: '6px 0 0', maxWidth: '72ch' }}>{group.reason}</p>
+            <p className="t-body" style={{ fontSize: 15, margin: '6px 0 0', maxWidth: '72ch' }}>{group.reason}</p>
           </div>
 
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{bytes(group.reclaimableBytes)}</div>
+            <div style={{ fontSize: 21.5, fontWeight: 700 }}>{bytes(group.reclaimableBytes)}</div>
             <div className="t-small">
               {group.reclaimableBytes > 0 ? 'recoverable' : 'already shared'} · {pluralise(group.count, 'file')}
             </div>
@@ -531,7 +602,7 @@ function ResolveDialog({ group, onClose }: { group: DuplicateGroup; onClose: () 
 }
 
 // Emptying the bin is the only way to actually get the space back before Google's own
-// 30-day sweep — and the only place in the product that touches files Harmony Hub never
+// 30-day sweep — and the only place in the product that touches files GCloud never
 // uploaded, which is why it says so and asks for a typed confirmation.
 function EmptyTrashPanel() {
   const [open, setOpen] = useState(false);
@@ -562,7 +633,7 @@ function EmptyTrashPanel() {
       <section className="panel">
         <div className="panel-head"><span className="t-h3 row-tight"><HardDrive size={15} color="var(--ink-3)" /> Get the space back now</span></div>
         <div className="panel-body stack-3">
-          <p className="t-body" style={{ fontSize: 13.5, margin: 0, maxWidth: '70ch' }}>
+          <p className="t-body" style={{ fontSize: 15.5, margin: 0, maxWidth: '70ch' }}>
             Removing a duplicate moves it to the Google Drive bin, where it still counts against the
             quota until Google clears it 30 days later. That delay is a safety net worth having — but
             if the Drive is full today, emptying the bin is the only thing that helps today.
@@ -571,7 +642,7 @@ function EmptyTrashPanel() {
             <AlertTriangle size={15} />
             <div>
               This empties the connected account&rsquo;s <b>entire</b> Drive bin, including files
-              Harmony Hub never touched. Nothing in it can be recovered afterwards.
+              GCloud never touched. Nothing in it can be recovered afterwards.
             </div>
           </div>
           <div><button className="btn btn-secondary" onClick={() => setOpen(true)}>Empty the Drive bin…</button></div>
@@ -601,7 +672,7 @@ function EmptyTrashPanel() {
             <div className="note danger">
               <AlertTriangle size={15} />
               <div>
-                Everything in the bin is destroyed, including anything binned outside Harmony Hub.
+                Everything in the bin is destroyed, including anything binned outside GCloud.
                 Files deleted here today would otherwise have stayed recoverable for 30 days.
               </div>
             </div>

@@ -9,7 +9,8 @@
 // bin without the app ever hearing about it. None of that is corruption, so most findings
 // here are a disagreement to settle rather than damage to repair, and each one offers both
 // answers: believe Drive, or push the catalogue's version back onto it.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ShieldCheck, RefreshCw, Loader2, AlertTriangle, CheckCircle2, Database,
@@ -17,7 +18,8 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AvailabilityBadge, EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
-import { AssetCard } from '../assets/AssetCard';
+import { AssetList } from '../assets/AssetCard';
+import { Pagination } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, pluralise, relative } from '../../lib/format';
 import { FINDING_COPY, STATUS_COPY } from '../../lib/assetTypes';
@@ -43,7 +45,7 @@ const REMEDIES: Record<string, Remedy[]> = {
     { action: 'delete-orphan', label: 'Move it to the bin', hint: 'Trashes the file in Google Drive. Recoverable for 30 days if you change your mind.', danger: true },
   ],
   UNTRACKED_FOLDER: [
-    { action: 'adopt-folder', label: 'Adopt the folder', hint: 'Creates a Harmony Hub folder for it. Run the check again afterwards to adopt what is inside.' },
+    { action: 'adopt-folder', label: 'Adopt the folder', hint: 'Creates a GCloud folder for it. Run the check again afterwards to adopt what is inside.' },
     { action: 'accept', label: 'Leave it alone', hint: 'Not everything in the Drive has to be part of the library.' },
   ],
   SIZE_MISMATCH: [
@@ -58,7 +60,7 @@ const REMEDIES: Record<string, Remedy[]> = {
   ],
   NAME_DRIFT: [
     { action: 'accept-drive-name', label: 'Use the name from Drive', hint: 'Somebody renamed it there on purpose. Adopt that name here.' },
-    { action: 'restore-catalogue-name', label: 'Restore the catalogue name', hint: 'Renames the Drive file back to what Harmony Hub calls it.' },
+    { action: 'restore-catalogue-name', label: 'Restore the catalogue name', hint: 'Renames the Drive file back to what GCloud calls it.' },
   ],
 };
 
@@ -93,7 +95,7 @@ function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
         ) : (
           <>
             <div className="spread" style={{ alignItems: 'baseline' }}>
-              <span style={{ fontSize: 28, fontWeight: 700, color: critical ? 'var(--danger-ink)' : 'var(--ink)' }}>
+              <span style={{ fontSize: 30, fontWeight: 700, color: critical ? 'var(--danger-ink)' : 'var(--ink)' }}>
                 {bytes(quota.available ?? 0)}
               </span>
               <span className="t-small">free of {bytes(quota.limit ?? 0)}</span>
@@ -164,6 +166,10 @@ function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
 export function StorageHealth() {
   const [remedy, setRemedy] = useState<Finding | null>(null);
   const [openAsset, setOpenAsset] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [reviewPageNo, setReviewPageNo] = useState(1);
+  const [reviewSize, setReviewSize] = useState(50);
+  const reviewRef = useRef<HTMLElement>(null);
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -171,6 +177,21 @@ export function StorageHealth() {
     queryKey: ['storage-health'],
     queryFn: () => api<Health>('/admin/storage/health'),
   });
+
+  // Home's Review button arrives with ?focus=review. Landing at the top of a long page
+  // and leaving somebody to hunt for what they were sent to look at is not an answer, so
+  // the section is scrolled to as soon as there is something to scroll to.
+  const focused = params.get('focus') === 'review';
+  useEffect(() => {
+    if (!focused || !data) return;
+    // Guarded rather than called straight: scrolling is a nicety, and a page that throws
+    // because the environment has no scrollIntoView would fail at showing the very thing
+    // the reader was sent here to see.
+    const target = reviewRef.current;
+    if (typeof target?.scrollIntoView === 'function') {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [focused, data]);
 
   const reconcile = useMutation({
     mutationFn: () => api<{ counts: Record<string, number>; objectsScanned: number }>('/admin/storage/reconcile', { method: 'POST' }),
@@ -196,6 +217,14 @@ export function StorageHealth() {
     .filter((f) => !f.resolvedAt)
     .sort((a, b) => (RANK[a.severity] ?? 9) - (RANK[b.severity] ?? 9));
   const critical = open.filter((f) => f.severity === 'critical');
+  // The same number Home shows on its Review button, computed from the same two states.
+  const needingDecision = (data.byStatus.MISSING ?? 0) + (data.byStatus.MISMATCH ?? 0);
+
+  // The API already ranks and caps this list, so paging is a slice of what arrived rather
+  // than another round trip.
+  const reviewPage = reviewSize === 0
+    ? data.attention
+    : data.attention.slice((reviewPageNo - 1) * reviewSize, reviewPageNo * reviewSize);
 
   return (
     <div className="page stack-5">
@@ -242,16 +271,29 @@ export function StorageHealth() {
         </div>
       </div>
 
-      {/* Status split */}
+      {/* Status split.
+          The tiles are the whole section. A summary panel above them restated the same six
+          numbers in smaller type next to a percentage, so the screen said everything twice
+          and neither copy was the obvious one to read. */}
       <section>
-        <h2 className="t-h2" style={{ marginBottom: 13 }}>Every file, by state</h2>
+        <h2 className="t-h2" style={{ marginBottom: 13 }}>Where every file stands</h2>
+
         <div className="tiles">
           {(Object.entries(data.byStatus) as [Availability, number][]).map(([status, n]) => (
-            <div key={status} className="stat plain" data-status={status} style={{ borderColor: n > 0 && ['MISSING', 'MISMATCH'].includes(status) ? 'var(--st)' : undefined }}>
+            <Link
+              key={status}
+              to={`/?availability=${status}`}
+              className="stat"
+              data-status={status}
+              style={{
+                textDecoration: 'none',
+                borderColor: n > 0 && ['MISSING', 'MISMATCH'].includes(status) ? 'var(--st)' : undefined,
+              }}
+            >
               <div style={{ marginBottom: 8 }}><AvailabilityBadge status={status} /></div>
-              <div className="stat-v" style={{ fontSize: 26, color: n > 0 ? 'var(--st-ink)' : 'var(--ink-3)' }}>{n}</div>
+              <div className="stat-v" style={{ fontSize: 28, color: n > 0 ? 'var(--st-ink)' : 'var(--ink-3)' }}>{n}</div>
               <div className="stat-n" style={{ whiteSpace: 'normal' }}>{STATUS_COPY[status].short}</div>
-            </div>
+            </Link>
           ))}
         </div>
       </section>
@@ -284,10 +326,10 @@ export function StorageHealth() {
                             {copy.label}
                           </span>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 14, wordBreak: 'break-word' }}>{f.displayName}</div>
+                        <div style={{ fontWeight: 700, fontSize: 16, wordBreak: 'break-word' }}>{f.displayName}</div>
                         {f.songTitle && <div className="t-small">{f.songTitle}</div>}
-                        <p className="t-body" style={{ fontSize: 13, margin: '7px 0 0', maxWidth: '64ch' }}>{copy.meaning}</p>
-                        <div className="keytext" style={{ display: 'inline-block', marginTop: 8, fontSize: 11 }}>
+                        <p className="t-body" style={{ fontSize: 15, margin: '7px 0 0', maxWidth: '64ch' }}>{copy.meaning}</p>
+                        <div className="keytext" style={{ display: 'inline-block', marginTop: 8, fontSize: 13.5 }}>
                           {f.fileId ?? f.key}
                         </div>
                         <div className="t-small" style={{ marginTop: 6 }}>{f.detail}</div>
@@ -315,15 +357,44 @@ export function StorageHealth() {
         )}
       </section>
 
-      {/* Files needing a check */}
+      {/* Files needing a check.
+          Home states how many of these there are and sends the reader here; this is where
+          the files themselves live, alongside everything that can be done about them. */}
       {data.attention.length > 0 && (
-        <section>
-          <h2 className="t-h2" style={{ marginBottom: 13 }}>Files worth a look</h2>
-          <div className="cards">
-            {data.attention.slice(0, 12).map((a) => (
-              <AssetCard key={a.assetId} asset={a} onOpen={(x) => setOpenAsset(x.assetId)} />
-            ))}
+        <section id="review" ref={reviewRef} style={focused ? { scrollMarginTop: 84 } : undefined}>
+          <div className="spread" style={{ marginBottom: 13, flexWrap: 'wrap', gap: 10 }}>
+            <h2 className="t-h2 row-tight">
+              <FileWarning size={16} color="var(--ink-3)" /> Files needing review
+            </h2>
+            <span className="t-small">
+              {pluralise(needingDecision, 'file')} missing or mismatched
+            </span>
           </div>
+          {focused && (
+            <div className="note" style={{ marginBottom: 13 }}>
+              <Info size={15} />
+              <div>
+                Each of these is catalogued but its stored object is missing or does not match.
+                Open one to see the full record, or use <b>What the comparison found</b> above to
+                settle it — nothing else in the library is affected.
+              </div>
+            </div>
+          )}
+
+          <AssetList
+            assets={reviewPage}
+            selectedId={openAsset}
+            onOpen={(a) => setOpenAsset(a.assetId)}
+          />
+
+          <Pagination
+            page={reviewPageNo}
+            pageSize={reviewSize}
+            total={data.attention.length}
+            onPage={setReviewPageNo}
+            onPageSize={(n) => { setReviewSize(n); setReviewPageNo(1); }}
+            noun="file"
+          />
         </section>
       )}
 
@@ -365,27 +436,27 @@ export function StorageHealth() {
           <div className="panel-body stack-2">
             <div>
               <div className="t-small">Account</div>
-              <div className="t-mono" style={{ fontSize: 12 }}>{data.storage?.account?.email ?? '—'}</div>
+              <div className="t-mono" style={{ fontSize: 14.5 }}>{data.storage?.account?.email ?? '—'}</div>
             </div>
             <div>
               <div className="t-small">Sign-in method</div>
-              <div className="t-mono" style={{ fontSize: 12 }}>
+              <div className="t-mono" style={{ fontSize: 14.5 }}>
                 {data.storage?.mode === 'oauth' ? 'OAuth user account' : 'Service account'}
               </div>
             </div>
             <div>
               <div className="t-small">Location</div>
-              <div className="t-mono" style={{ fontSize: 12 }}>
+              <div className="t-mono" style={{ fontSize: 14.5 }}>
                 {data.storage?.sharedDriveId ? `Shared Drive ${data.storage.sharedDriveId}` : 'My Drive'}
               </div>
             </div>
             <div>
               <div className="t-small">Library root folder</div>
-              <div className="keytext" style={{ fontSize: 11 }}>{data.storage?.rootFolderId ?? '—'}</div>
+              <div className="keytext" style={{ fontSize: 13.5 }}>{data.storage?.rootFolderId ?? '—'}</div>
             </div>
             <div className="hint" style={{ marginTop: 6 }}>
               Nothing in this folder is shared publicly. Every download here is a short-lived signed
-              link that Harmony Hub issues and can revoke, never a Google sharing permission.
+              link that GCloud issues and can revoke, never a Google sharing permission.
             </div>
           </div>
         </div>
@@ -449,7 +520,7 @@ function RemedyDialog({ finding, onClose }: { finding: Finding; onClose: () => v
           <div>
             {FINDING_COPY[finding.kind]?.meaning}
             <br />
-            <span className="t-mono" style={{ fontSize: 11.5 }}>{finding.fileId ?? finding.key}</span>
+            <span className="t-mono" style={{ fontSize: 14 }}>{finding.fileId ?? finding.key}</span>
             {finding.webViewLink && (
               <>
                 {' · '}

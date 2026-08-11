@@ -1,9 +1,9 @@
 {
-  "name": "harmonyhub-server",
+  "name": "gcloud-server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Harmony Hub API \u2014 Express control plane over Google Drive and MongoDB",
+  "description": "GCloud API \u2014 Express control plane over Google Drive and MongoDB",
   "engines": {
     "node": ">=22"
   },

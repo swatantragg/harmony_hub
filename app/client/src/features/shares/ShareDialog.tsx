@@ -167,7 +167,7 @@ export function ShareDialog({
               <input className="input mono" readOnly value={created.url} onFocus={(e) => e.target.select()} />
               <CopyButton value={created.url} label="Copy" />
             </div>
-            <div className="hint">A Harmony Hub address, not a storage address. Revocable at any time.</div>
+            <div className="hint">A GCloud address, not a storage address. Revocable at any time.</div>
           </div>
           {created.audience === 'RESTRICTED' && (
             <div className="note neutral">
@@ -190,7 +190,7 @@ export function ShareDialog({
   /* ── Compose step ─────────────────────────────────────────────────────── */
   return (
     <Modal
-      title={target.kind === 'folder' ? 'Share this folder outside Harmony Hub' : 'Share outside Harmony Hub'}
+      title={target.kind === 'folder' ? 'Share this folder outside GCloud' : 'Share outside GCloud'}
       subtitle={subtitle}
       onClose={onClose}
       footer={

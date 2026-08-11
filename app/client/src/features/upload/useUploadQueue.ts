@@ -17,7 +17,7 @@
 //   One URL for the file.     One session URI, valid for about a week, rather than a
 //                             separate pre-authorised link per chunk all expiring together.
 //
-// The bytes go from the browser straight to Google. They do not pass through the Harmony
+// The bytes go from the browser straight to Google. They do not pass through the GCloud
 // Hub server, which is the property that matters most.
 import { create } from 'zustand';
 import { api } from '../../lib/api';

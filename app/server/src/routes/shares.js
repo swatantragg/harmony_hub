@@ -8,7 +8,7 @@
 //
 // Three audiences, chosen when the link is made:
 //   PUBLIC      "Open to all"        — no account. Anyone holding the link opens it.
-//   EDITOR      "Editor"             — must sign in to Harmony Hub AND hold asset:edit.
+//   EDITOR      "Editor"             — must sign in to GCloud AND hold asset:edit.
 //                                      Preview, download, and edit rights on the file.
 //   RESTRICTED  "Specific allocation"— must sign in, and the account's email must be on
 //                                      the recipient list attached to this link.
@@ -16,7 +16,7 @@
 // A link points at either one asset or a whole folder. A folder link resolves to a
 // manifest of its files — every one of them still a separate file in Google Drive, each
 // signed individually at the moment it is opened. The Drive folder is never shared: its
-// sharing settings are untouched, so revoking a Harmony Hub link genuinely revokes access
+// sharing settings are untouched, so revoking a GCloud link genuinely revokes access
 // rather than leaving a Google link working behind it.
 import express from 'express';
 import { db, persist, assetsInFolder } from '../db.js';
@@ -40,8 +40,20 @@ const AUDIENCE_LABEL = {
   RESTRICTED: 'Specific allocation',
 };
 
+// What kind of thing a link points at, for the category tabs on the Share links screen.
+// Resolved rather than only read off the record: links created before the field existed
+// still have an asset behind them, and a tab that silently omitted them would be lying.
+function shareKind(s) {
+  if (s.target === 'FOLDER') return { family: null, assetType: null, kind: 'FOLDER' };
+  if (s.family) return { family: s.family, assetType: s.assetType ?? null, kind: s.family };
+  const ctx = s.assetId ? context(s.assetId) : null;
+  const family = ctx?.asset?.family ?? null;
+  return { family, assetType: ctx?.asset?.type ?? null, kind: family ?? 'ASSET' };
+}
+
 const decorate = (s) => ({
   ...s,
+  ...shareKind(s),
   url: `${APP_ORIGIN}/#/s/${s.token}`,
   audienceLabel: AUDIENCE_LABEL[s.audience] ?? AUDIENCE_LABEL.PUBLIC,
   expired: Date.parse(s.expiresAt) < Date.now(),
@@ -166,6 +178,10 @@ sharesRouter.post('/', requires('share:create'), async (req, res) => {
       assetName: ctx.asset.displayName,
       targetName: ctx.asset.displayName,
       fileCount: 1,
+      // Stored on the record so the category tabs do not have to resolve the asset on
+      // every read, and still answer correctly after the file itself is gone.
+      family: ctx.asset.family,
+      assetType: ctx.asset.type,
       songTitle: ctx.song?.title ?? null,
       artistName: ctx.artist?.name ?? null,
     };
@@ -210,7 +226,7 @@ function openGate(share, req, res) {
 
   if (!req.user) {
     problem(res, 401, 'Sign In Required', audience === 'EDITOR'
-      ? 'This link is for Harmony Hub editors. Sign in to open it.'
+      ? 'This link is for GCloud editors. Sign in to open it.'
       : 'This link was sent to named people. Sign in with the address it was sent to.');
     return false;
   }

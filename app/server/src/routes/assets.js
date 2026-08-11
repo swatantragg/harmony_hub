@@ -413,7 +413,7 @@ assetsRouter.post('/:id/restore', requires('asset:restore'), async (req, res) =>
 });
 
 // ── Delete ladder (§10.8) ───────────────────────────────────────────────────
-// Two rungs. A soft delete hides the file in Harmony Hub and puts the Drive file in the
+// Two rungs. A soft delete hides the file in GCloud and puts the Drive file in the
 // trash — recoverable from either side. A purge deletes it outright, revisions included.
 assetsRouter.delete('/:id', requires('asset:delete'), async (req, res) => {
   const ctx = context(req.params.id);

@@ -31,8 +31,10 @@ for (const file of [path.resolve(here, '../.env'), path.resolve(here, '../server
 }
 
 const API = (process.env.SMOKE_API || process.env.PUBLIC_ORIGIN || 'http://localhost:8100') + '/api';
-const EMAIL = process.env.SMOKE_EMAIL || 'admin@harmonyhub.app';
-const PASSWORD = process.env.SMOKE_PASSWORD || process.env.SEED_PASSWORD || 'harmonyhub';
+// The founding administrator — the one account created with a password of its own and no
+// forced change, so it is the only one that can sign straight in and exercise the API.
+const EMAIL = process.env.SMOKE_EMAIL || process.env.ADMIN_EMAIL || 'swatantra.goongoonalo@gmail.com';
+const PASSWORD = process.env.SMOKE_PASSWORD || process.env.ADMIN_PASSWORD || '12345678';
 
 let token = null;
 let passed = 0;
@@ -111,7 +113,7 @@ function makeWav(seconds = 2, sampleRate = 8000) {
 }
 
 async function main() {
-  console.log(`\nHarmony Hub · smoke test  →  ${API}\n`);
+  console.log(`\nGCloud · smoke test  →  ${API}\n`);
 
   const health = await fetch(`${API.replace(/\/api$/, '')}/healthz`).then((r) => r.json());
   console.log(`  storage: ${health.storage.provider} · ${health.storage.authMode}`

@@ -5,7 +5,7 @@
 // together, so almost every question is answered without a second call.
 //
 // The hard part is that a Drive is a place people can open and rearrange by hand — a file
-// can be renamed, dragged to another folder, or thrown in the trash without Harmony Hub
+// can be renamed, dragged to another folder, or thrown in the trash without GCloud
 // ever hearing about it. Those are not errors; they are the normal life of a shared Drive.
 // So the drift report treats them as findings with obvious remedies rather than as
 // corruption.
@@ -74,7 +74,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
     const file = inDrive.get(fileId);
     if (!file) {
       findings.push(finding('MISSING_IN_DRIVE', 'critical', fileId, asset, song, {
-        detail: 'Catalogued in the library, but Google Drive has no file with this id — permanently deleted, or moved out of the Harmony Hub folder.',
+        detail: 'Catalogued in the library, but Google Drive has no file with this id — permanently deleted, or moved out of the GCloud folder.',
       }));
       continue;
     }
@@ -93,7 +93,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
 
     if (!asset.drive?.googleNative && recordedSize != null && liveSize !== recordedSize) {
       findings.push(finding('SIZE_MISMATCH', 'integrity', fileId, asset, song, {
-        detail: `Catalogue records ${recordedSize} bytes, Drive holds ${liveSize}. The file was replaced outside Harmony Hub.`,
+        detail: `Catalogue records ${recordedSize} bytes, Drive holds ${liveSize}. The file was replaced outside GCloud.`,
         expected: recordedSize,
         actual: liveSize,
         webViewLink: file.webViewLink,
@@ -138,7 +138,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
     if (inDb.has(fileId)) continue;
     if (file.trashed) continue; // Somebody's discarded file is not the library's problem.
     findings.push(finding('UNTRACKED_IN_DRIVE', 'orphan', fileId, null, null, {
-      detail: `Dropped into the Harmony Hub folder without going through the app (${file.size ? `${file.size} bytes` : 'no stored bytes'}). Invisible to search until it is adopted.`,
+      detail: `Dropped into the GCloud folder without going through the app (${file.size ? `${file.size} bytes` : 'no stored bytes'}). Invisible to search until it is adopted.`,
       driveName: file.name,
       sizeBytes: file.size == null ? 0 : Number(file.size),
       mimeType: file.mimeType,
@@ -150,7 +150,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
   for (const [folderId, folder] of driveFolders) {
     if (knownFolderIds.has(folderId) || folder.trashed) continue;
     findings.push(finding('UNTRACKED_FOLDER', 'informational', folderId, null, null, {
-      detail: `A folder called “${folder.name}” exists in Drive with no Harmony Hub folder behind it. Adopt it to make its files browsable here.`,
+      detail: `A folder called “${folder.name}” exists in Drive with no GCloud folder behind it. Adopt it to make its files browsable here.`,
       driveName: folder.name,
       mimeType: FOLDER_MIME,
       webViewLink: folder.webViewLink,
@@ -176,7 +176,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
 
       if (!file) {
         // A file the walk did not see might genuinely be gone, or might have been moved
-        // outside the Harmony Hub root — which the walk cannot see but files.get can.
+        // outside the GCloud root — which the walk cannot see but files.get can.
         needRead.push(asset);
         continue;
       }
@@ -200,7 +200,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
             ...base,
             status: 'MISMATCH',
             lastVerifiedAt: now,
-            detail: `The file was changed in Google Drive outside Harmony Hub (size ${asset.drive.sizeBytes} → ${liveSize})`,
+            detail: `The file was changed in Google Drive outside GCloud (size ${asset.drive.sizeBytes} → ${liveSize})`,
           }
           : { ...base, status: 'AVAILABLE', lastVerifiedAt: now, detail: null };
       }

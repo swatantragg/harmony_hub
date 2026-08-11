@@ -1,4 +1,4 @@
-// Harmony Hub API — Express bootstrap (§9.1, §9.3).
+// GCloud API — Express bootstrap (§9.1, §9.3).
 //
 // Two surfaces run in this process, and the split is worth stating plainly.
 //
@@ -21,14 +21,15 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 import {
-  APP_ORIGIN, CORS_ORIGINS, DRIVE_ID, ENV, GOOGLE, GOOGLE_CONFIGURED, NODE_ENV, ORIGIN,
-  PORT, RECONCILE_CRON, RECONCILE_ENABLED, ROOT as SERVER_ROOT, ROOTS, SEED_ON_BOOT,
-  SEED_PASSWORD, env,
+  APP_ORIGIN, CORS_ORIGINS, DRIVE_ID, ENV, FOUNDING_ADMIN, GOOGLE, GOOGLE_CONFIGURED,
+  NODE_ENV, ORIGIN, PORT, RECONCILE_CRON, RECONCILE_ENABLED, ROOT as SERVER_ROOT, ROOTS,
+  SEED_ON_BOOT, SEED_PASSWORD, env,
 } from './config.js';
 import { connect, connectionInfo, disconnect } from './db/mongo.js';
 import { ensureIndexes } from './db/models.js';
 import { db, flushNow, isEmpty, load, readMeta } from './db.js';
 import { seed } from './seed.js';
+import { ensureAccounts } from './services/accounts.js';
 import * as storage from './services/storage.js';
 import { runReconciliation } from './services/reconcile.js';
 
@@ -75,7 +76,7 @@ const limiter = (max) =>
     legacyHeaders: false,
     keyGenerator: (req) => req.user?.sub || req.ip,
     message: {
-      type: 'https://harmonyhub.internal/problems/rate-limited',
+      type: 'https://gcloud.internal/problems/rate-limited',
       title: 'Too Many Requests',
       status: 429,
       detail: 'Slow down — this endpoint is rate limited.',
@@ -131,7 +132,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationsRouter);
 
 // Reset the demo library to its seeded state. Never available in production, because it
-// destroys every file under the Harmony Hub folder in the connected Drive.
+// destroys every file under the GCloud folder in the connected Drive.
 if (NODE_ENV !== 'production') {
   app.post('/api/demo/reset', async (_req, res, next) => {
     try {
@@ -145,7 +146,7 @@ if (NODE_ENV !== 'production') {
 
 app.use('/api', (_req, res) =>
   res.status(404).type('application/problem+json').json({
-    type: 'https://harmonyhub.internal/problems/not-found',
+    type: 'https://gcloud.internal/problems/not-found',
     title: 'Not Found', status: 404, detail: 'No such endpoint.',
   }),
 );
@@ -164,7 +165,7 @@ app.use((err, _req, res, _next) => {
   const status = err.status || err.statusCode || 500;
   if (status >= 500) console.error(err);
   res.status(status).type('application/problem+json').json({
-    type: 'https://harmonyhub.internal/problems/internal',
+    type: 'https://gcloud.internal/problems/internal',
     title: status >= 500 ? 'Internal Server Error' : 'Request Failed',
     status,
     detail: err.message,
@@ -199,12 +200,17 @@ async function main() {
     seeded = true;
   }
 
+  // Runs whether or not anything was seeded: an existing library gets the two-role model
+  // and the founding administrator here, since seeding never touches a database that
+  // already has documents.
+  const accountChanges = await ensureAccounts({ log: () => {} });
+
   const meta = await readMeta();
   const assetCount = db.songs.reduce((n, s) => n + s.assets.length, 0) + db.unfiled.length;
 
   const server = app.listen(PORT, () => {
     console.log('');
-    console.log('  ▁▃▅▂▄  H A R M O N Y   H U B   ·   API');
+    console.log('  ▁▃▅▂▄  G C L O U D   ·   API');
     console.log('  ─────────────────────────────────────────────');
     console.log(`  API          ${ORIGIN}/api`);
     console.log(`  App          ${APP_ORIGIN}`);
@@ -232,9 +238,15 @@ async function main() {
     console.log(`  Library      ${db.artists.length} artists · ${db.songs.length} songs · ${db.folders.length} folders · ${assetCount} assets`);
     console.log(`  Loaded       ${loaded.total} documents${seeded ? ' (freshly seeded)' : ''}`);
     if (meta?.seededAt) console.log(`  Seeded at    ${meta.seededAt}`);
+    for (const line of accountChanges) console.log(`  Accounts     ${line}`);
     console.log('  ─────────────────────────────────────────────');
     if (NODE_ENV !== 'production') {
-      console.log(`  Sign in: admin@ / editor@ / marketing@ / viewer@harmonyhub.app  ·  ${SEED_PASSWORD}`);
+      console.log(`  Sign in      ${FOUNDING_ADMIN.email}`);
+      const pending = db.users.filter((u) => u.mustChangePassword).length;
+      if (pending > 0) {
+        console.log(`               ${pending} other account${pending === 1 ? '' : 's'} still hold the handover password (${SEED_PASSWORD})`);
+        console.log('               and must set their own at first sign-in.');
+      }
     }
     console.log('');
   });
@@ -269,7 +281,7 @@ function gb(bytes) {
 }
 
 main().catch((err) => {
-  console.error(`\nHarmony Hub failed to start.\n\n  ${err.message}`);
+  console.error(`\nGCloud failed to start.\n\n  ${err.message}`);
   // The full driver error is still there when it is actually wanted.
   if (process.env.LOG_LEVEL === 'debug' || process.env.LOG_LEVEL === 'trace') console.error(err.cause ?? err);
   else console.error('  Set LOG_LEVEL=debug for the full error.\n');

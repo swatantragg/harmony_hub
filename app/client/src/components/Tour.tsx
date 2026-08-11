@@ -1,5 +1,5 @@
 // First-run tour. Five cards, skippable, never shown twice. It exists to compress the
-// learning curve: the goal is that someone who has never seen Harmony Hub can find a file,
+// learning curve: the goal is that someone who has never seen GCloud can find a file,
 // prove it is really in storage, rename it and share it inside their first session.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -26,12 +26,12 @@ const STEPS = [
   {
     anchor: '[data-tour="upload"]',
     title: 'Uploading is a three-step form',
-    body: 'Drop a file, tell Harmony Hub what it is, add tags. Large files upload in parallel chunks and can be paused and resumed — nothing restarts from zero.',
+    body: 'Drop a file, tell GCloud what it is, add tags. Large files upload in parallel chunks and can be paused and resumed — nothing restarts from zero.',
   },
   {
     anchor: '[data-tour="help"]',
     title: 'Help is always one click away',
-    body: 'Every screen explains itself. The “How Harmony Hub works” page walks through the whole product in five minutes, and you can replay this tour from there any time.',
+    body: 'Every screen explains itself. The “How GCloud works” page walks through the whole product in five minutes, and you can replay this tour from there any time.',
   },
 ];
 
@@ -79,7 +79,7 @@ export function Tour({ onDone }: { onDone: () => void }) {
           <button className="btn btn-ghost btn-icon" onClick={finish} aria-label="Skip the tour"><X size={15} /></button>
         </div>
         <h3 className="t-h2" style={{ marginBottom: 7 }}>{current.title}</h3>
-        <p className="t-body" style={{ fontSize: 13.5, margin: 0 }}>{current.body}</p>
+        <p className="t-body" style={{ fontSize: 15.5, margin: 0 }}>{current.body}</p>
         <div className="spread" style={{ marginTop: 18 }}>
           <div className="tour-dots">
             {STEPS.map((_, i) => <i key={i} className={i === step ? 'on' : ''} />)}
@@ -91,7 +91,7 @@ export function Tour({ onDone }: { onDone: () => void }) {
                 Next <ArrowRight size={13} />
               </button>
             ) : (
-              <button className="btn btn-primary btn-sm" onClick={finish}>Start using Harmony Hub</button>
+              <button className="btn btn-primary btn-sm" onClick={finish}>Start using GCloud</button>
             )}
           </div>
         </div>

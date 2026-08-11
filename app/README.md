@@ -1,4 +1,4 @@
-# Harmony Hub
+# GCloud
 
 Music asset management on **Google Drive** and **MongoDB**.
 
@@ -73,7 +73,7 @@ Nothing works without this, and the error it produces if you skip it
 **APIs & Services → Credentials → Create credentials → OAuth client ID**
 
 - Application type: **Web application**
-- Name: anything, e.g. `Harmony Hub`
+- Name: anything, e.g. `GCloud`
 - **Authorised redirect URIs** → Add URI:
   ```
   http://localhost:8107/oauth2callback
@@ -96,7 +96,7 @@ code exchange, and prints the four lines to paste into `app/.env`. Nothing has t
 out of a browser address bar.
 
 > On the consent screen Google will warn "Google hasn't verified this app". That is
-> expected for an unpublished app you wrote. Click **Advanced → Go to Harmony Hub (unsafe)**.
+> expected for an unpublished app you wrote. Click **Advanced → Go to GCloud (unsafe)**.
 > It is your own client id, requesting access to your own Drive.
 
 **6. Fill in `.env`**
@@ -120,7 +120,7 @@ GOOGLE_REFRESH_TOKEN=<from step 5>
 **7. Create the folder tree and prove it works**
 
 ```bash
-npm run bootstrap:drive   # creates "Harmony Hub" and Assets/Quarantine/Backups/Logs
+npm run bootstrap:drive   # creates "GCloud" and Assets/Quarantine/Backups/Logs
 npm run drive:check       # writes, reads, ranges, renames, moves and deletes a real file
 ```
 
@@ -159,14 +159,14 @@ Copy the Shared Drive id from the URL: `drive.google.com/drive/folders/`**`0AB1c
 
 ```ini
 GOOGLE_AUTH_MODE=service_account
-GOOGLE_SERVICE_ACCOUNT_KEY_FILE=./secrets/harmonyhub-drive.json
+GOOGLE_SERVICE_ACCOUNT_KEY_FILE=./secrets/gcloud-drive.json
 DRIVE_ID=0AB1cd...
 ```
 
 Or paste the two fields instead of using the file — note the quotes and the literal `\n`:
 
 ```ini
-GOOGLE_SERVICE_ACCOUNT_EMAIL=harmonyhub@project.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_EMAIL=gcloud@project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
 ```
 
@@ -188,7 +188,25 @@ Open **http://localhost:8100**. The library seeds itself on first boot: 5 artist
 report and deliberate duplicates so the Duplicates page does too. Total upload is a few
 megabytes.
 
-Sign in with `admin@harmonyhub.app` / the `SEED_PASSWORD` from `.env`.
+Sign in with the founding administrator — `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
+That account is created on an empty database and repaired on every boot if it goes missing,
+gets suspended or stops being an Admin, so there is always a way in.
+
+The other seeded accounts are colleagues on the **User** role. They hold `SEED_PASSWORD`,
+which is a handover value rather than a credential: it opens the sign-in screen once and
+nothing else, and every route stays closed until the person sets a password of their own.
+The boot banner names any account still in that state.
+
+There are two roles and one difference between them:
+
+| | Admin | User |
+|---|---|---|
+| Search, upload, edit, rename, delete, restore, share | ✅ | ✅ |
+| Storage health, drift remediation, activity log | ✅ | ✅ |
+| Add and manage accounts | ✅ | ❌ |
+
+The last active Admin cannot be demoted or suspended — including by themselves — because a
+library with no administrator has no route back.
 
 For front-end work, run the API and the Vite dev server side by side:
 
@@ -275,7 +293,7 @@ history. Deletes nothing.
 Trashed files still count against Drive quota until Google clears them 30 days later. The
 Duplicates page has an **Empty the Drive bin** action for when the Drive is full *today* —
 it asks for a typed confirmation, because it empties the whole account bin, including files
-Harmony Hub never touched.
+GCloud never touched.
 
 ### Perceptual matching
 

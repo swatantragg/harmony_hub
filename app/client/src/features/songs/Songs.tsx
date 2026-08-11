@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { CardSkeletons, EmptyState, Skeleton, useDebounced } from '../../components/ui';
-import { AssetCard } from '../assets/AssetCard';
+import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, date, pluralise } from '../../lib/format';
 import type { SongDetail, SongRow, Family } from '../../lib/types';
@@ -160,15 +160,11 @@ export function SongDetailPage() {
                   {family}
                   <span className="t-small" style={{ fontWeight: 500 }}>{pluralise(assets.length, 'file')}</span>
                 </h2>
-                <Link className="btn btn-ghost btn-sm" to={`/search?family=${family}&artistId=${data.artistId}`}>
+                <Link className="btn btn-ghost btn-sm" to={`/?family=${family}&artistId=${data.artistId}`}>
                   See all {family.toLowerCase()} for this artist
                 </Link>
               </div>
-              <div className="cards">
-                {assets.map((a) => (
-                  <AssetCard key={a.assetId} asset={a} selected={openAsset === a.assetId} onOpen={(x) => setOpenAsset(x.assetId)} />
-                ))}
-              </div>
+              <AssetList assets={assets} selectedId={openAsset} onOpen={(a) => setOpenAsset(a.assetId)} />
             </section>
           );
         })

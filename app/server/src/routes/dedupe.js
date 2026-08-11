@@ -264,11 +264,11 @@ dedupeRouter.delete('/ignored/:id', requires('asset:delete'), (req, res) => {
 
 // Emptying the Drive trash is the only way to actually get the space back before Google's
 // own 30-day sweep. Admin-only, irreversible, and it takes everything in the bin — not
-// only what Harmony Hub put there — so it says so.
+// only what GCloud put there — so it says so.
 dedupeRouter.post('/empty-trash', requires('asset:purge'), async (req, res) => {
   if (req.body?.confirm !== 'EMPTY TRASH') {
     return problem(res, 428, 'Precondition Required',
-      'Type EMPTY TRASH to confirm. This permanently destroys everything in the connected account\'s Drive trash, including files Harmony Hub never touched.');
+      'Type EMPTY TRASH to confirm. This permanently destroys everything in the connected account\'s Drive trash, including files GCloud never touched.');
   }
   const before = await storage.quota().catch(() => null);
   try {

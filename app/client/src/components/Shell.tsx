@@ -15,17 +15,22 @@ import { useQueue } from '../features/upload/useUploadQueue';
 
 interface NavEntry { to: string; label: string; icon: typeof Home; perm?: string; end?: boolean }
 
+// Home *is* search — there is one search bar in the product and it lives there — so there
+// is no second entry pointing at a second one.
+//
+// Below it, the order is what people reach for most: get a file in, find where files live,
+// send one out. Artists, songs and duplicates are how the library is organised rather than
+// how it is worked, so they sit under those.
 const PRIMARY: NavEntry[] = [
   { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/search', label: 'Search', icon: Search },
+  { to: '/upload', label: 'Upload', icon: UploadCloud, perm: 'asset:upload' },
+  { to: '/folders', label: 'Folders', icon: Folder },
+  { to: '/shares', label: 'Share links', icon: Share2, perm: 'share:create' },
 ];
 const LIBRARY: NavEntry[] = [
   { to: '/artists', label: 'Artists', icon: Users },
   { to: '/songs', label: 'Songs', icon: Disc3 },
-  { to: '/folders', label: 'Folders', icon: Folder },
   { to: '/dedupe', label: 'Duplicates', icon: Copy },
-  { to: '/upload', label: 'Upload', icon: UploadCloud, perm: 'asset:upload' },
-  { to: '/shares', label: 'Share links', icon: Share2, perm: 'share:create' },
 ];
 const ADMIN: NavEntry[] = [
   { to: '/admin/storage', label: 'Storage health', icon: ShieldCheck, perm: 'admin:storage' },
@@ -129,7 +134,7 @@ export function Shell() {
             <div className="nav-group-label eyebrow">Getting started</div>
             <NavLink to="/help" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tour="help" onClick={() => setNavOpen(false)}>
               <HelpCircle size={17} />
-              How Harmony Hub works
+              How GCloud works
             </NavLink>
           </div>
         </nav>
@@ -179,11 +184,11 @@ export function Shell() {
 
         {/* Build marker. Sits under every overlay and ignores pointer events so it can
             never intercept a click. */}
-        <div className="build-tag" aria-hidden>SK-V2.2</div>
+        <div className="build-tag" aria-hidden>SK-V1.4.1</div>
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
-      {showTour && <Tour onDone={() => { setShowTour(false); toast({ kind: 'ok', title: 'You are set up', body: 'Press ⌘K any time, or open “How Harmony Hub works” from the sidebar.' }); }} />}
+      {showTour && <Tour onDone={() => { setShowTour(false); toast({ kind: 'ok', title: 'You are set up', body: 'Press ⌘K any time, or open “How GCloud works” from the sidebar.' }); }} />}
     </div>
   );
 }
@@ -205,7 +210,7 @@ function UserMenu({ name, role, onLogout }: { name: string; role: string; onLogo
             <RotateCcw size={16} /> Replay the tour
           </button>
           <button className="nav-item" onClick={() => { navigate('/help'); setOpen(false); }}>
-            <HelpCircle size={16} /> How Harmony Hub works
+            <HelpCircle size={16} /> How GCloud works
           </button>
           <button className="nav-item" onClick={onLogout} style={{ color: 'var(--danger)' }}>
             <LogOut size={16} /> Sign out
@@ -216,14 +221,14 @@ function UserMenu({ name, role, onLogout }: { name: string; role: string; onLogo
         <span
           style={{
             width: 30, height: 30, borderRadius: 9, background: 'var(--indigo-soft)', color: 'var(--indigo-deep)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flex: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14.5, fontWeight: 700, flex: 'none',
           }}
         >
           {initials(name)}
         </span>
         <span className="grow truncate" style={{ textAlign: 'left' }}>
-          <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{name}</span>
-          <span className="t-small" style={{ fontSize: 11 }}>{role}</span>
+          <span style={{ display: 'block', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{name}</span>
+          <span className="t-small" style={{ fontSize: 13.5 }}>{role}</span>
         </span>
       </button>
     </div>
@@ -268,9 +273,9 @@ function NotificationBell({
               >
                 <span style={{ width: 7, height: 7, borderRadius: '50%', marginTop: 6, flex: 'none', background: n.level === 'danger' ? 'var(--danger)' : n.level === 'ok' ? 'var(--ok)' : 'var(--indigo)' }} />
                 <span className="grow">
-                  <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{n.title}</span>
+                  <span style={{ display: 'block', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{n.title}</span>
                   <span className="t-small" style={{ display: 'block', fontWeight: 400, whiteSpace: 'normal' }}>{n.body}</span>
-                  <span className="t-small" style={{ fontSize: 11 }}>{relative(n.createdAt)}</span>
+                  <span className="t-small" style={{ fontSize: 13.5 }}>{relative(n.createdAt)}</span>
                 </span>
               </button>
             ))

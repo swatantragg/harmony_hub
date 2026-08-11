@@ -170,7 +170,7 @@ function TextPreview({ url, file, height }: { url: string; file: PreviewFile; he
     <div className="preview-stage" style={{ alignItems: 'stretch', padding: 0 }}>
       <pre
         style={{
-          margin: 0, padding: 18, fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.7,
+          margin: 0, padding: 18, fontFamily: 'var(--mono)', fontSize: 14.5, lineHeight: 1.7,
           whiteSpace: 'pre-wrap', maxHeight: height, overflowY: 'auto', color: 'var(--ink-2)', width: '100%',
         }}
       >
@@ -187,7 +187,7 @@ function Grid({ rows, height }: { rows: string[][]; height: number }) {
   const [head, ...body] = rows;
   return (
     <div style={{ maxHeight: height, overflow: 'auto', width: '100%' }}>
-      <table className="tbl" style={{ fontSize: 12 }}>
+      <table className="tbl" style={{ fontSize: 14.5 }}>
         <thead>
           <tr>{head.map((cell, i) => <th key={i}>{cell}</th>)}</tr>
         </thead>
@@ -215,7 +215,7 @@ function DelimitedPreview({ url, file, height }: { url: string; file: PreviewFil
   return (
     <div className="preview-stage" style={{ alignItems: 'stretch', padding: 0, overflow: 'hidden' }}>
       <Grid rows={data} height={height} />
-      <div className="t-small" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 11.5 }}>
+      <div className="t-small" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 14 }}>
         {data.length - 1} rows · read in the browser, straight from storage
       </div>
     </div>
@@ -257,7 +257,7 @@ function SheetPreview({
         </div>
       )}
       <Grid rows={data[active].rows} height={height} />
-      <div className="t-small" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 11.5 }}>
+      <div className="t-small" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 14 }}>
         {data[active].rows.length} rows · values only — formatting, formulas and charts are not rendered
       </div>
     </div>
@@ -300,7 +300,7 @@ function WordPreview({
           ),
         )}
       </div>
-      <div className="t-small" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 11.5 }}>
+      <div className="t-small" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 14 }}>
         Text only — images, tables and styling are not rendered in the preview
       </div>
     </div>
@@ -454,7 +454,7 @@ function AudioPreview({ url, file }: { url: string; file: PreviewFile }) {
           {duration(pos)} / {duration(len)}
         </span>
       </div>
-      <div className="t-small" style={{ fontSize: 11.5 }}>
+      <div className="t-small" style={{ fontSize: 14 }}>
         Streaming directly from storage with a signed link · seeking uses HTTP Range
       </div>
     </div>

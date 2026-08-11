@@ -47,7 +47,7 @@ function openBrowser(url) {
 async function main() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log(`\n${bold('Harmony Hub — Google Drive authorisation')}\n`);
+  console.log(`\n${bold('GCloud — Google Drive authorisation')}\n`);
   console.log('Before running this you need an OAuth client. In the Google Cloud console:');
   console.log(`  1. ${dim('console.cloud.google.com')} → create or pick a project`);
   console.log('  2. APIs & Services → Library → enable "Google Drive API"');
@@ -93,11 +93,11 @@ async function main() {
       const returned = url.searchParams.get('code');
 
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(`<!doctype html><meta charset="utf-8"><title>Harmony Hub</title>
+      res.end(`<!doctype html><meta charset="utf-8"><title>GCloud</title>
 <body style="font:16px/1.6 system-ui;margin:0;display:grid;place-items:center;height:100vh;background:#0f1020;color:#fff">
 <div style="text-align:center;max-width:32rem;padding:2rem">
   <div style="font-size:2.5rem">${error ? '✕' : '✓'}</div>
-  <h1 style="font-size:1.25rem;margin:.5rem 0">${error ? 'Authorisation refused' : 'Harmony Hub is connected'}</h1>
+  <h1 style="font-size:1.25rem;margin:.5rem 0">${error ? 'Authorisation refused' : 'GCloud is connected'}</h1>
   <p style="opacity:.7">${error ? `Google said: ${error}` : 'Close this tab and go back to your terminal.'}</p>
 </div></body>`);
 
