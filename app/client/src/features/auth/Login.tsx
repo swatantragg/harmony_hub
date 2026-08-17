@@ -7,8 +7,9 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { ArrowRight, Loader2 } from 'lucide-react';
-import { ThemeToggle } from '../../components/ui';
+import { PasswordInput, ThemeToggle } from '../../components/ui';
 import { useSession } from '../../app/session';
+import { BUILD_TAG } from '../../lib/version';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -39,7 +40,7 @@ export function Login() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '40px 24px' }}>
+    <div className="plain-page" style={{ display: 'grid', placeItems: 'center' }}>
       <div className="theme-toggle-float"><ThemeToggle /></div>
 
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -66,12 +67,10 @@ export function Login() {
           </div>
           <div className="field">
             <label className="label" htmlFor="password">Password</label>
-            <input
+            <PasswordInput
               id="password"
-              className="input"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               autoComplete="current-password"
               required
             />
@@ -84,6 +83,12 @@ export function Login() {
 
         <p className="t-small" style={{ textAlign: 'center', marginTop: 22 }}>
           Accounts are created by an administrator. If you do not have one, ask them to add you.
+        </p>
+
+        {/* The one screen everybody reaches before signing in, so it is the one place a
+            build number can be read off a phone that is misbehaving. */}
+        <p className="t-small" style={{ textAlign: 'center', marginTop: 10, fontFamily: 'var(--mono)', letterSpacing: '.1em', opacity: .62 }}>
+          {BUILD_TAG}
         </p>
       </div>
     </div>

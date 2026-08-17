@@ -28,7 +28,7 @@ export function AssetPreview({ asset }: { asset: Asset }) {
   }, [asset.assetId, playable]);
 
   if (!playable) {
-    const isArchive = ['ARCHIVED', 'RESTORING'].includes(asset.availability.status);
+    const isArchive = ['TRASHED', 'RESTORING'].includes(asset.availability.status);
     return (
       <div className="preview-stage col" style={{ gap: 10, padding: 28, textAlign: 'center' }}>
         {isArchive ? <Archive size={26} color="var(--info)" /> : <CircleAlert size={26} color="var(--danger)" />}

@@ -1,6 +1,7 @@
 // "How GCloud works" — the whole product explained in one scrollable page, in plain
 // language, with no jargon and no assumed background. This is the single largest lever
 // on the learning curve: anyone can read it in five minutes and then use everything.
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router';
 import {
   Search, ShieldCheck, Pencil, UploadCloud, Share2, History, Trash2,
@@ -319,7 +320,7 @@ export function Help() {
       </section>
 
       {/* Shortcuts */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px,1fr))', gap: 18 }}>
+      <section className="auto-grid" style={{ '--min': '290px' } as CSSProperties}>
         <div className="panel">
           <div className="panel-head"><span className="t-h3 row-tight"><Command size={15} color="var(--ink-3)" /> Keyboard shortcuts</span></div>
           <div className="panel-body stack-2">

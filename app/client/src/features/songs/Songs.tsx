@@ -28,10 +28,6 @@ export function SongList() {
     <div className="page stack-4">
       <div className="page-head">
         <h1 className="t-h1">Songs</h1>
-        <p className="t-body" style={{ maxWidth: '62ch', marginTop: 6 }}>
-          Each song gathers every file made for it — masters, covers, videos, reels and lyrics — in
-          one place, grouped by kind.
-        </p>
         <div className="searchbar" style={{ maxWidth: 380, marginTop: 16 }}>
           <Disc3 size={17} color="var(--ink-3)" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by title" aria-label="Filter songs" />

@@ -40,11 +40,22 @@ export function Tour({ onDone }: { onDone: () => void }) {
   const [box, setBox] = useState<DOMRect | null>(null);
   const current = STEPS[step];
 
+  // An anchor that is not actually on the screen gets no ring and no anchored card. The
+  // sidebar is the case that matters: below 1080px it is translated off-canvas, so it
+  // still has a bounding box — one sitting entirely to the left of the viewport. Ringing
+  // it would cut the spotlight hole out of thin air and leave the card pointing nowhere.
+  const onScreen = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0
+      && r.right > 0 && r.left < window.innerWidth
+      && r.bottom > 0 && r.top < window.innerHeight;
+  };
+
   useEffect(() => {
     const el = document.querySelector(current.anchor);
     if (el) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      setTimeout(() => setBox(el.getBoundingClientRect()), 240);
+      setTimeout(() => setBox(onScreen(el) ? el.getBoundingClientRect() : null), 240);
     } else {
       setBox(null);
     }

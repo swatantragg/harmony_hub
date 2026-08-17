@@ -1,4 +1,4 @@
-# Secrets never enter an image layer. The container gets its environment at run time,
+\# Secrets never enter an image layer. The container gets its environment at run time,
 # through --env-file or the orchestrator, so a leaked image cannot leak credentials.
 .env
 .env.*

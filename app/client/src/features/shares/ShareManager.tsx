@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Share2, Ban, Clock, Download, ShieldCheck, Globe, PenLine, UserCheck, Folder as FolderIcon,
+  Share2, Ban, Clock, Download, Globe, PenLine, UserCheck, Folder as FolderIcon,
   FileIcon, Search,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { CopyButton, EmptyState, Skeleton, useToast, useDebounced, ConfirmDialog } from '../../components/ui';
-import { countdown, date, relative } from '../../lib/format';
+import { countdown, date, pluralise, relative } from '../../lib/format';
 import type { Share } from '../../lib/types';
 import { useMemo, useState } from 'react';
 import { useSession } from '../../app/session';
@@ -108,16 +108,10 @@ export function ShareManager() {
     <div className="page stack-4">
       <div className="page-head">
         <h1 className="t-h1">Share links</h1>
-        <p className="t-body" style={{ maxWidth: '68ch', marginTop: 6 }}>
-          Links you have sent out, for single files and for whole folders. Each one is issued as{' '}
-          <b>Open to all</b>, <b>Editor</b> or <b>Specific allocation</b>; each expires on its own,
-          can be capped by download count, and can be switched off instantly. Create one from any
-          file’s Share button, or from a folder.
-        </p>
       </div>
 
       {!isLoading && (data?.data.length ?? 0) > 0 && (
-        <div className="tiles">
+        <div className="tiles as-list">
           <div className="stat plain">
             <div className="stat-k">Live right now</div>
             <div className="stat-v indigo">{live.length}</div>
@@ -209,7 +203,7 @@ export function ShareManager() {
                           {s.targetName ?? s.assetName}
                         </div>
                         <div className="t-small">
-                          {isFolder ? `${s.fileCount} files · ` : s.songTitle ? `${s.songTitle} · ` : ''}
+                          {isFolder ? `${pluralise(s.fileCount, 'file')} · ` : s.songTitle ? `${s.songTitle} · ` : ''}
                           {s.canDownload ? 'download allowed' : 'preview only'}
                           {s.note ? ` · ${s.note}` : ''}
                         </div>
@@ -248,17 +242,6 @@ export function ShareManager() {
           </div>
         </div>
       )}
-
-      <div className="note indigo">
-        <ShieldCheck size={15} />
-        <div>
-          <b>How these stay safe.</b> A link never exposes a permanent address — it carries a random
-          token, and nothing about the Drive or the file. When someone opens it, GCloud re-checks
-          every gate, confirms the file is still really in storage, then issues a signed address that
-          works for an hour at most. Every open is recorded with time and IP; on an Editor or
-          Specific-allocation link it is recorded against the named account.
-        </div>
-      </div>
 
       {revoking && (
         <ConfirmDialog

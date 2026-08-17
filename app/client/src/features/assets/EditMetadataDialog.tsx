@@ -58,7 +58,8 @@ export function EditMetadataDialog({ asset, onClose }: { asset: Asset; onClose: 
       <div className="stack-4">
         <div className="row" style={{ gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <TypePicker value={type} onChange={setType} label="Asset type" />
-          <div className="field" style={{ width: 150 }}>
+          {/* 150px beside the type picker, full width once it has wrapped below it. */}
+          <div className="field" style={{ flex: '1 1 150px', minWidth: 150 }}>
             <label className="label">Version label</label>
             <select className="select" value={version} onChange={(e) => setVersion(e.target.value)}>
               {VERSION_LABELS.map((v) => <option key={v} value={v}>{v}</option>)}

@@ -4,6 +4,8 @@
 import { FileText, Film, Image as ImageIcon, Music2 } from 'lucide-react';
 import type { Asset, Family } from '../../lib/types';
 import { AvailabilityBadge } from '../../components/ui';
+import { RowMenu } from '../../components/RowMenu';
+import { useAssetActions } from './assetActions';
 import { bytes } from '../../lib/format';
 
 export const FAMILY_ICON: Record<Family, typeof Music2> = {
@@ -37,6 +39,9 @@ export function AssetList({
               {!dense && <th>Version</th>}
               <th>Size</th>
               <th>Availability</th>
+              {/* The action column has no heading — the dots are self-explanatory and a
+                  word here would be the widest thing in the narrowest column. */}
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -54,6 +59,7 @@ export function AssetRow({
   asset, onOpen, selected, dense = false,
 }: { asset: Asset; onOpen: (a: Asset) => void; selected?: boolean; dense?: boolean }) {
   const Icon = FAMILY_ICON[asset.family];
+  const { actions, dialogs } = useAssetActions(asset);
   return (
     <tr className={selected ? 'selected' : ''} onClick={() => onOpen(asset)}>
       <td>
@@ -80,6 +86,12 @@ export function AssetRow({
       {!dense && <td><span className="vchip">{asset.version}</span></td>}
       <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>{bytes(asset.drive.sizeBytes)}</td>
       <td><AvailabilityBadge status={asset.availability.status} /></td>
+      <td style={{ width: 1, paddingLeft: 0, paddingRight: 8 }}>
+        <RowMenu actions={actions} label={`Actions for ${asset.displayName}`} />
+        {/* The dialogs render from here, inside the row. They portal to the body, so the
+            table's overflow and the row's click handler never reach them. */}
+        {dialogs}
+      </td>
     </tr>
   );
 }

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, KeyRound } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Modal, Skeleton, useToast } from '../../components/ui';
-import { date, initials, relative } from '../../lib/format';
+import { date, initials } from '../../lib/format';
 import type { Role } from '../../lib/types';
 
 interface UserRow {
@@ -43,67 +43,44 @@ export function Users() {
   return (
     <div className="page stack-5">
       <div className="spread page-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 className="t-h1">People</h1>
-          <p className="t-body" style={{ maxWidth: '62ch', marginTop: 6 }}>
-            Who has an account. There are two roles, and one difference between them: an Admin
-            can add people, a User cannot. Everything else in the product is open to both.
-            Changing a role takes effect immediately — the server checks permissions on every
-            single request.
-          </p>
-        </div>
+        <h1 className="t-h1">People</h1>
         <button className="btn btn-primary" onClick={() => setAdding(true)}><UserPlus size={15} /> Add someone</button>
       </div>
 
-      <div className="panel" style={{ overflow: 'hidden' }}>
-        <div className="table-scroll">
-          <table className="tbl">
-            <thead><tr><th>Person</th><th>Role</th><th>Last signed in</th><th>Added</th></tr></thead>
-            <tbody>
-              {data.data.map((u) => (
-                <tr key={u._id} style={{ cursor: 'default' }}>
-                  <td>
-                    <div className="row-tight">
-                      <span
-                        style={{
-                          width: 32, height: 32, borderRadius: 9, background: 'var(--indigo-soft)',
-                          color: 'var(--indigo-deep)', display: 'flex', alignItems: 'center',
-                          justifyContent: 'center', fontSize: 14.5, fontWeight: 700, flex: 'none',
-                        }}
-                      >
-                        {initials(u.name)}
-                      </span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 15.5 }}>{u.name}</div>
-                        <div className="t-small" style={{ fontSize: 14 }}>{u.email}</div>
-                        {/* An account that has not been picked up yet looks identical to
-                            one in daily use unless the page says so. */}
-                        {u.mustChangePassword && (
-                          <div className="t-small row-tight" style={{ fontSize: 13.5, marginTop: 3, color: 'var(--mismatch-ink)' }}>
-                            <KeyRound size={11} /> has not set their own password yet
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <select
-                      className="select"
-                      style={{ width: 'auto', paddingRight: 30 }}
-                      value={u.role}
-                      onChange={(e) => changeRole.mutate({ id: u._id, role: e.target.value })}
-                      aria-label={`Role for ${u.name}`}
-                    >
-                      {data.roles.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </td>
-                  <td className="t-small">{u.lastLoginAt ? relative(u.lastLoginAt) : 'never'}</td>
-                  <td className="t-small">{date(u.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Not a table. Four columns of which one is a control and two are dates never fit a
+          phone, and the person's name — the thing you are looking for — was the column that
+          got squeezed. Each account is now a block: who they are, then the role control with
+          the date they were added beside it. */}
+      <div className="panel rows">
+        {data.data.map((u) => (
+          <div key={u._id} className="person-row">
+            <span className="row-icon">{initials(u.name)}</span>
+
+            <div className="row-main">
+              <span className="row-title">{u.name}</span>
+              <span className="row-sub">{u.email}</span>
+              {/* An account that has not been picked up yet looks identical to one in daily
+                  use unless the page says so. */}
+              {u.mustChangePassword && (
+                <span className="row-sub row-tight" style={{ marginTop: 3, color: 'var(--mismatch-ink)' }}>
+                  <KeyRound size={12} /> has not set their own password yet
+                </span>
+              )}
+
+              <div className="person-controls">
+                <select
+                  className="select"
+                  value={u.role}
+                  onChange={(e) => changeRole.mutate({ id: u._id, role: e.target.value })}
+                  aria-label={`Role for ${u.name}`}
+                >
+                  {data.roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <span className="t-small">Added {date(u.createdAt)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {adding && (

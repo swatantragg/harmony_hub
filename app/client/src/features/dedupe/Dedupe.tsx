@@ -175,14 +175,7 @@ export function Dedupe() {
   return (
     <div className="page stack-5">
       <div className="spread page-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
-        <div>
-          <h1 className="t-h1">Duplicates</h1>
-          <p className="t-body" style={{ maxWidth: '66ch', marginTop: 6 }}>
-            The same file filed in two places is not a mistake — it is how people work. It only
-            becomes a problem when nobody can tell which copies are genuinely the same. This page
-            answers that, and separates what it knows from what it merely suspects.
-          </p>
-        </div>
+        <h1 className="t-h1">Duplicates</h1>
         <button className="btn btn-secondary" disabled={scanning || isFetching} onClick={runScan}>
           {scanning || isFetching ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
           {scanning || isFetching ? 'Scanning…' : 'Scan again'}
@@ -237,7 +230,7 @@ export function Dedupe() {
 
       {/* Summary tiles */}
       {data.groups.length > 0 && (
-        <div className="tiles">
+        <div className="tiles as-list">
           {Object.entries(data.byKind).map(([kind, v]) => {
             const meta = KIND[kind];
             return (
@@ -337,7 +330,7 @@ function GroupCard({
     <div className="panel" style={{ borderLeft: `3px solid ${meta.colour}` }}>
       <div className="panel-body stack-3">
         <div className="spread" style={{ alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-          <div className="grow" style={{ minWidth: 260 }}>
+          <div className="grow" style={{ minWidth: 'min(260px, 100%)' }}>
             <div className="row-tight" style={{ marginBottom: 4 }}>
               <Icon size={14} color={meta.colour} />
               <span className="eyebrow" style={{ color: meta.colour }}>{meta.certainty}</span>

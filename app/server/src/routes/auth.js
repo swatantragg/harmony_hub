@@ -19,6 +19,13 @@ const publicUser = (u) => ({
   // route stays closed until it clears.
   mustChangePassword: Boolean(u.mustChangePassword),
   permissions: PERMISSIONS[normaliseRole(u.role)],
+  // For the profile screen. `createdBy` is absent on the founding administrator and on
+  // every account seeded before it was recorded, so the name resolves to null rather than
+  // to a guess — "who let this person in" is exactly the question not to answer wrongly.
+  createdAt: u.createdAt ?? null,
+  passwordChangedAt: u.passwordChangedAt ?? null,
+  createdBy: u.createdBy ?? null,
+  createdByName: u.createdBy ? db.users.find((x) => x._id === u.createdBy)?.name ?? null : null,
 });
 
 // What a password has to be before it is accepted. Deliberately one rule rather than a

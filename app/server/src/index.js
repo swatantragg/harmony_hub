@@ -153,10 +153,50 @@ app.use('/api', (_req, res) =>
 
 // Serve the built client if one exists, so `npm start` alone runs the whole product —
 // the same arrangement as the deployed container (§4).
+//
+// Cache lifetimes here are what decides whether a deploy is ever seen. Three classes:
+//
+//   /assets/*   content-hashed by Vite. The name changes when the bytes do, so these are
+//               immutable and can be held for a year.
+//   sw.js       the update mechanism itself. A cached service worker cannot be replaced by
+//               a newer one it is busy serving — browsers cap its freshness at 24h for
+//               exactly this reason, and no-cache closes the remaining window.
+//   everything  index.html and the manifest: revalidated every time, because they are what
+//   else       point at the hashed names above.
 const clientDist = env.CLIENT_DIST || path.resolve(SERVER_ROOT, '../client/dist');
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+  const IMMUTABLE = /^\/assets\//;
+  app.use(
+    express.static(clientDist, {
+      etag: true,
+      lastModified: true,
+      // index.html is served by the fallback below, so express.static should not answer
+      // "/" itself — one place decides how the document is cached.
+      index: false,
+      setHeaders(res, filePath) {
+        const rel = `/${path.relative(clientDist, filePath).split(path.sep).join('/')}`;
+        if (IMMUTABLE.test(rel)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          return;
+        }
+        if (rel === '/sw.js') {
+          res.setHeader('Cache-Control', 'no-cache');
+          // Default scope is the directory the worker is served from. It is served from the
+          // root here, so this is belt and braces — and documents the requirement.
+          res.setHeader('Service-Worker-Allowed', '/');
+          return;
+        }
+        // Everything else — index.html's siblings, the icons, manifest.webmanifest. The
+        // content types are left to express.static, which already answers
+        // application/manifest+json for that extension.
+        res.setHeader('Cache-Control', 'no-cache');
+      },
+    }),
+  );
+  app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
 }
 
 // RFC 7807 for everything that escapes a handler.

@@ -116,11 +116,6 @@ export function UploadCenter() {
     <div className="page stack-4">
       <div className="page-head">
         <h1 className="t-h1">Upload files</h1>
-        <p className="t-body" style={{ maxWidth: '64ch', marginTop: 6 }}>
-          Files travel from this browser straight into storage — they never pass through the
-          application server. Large files are split into parts that upload in parallel, so a
-          dropped connection only costs you one part.
-        </p>
       </div>
 
       <div
@@ -182,7 +177,7 @@ export function UploadCenter() {
         <EmptyState
           icon={<UploadCloud size={26} />}
           title="Nothing queued"
-          body="Add a file to get started. You will be asked what kind of file it is and how to tag it — that is what makes it findable later. Attaching it to a song or a folder is optional."
+          body="Add a file to get started."
         />
       ) : (
         <>
@@ -360,7 +355,7 @@ function UploadRow({
 
               <FolderPicker value={item.folderId} onChange={(folderId) => onChange({ folderId })} />
 
-              <div className="field" style={{ width: 150 }}>
+              <div className="field" style={{ flex: '1 1 150px', minWidth: 150 }}>
                 <label className="label">Version</label>
                 <select className="select" value={item.version} onChange={(e) => onChange({ version: e.target.value })}>
                   {VERSION_LABELS.map((v) => <option key={v} value={v}>{v}</option>)}
