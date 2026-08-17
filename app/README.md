@@ -13,8 +13,9 @@ vocabulary guard and the light/dark tokens, over a Google Drive.
 2. [Run it](#2-run-it)
 3. [How storage behaves](#3-how-storage-behaves)
 4. [De-duplication](#4-de-duplication)
-5. [Commands](#5-commands)
-6. [Troubleshooting](#6-troubleshooting)
+5. [Installing it as an app](#5-installing-it-as-an-app)
+6. [Commands](#6-commands)
+7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
@@ -319,7 +320,57 @@ that file changes. The other three tiers work without it.
 
 ---
 
-## 5. Commands
+## 5. Installing it as an app
+
+GCloud is a PWA. On a phone or a desktop it installs to the home screen or the dock, opens
+without browser chrome, and starts from cache instead of from the network.
+
+**Installing.** Chrome and Edge offer it themselves — the app also shows an install card at
+the bottom of the screen, which is dismissible and does not come back for a month. On iOS
+there is no prompt to offer: Safari installs from **Share → Add to Home Screen**.
+
+**It requires HTTPS**, with one exception: `localhost` is treated as secure, so the whole
+thing can be tested locally with `npm start`. Served over plain HTTP from any other
+hostname, the service worker will not register and none of this happens.
+
+### What works offline, and what does not
+
+The **shell** is cached: the bundle, the stylesheet, the icons, the typeface. The app opens
+offline and tells you it is offline.
+
+The **library is not cached** — not the catalogue, not the files. Two reasons, and the
+first is the one that decided it: every `/api` response is somebody's private library
+behind a session, and a copy of it on disk outlives signing out, on a device that may be
+shared or lost. The second is that it could not work anyway — `/api/files` streams byte
+ranges for video scrubbing, and a cache that answered a range request with the whole file
+would break seeking.
+
+So: an installed GCloud with no network opens instantly and shows you an offline notice.
+It does not show you a stale catalogue, which is the failure mode worth avoiding in a
+product whose entire job is telling you whether a file is really there.
+
+### Updating
+
+A deploy is picked up on the next visit. The new version installs in the background and
+waits — it never swaps the bundle out from under an upload in progress. The reader gets a
+"new version is ready" card and reloads when it suits them.
+
+The mechanism is `dist/sw.js`, generated at build time by the `gcloud-pwa` plugin in
+`client/vite.config.ts` from the template in `client/service-worker.js`. Its revision is a
+hash of the precached bytes, so it changes when the build changes and stays put when it
+does not. Two server-side headers make it work, both in `server/src/index.js`: `sw.js` is
+served `no-cache`, and `/assets/*` is served `immutable`.
+
+### Icons
+
+`client/public/icons/` is generated, and committed. `npm run --workspace client icons`
+redraws it from the geometry in `scripts/gen-icons.mjs` — the mark is five bars in a
+rounded square, so it is drawn from the brand tokens rather than stored as artwork, and
+the script has no dependencies.
+
+---
+
+## 6. Commands
 
 ```bash
 npm run drive:auth        # mint a refresh token, interactively
@@ -342,7 +393,7 @@ npm run smoke             # end-to-end against a running instance and a real Dri
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 **`invalid_grant` on boot**
 The refresh token is dead. Three causes, in order of likelihood: the consent screen is still

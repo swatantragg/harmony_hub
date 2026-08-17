@@ -4,6 +4,16 @@
 
 html, body, #root { height: 100%; }
 
+html {
+  /* iOS inflates text in landscape unless told not to. It does this to help pages that
+     were never laid out for a phone; this one was, so the help is corruption. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Pull-to-refresh reloads the whole bundle mid-upload, and an installed app is not a
+     page you refresh by dragging. Scrolling inside the app is unaffected. */
+  overscroll-behavior-y: contain;
+}
+
 body {
   margin: 0;
   background: var(--canvas);
@@ -16,6 +26,17 @@ body {
   line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overscroll-behavior-y: contain;
+  /* The grey flash on tap is a browser's guess at feedback. Every control here has its own
+     :active state, which is a better one and fires at the same moment. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Removes the 300ms wait a browser spends deciding whether a tap was a double-tap-to-zoom.
+   Scoped to controls: pinch-zoom on the page itself stays available. */
+button, a, .card, .stat, .chip, .facet-chip, .nav-item, .tab, .choice, summary, label,
+input[type="checkbox"], input[type="radio"], select {
+  touch-action: manipulation;
 }
 
 /* Focus is always indigo — brand book §03: indigo carries focus and selection. */

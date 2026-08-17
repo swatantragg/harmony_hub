@@ -94,7 +94,7 @@ function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
           </div>
         ) : (
           <>
-            <div className="spread" style={{ alignItems: 'baseline' }}>
+            <div className="kv-row">
               <span style={{ fontSize: 30, fontWeight: 700, color: critical ? 'var(--danger-ink)' : 'var(--ink)' }}>
                 {bytes(quota.available ?? 0)}
               </span>
@@ -115,10 +115,10 @@ function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
 
             <div className="stack-2">
               {segments.map((seg) => (
-                <div key={seg.label} className="spread">
+                <div key={seg.label} className="kv-row">
                   <span className="row-tight t-small">
-                    <span style={{ width: 9, height: 9, borderRadius: 3, background: seg.colour, display: 'inline-block' }} />
-                    {seg.label}
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: seg.colour, display: 'inline-block', flex: 'none' }} />
+                    <span className="truncate">{seg.label}</span>
                   </span>
                   <span className="t-small t-mono">{bytes(seg.value)}</span>
                 </div>
@@ -229,14 +229,7 @@ export function StorageHealth() {
   return (
     <div className="page stack-5">
       <div className="spread page-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
-        <div>
-          <h1 className="t-h1">Storage health</h1>
-          <p className="t-body" style={{ maxWidth: '66ch', marginTop: 6 }}>
-            Google Drive holds the files; the catalogue describes them. This page compares the two
-            and reports every disagreement — including the ones somebody caused by working in Drive
-            directly, which is normal and not a fault. Where they differ, Drive is the truth.
-          </p>
-        </div>
+        <h1 className="t-h1">Storage health</h1>
         <button className="btn btn-spark" disabled={reconcile.isPending} onClick={() => reconcile.mutate()}>
           {reconcile.isPending ? <Loader2 size={16} /> : <RefreshCw size={16} />}
           {reconcile.isPending ? 'Comparing…' : 'Run the check now'}
@@ -278,7 +271,7 @@ export function StorageHealth() {
       <section>
         <h2 className="t-h2" style={{ marginBottom: 13 }}>Where every file stands</h2>
 
-        <div className="tiles">
+        <div className="tiles status-tiles">
           {(Object.entries(data.byStatus) as [Availability, number][]).map(([status, n]) => (
             <Link
               key={status}
@@ -399,12 +392,12 @@ export function StorageHealth() {
       )}
 
       {/* Distribution */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px,1fr))', gap: 18 }}>
+      <section className="auto-grid">
         <div className="panel">
           <div className="panel-head"><span className="t-h3 row-tight"><Database size={15} color="var(--ink-3)" /> By kind of file</span></div>
           <div className="panel-body stack-2">
             {Object.entries(data.byFamily).map(([fam, v]) => (
-              <div key={fam} className="spread">
+              <div key={fam} className="kv-row">
                 <span className="t-small" style={{ fontWeight: 600 }}>{fam}</span>
                 <span className="t-small">{pluralise(v.count, 'file')} · {bytes(v.bytes)}</span>
               </div>
@@ -419,8 +412,8 @@ export function StorageHealth() {
               .sort((a, b) => b[1].bytes - a[1].bytes)
               .slice(0, 8)
               .map(([name, v]) => (
-                <div key={name} className="spread">
-                  <span className="t-small truncate" style={{ fontWeight: 600 }}>{name}</span>
+                <div key={name} className="kv-row" title={name}>
+                  <span className="t-small" style={{ fontWeight: 600 }}>{name}</span>
                   <span className="t-small">{pluralise(v.count, 'file')} · {bytes(v.bytes)}</span>
                 </div>
               ))}

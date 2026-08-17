@@ -166,7 +166,11 @@
    triplets above are what change. */
 [data-status="AVAILABLE"]  { --st: var(--ok);       --st-soft: var(--ok-soft);       --st-ink: var(--ok-ink); }
 [data-status="UNVERIFIED"] { --st: var(--neutral);  --st-soft: var(--neutral-soft);  --st-ink: var(--neutral-ink); }
-[data-status="ARCHIVED"]   { --st: var(--info);     --st-soft: var(--info-soft);     --st-ink: var(--info-ink); }
+/* TRASHED, not ARCHIVED. The status was renamed when the Drive bin replaced the archive
+   tier; this triplet kept the old name, so every "In the bin" badge in the product
+   resolved --st/--st-soft/--st-ink to nothing and rendered as bare text with an invisible
+   dot — no pill, no colour, on Storage health and in every file list. */
+[data-status="TRASHED"]    { --st: var(--info);     --st-soft: var(--info-soft);     --st-ink: var(--info-ink); }
 [data-status="RESTORING"]  { --st: var(--warn);     --st-soft: var(--warn-soft);     --st-ink: var(--warn-ink); }
 [data-status="MISSING"]    { --st: var(--danger);   --st-soft: var(--danger-soft);   --st-ink: var(--danger-ink); }
 [data-status="MISMATCH"]   { --st: var(--mismatch); --st-soft: var(--mismatch-soft); --st-ink: var(--mismatch-ink); }

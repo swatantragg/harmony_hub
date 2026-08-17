@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Home, Search, Users, Disc3, UploadCloud, Share2, ShieldCheck, ScrollText,
-  UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy,
+  UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy, UserCircle2,
 } from 'lucide-react';
 import { Brandmark, ThemeToggle, useClickOutside, useToast } from './ui';
 import { CommandPalette } from './CommandPalette';
@@ -11,6 +11,7 @@ import { Tour } from './Tour';
 import { useSession, tour } from '../app/session';
 import { api } from '../lib/api';
 import { initials, relative } from '../lib/format';
+import { BUILD_TAG } from '../lib/version';
 import { useQueue } from '../features/upload/useUploadQueue';
 
 interface NavEntry { to: string; label: string; icon: typeof Home; perm?: string; end?: boolean }
@@ -182,9 +183,9 @@ export function Shell() {
 
         <Outlet />
 
-        {/* Build marker. Sits under every overlay and ignores pointer events so it can
-            never intercept a click. */}
-        <div className="build-tag" aria-hidden>SK-V1.4.1</div>
+        {/* Build marker, as the page footer — the last thing in the flow, so it is reached
+            by scrolling to the bottom rather than floating over the content. */}
+        <footer className="build-tag">{BUILD_TAG}</footer>
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
@@ -203,6 +204,9 @@ function UserMenu({ name, role, onLogout }: { name: string; role: string; onLogo
     <div ref={ref} style={{ position: 'relative' }}>
       {open && (
         <div className="panel" style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, right: 0, padding: 6, zIndex: 40 }}>
+          <button className="nav-item" onClick={() => { navigate('/profile'); setOpen(false); }}>
+            <UserCircle2 size={16} /> View profile
+          </button>
           <button
             className="nav-item"
             onClick={() => { tour.reset(); toast({ kind: 'info', title: 'Tour reset', body: 'Reload the page to see the walkthrough again.' }); setOpen(false); }}
@@ -259,7 +263,15 @@ function NotificationBell({
         )}
       </button>
       {open && (
-        <div className="panel" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 330, zIndex: 40, maxHeight: 420, overflowY: 'auto' }}>
+        // Anchored to the bell, which on a phone sits about 60px from the right edge — so
+        // a fixed 330px panel hangs off the screen. It takes the width it can get.
+        <div
+          className="panel"
+          style={{
+            position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 40,
+            width: 'min(330px, calc(100vw - 24px))', maxHeight: 'min(420px, 60vh)', overflowY: 'auto',
+          }}
+        >
           <div className="panel-head"><span className="t-h3">Notifications</span></div>
           {items.length === 0 ? (
             <div style={{ padding: 22, textAlign: 'center' }} className="t-small">Nothing needs your attention.</div>

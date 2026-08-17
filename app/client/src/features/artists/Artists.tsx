@@ -6,7 +6,7 @@ import {
   ExternalLink, FileQuestion,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { CardSkeletons, EmptyState, Skeleton, useDebounced } from '../../components/ui';
+import { CardSkeletons, EmptyState, RowSkeletons, Skeleton, useDebounced } from '../../components/ui';
 import { Pagination } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, date, pluralise } from '../../lib/format';
@@ -50,11 +50,6 @@ export function ArtistList() {
     <div className="page stack-4">
       <div className="page-head">
         <h1 className="t-h1">Artists</h1>
-        <p className="t-body" style={{ maxWidth: '62ch', marginTop: 6 }}>
-          Every artist on the roster. Open one to see everything filed under them — their releases,
-          the folders their work is stored in, and every file, sorted into tabs you can search
-          within. An artist’s name can be changed at any time; it never touches a stored file.
-        </p>
         <div className="toolbar" style={{ marginTop: 16 }}>
           <div className="searchbar" style={{ maxWidth: 380, flex: '1 1 260px' }}>
             <Users size={17} color="var(--ink-3)" />
@@ -68,34 +63,20 @@ export function ArtistList() {
       </div>
 
       {isLoading ? (
-        <CardSkeletons n={5} />
+        <RowSkeletons n={5} />
       ) : (
-        <div className="cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(256px, 1fr))' }}>
+        <div className="panel rows">
           {artists.map((a) => (
-            <Link key={a._id} to={`/artists/${a._id}`} className="card" style={{ textDecoration: 'none' }}>
-              <div
-                className="card-art"
-                data-family="Audio"
-                style={{ height: 96, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <span
-                  style={{
-                    width: 50, height: 50, borderRadius: 15, background: 'var(--wash-chip)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'var(--display)', fontWeight: 600, fontSize: 20.5, color: 'var(--indigo-deep)',
-                  }}
-                >
-                  {a.name.slice(0, 2).toUpperCase()}
-                </span>
-              </div>
-              <div className="card-body">
-                <div className="card-title" style={{ fontSize: 17 }}>{a.name}</div>
-                <div className="card-sub">{a.genre} · {a.label}</div>
-                <div className="card-foot">
-                  <span className="t-small">{pluralise(a.songCount, 'song')} · {pluralise(a.assetCount, 'file')}</span>
-                  <span className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 13.5 }}>{bytes(a.totalBytes)}</span>
-                </div>
-              </div>
+            <Link key={a._id} to={`/artists/${a._id}`} className="row-item">
+              <span className="row-icon">{a.name.slice(0, 2).toUpperCase()}</span>
+              <span className="row-main">
+                <span className="row-title">{a.name}</span>
+                <span className="row-sub">{a.genre} · {a.label}</span>
+              </span>
+              <span className="row-meta">
+                <span>{pluralise(a.songCount, 'song')} · {pluralise(a.assetCount, 'file')}</span>
+                <b>{bytes(a.totalBytes)}</b>
+              </span>
             </Link>
           ))}
         </div>
@@ -270,19 +251,21 @@ export function ArtistDetail() {
               </div>
             </div>
 
-            <div className="tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(92px,1fr))', minWidth: 290, alignSelf: 'flex-start' }}>
+            {/* Three counts across, and they stay three across — a phone that cannot give
+                them 92px each shrinks the columns rather than forcing the page wide. */}
+            <div className="tiles as-list" style={{ minWidth: 'min(250px, 100%)', alignSelf: 'flex-start' }}>
               <div className="stat plain">
                 <div className="stat-k">Releases</div>
-                <div className="stat-v" style={{ fontSize: 25 }}>{data.songCount}</div>
+                <div className="stat-v">{data.songCount}</div>
               </div>
               <div className="stat plain">
                 <div className="stat-k">Files</div>
-                <div className="stat-v" style={{ fontSize: 25 }}>{data.assetCount}</div>
+                <div className="stat-v">{data.assetCount}</div>
                 <div className="stat-n">{bytes(data.totalBytes)}</div>
               </div>
               <div className="stat plain">
                 <div className="stat-k">Folders</div>
-                <div className="stat-v" style={{ fontSize: 25 }}>{data.folders?.length ?? 0}</div>
+                <div className="stat-v">{data.folders?.length ?? 0}</div>
                 <div className="stat-n">in Google Drive</div>
               </div>
             </div>

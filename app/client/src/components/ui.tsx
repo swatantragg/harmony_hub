@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, Copy, Info, AlertTriangle, CircleCheck, CircleAlert, Sun, Moon, Monitor } from 'lucide-react';
+import {
+  X, Check, Copy, Info, AlertTriangle, CircleCheck, CircleAlert, Sun, Moon, Monitor, Eye, EyeOff,
+} from 'lucide-react';
 import type { Availability, Family } from '../lib/types';
 import { STATUS_COPY } from '../lib/assetTypes';
 import { useTheme } from '../app/theme';
@@ -61,6 +63,53 @@ export function ThemeToggle() {
     >
       <Icon size={17} />
     </button>
+  );
+}
+
+/* ── Password field ────────────────────────────────────────────────────────
+   A password input with a reveal toggle. Worth having everywhere one is typed: the
+   alternative to showing it is people choosing shorter passwords they can type without
+   mistakes, which is a worse trade than the shoulder-surfing risk it avoids.
+
+   The button is `type="button"` — inside a form, the default is submit, and an eye that
+   signs you in is a memorable bug. */
+export function PasswordInput({
+  value, onChange, id, autoComplete, placeholder, autoFocus, invalid, required,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  id?: string;
+  autoComplete?: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+  invalid?: boolean;
+  required?: boolean;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="password-field">
+      <input
+        id={id}
+        className={`input ${invalid ? 'invalid' : ''}`}
+        type={shown ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        required={required}
+      />
+      <button
+        type="button"
+        className="password-toggle"
+        onClick={() => setShown((v) => !v)}
+        aria-label={shown ? 'Hide password' : 'Show password'}
+        aria-pressed={shown}
+        title={shown ? 'Hide password' : 'Show password'}
+      >
+        {shown ? <EyeOff size={17} /> : <Eye size={17} />}
+      </button>
+    </div>
   );
 }
 
@@ -202,6 +251,24 @@ export function EmptyState({
 export const Skeleton = ({ h = 16, w = '100%', style }: { h?: number; w?: number | string; style?: CSSProperties }) => (
   <div className="skel" style={{ height: h, width: w, ...style }} />
 );
+
+// The list equivalent. A skeleton whose shape does not match what replaces it causes a
+// visible jump on load, which reads as the page breaking and re-rendering.
+export function RowSkeletons({ n = 5 }: { n?: number }) {
+  return (
+    <div className="panel rows">
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} className="row-item" style={{ cursor: 'default' }}>
+          <Skeleton h={42} w={42} style={{ borderRadius: 13, flex: 'none' }} />
+          <div className="row-main stack-2">
+            <Skeleton h={14} w="42%" />
+            <Skeleton h={12} w="26%" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function CardSkeletons({ n = 8 }: { n?: number }) {
   return (

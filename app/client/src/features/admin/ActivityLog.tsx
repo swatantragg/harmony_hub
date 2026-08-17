@@ -61,10 +61,6 @@ export function ActivityLog() {
     <div className="page stack-4">
       <div className="page-head">
         <h1 className="t-h1">Activity log</h1>
-        <p className="t-body" style={{ maxWidth: '64ch', marginTop: 6 }}>
-          Every change anyone has made, with what it looked like before and after. Uploads, renames,
-          downloads, shares and deletions all land here — including downloads by outside partners.
-        </p>
 
         <div className="stack-3" style={{ marginTop: 16 }}>
           <div className="toolbar">

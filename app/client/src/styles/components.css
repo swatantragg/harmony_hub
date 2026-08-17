@@ -139,12 +139,17 @@
   border-radius: 5px; padding: 2px 6px; white-space: nowrap;
 }
 
-/* ── App shell ─────────────────────────────────────────────────────────── */
-.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+/* ── App shell ─────────────────────────────────────────────────────────────
+   Heights are in dvh, with a vh line first for anything that predates it. On a phone,
+   100vh is the viewport with the address bar *hidden* — a height the page does not have
+   until you scroll — so a 100vh sidebar puts its own footer under the browser chrome and
+   a 100vh splash screen scrolls. dvh is the height the viewport actually has right now. */
+.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; min-height: 100dvh; }
 
 .sidebar {
   background: var(--surface); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column; position: sticky; top: 0;
+  height: 100vh; height: 100dvh;
 }
 .sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 18px 18px 14px; }
 .sidebar-nav { flex: 1; overflow-y: auto; padding: 6px 12px 12px; }
@@ -186,6 +191,27 @@
 .main { min-width: 0; display: flex; flex-direction: column; }
 .page { padding: 26px; max-width: 1400px; width: 100%; }
 .page-head { margin-bottom: 22px; }
+
+/* The screens that render outside the shell — sign in, choose a password, a public share
+   link — and so get none of the shell's padding or safe-area handling. A share link is
+   opened on a phone more often than anywhere else in this product, so this is not a
+   fallback path. */
+.plain-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: calc(40px + env(safe-area-inset-top));
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
+@media (max-width: 720px) {
+  .plain-page {
+    padding-top: calc(22px + env(safe-area-inset-top));
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+}
 
 /* ── Media card grid ───────────────────────────────────────────────────── */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; }
@@ -270,6 +296,57 @@
 .textarea { resize: vertical; min-height: 74px; line-height: 1.55; }
 .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8C9E' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 32px; }
 
+/* ── Label / figure rows ───────────────────────────────────────────────────
+   A name on the left, its figure on the right. `.spread` alone is not enough: it lets
+   both sides shrink, so a long folder name squeezes the figure until "365 KB" breaks
+   across two lines — at which point it has stopped being a number. The figure is fixed
+   and never wraps; the name is what gives way, with an ellipsis. */
+.kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.kv-row > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv-row > :last-child { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ── Status tiles ──────────────────────────────────────────────────────────
+   The six availability counts. Narrower than a general stat tile so all six fit one row
+   at desk width instead of five-plus-an-orphan, and the caption is pinned to the bottom
+   so a one-line and a two-line caption still leave the tiles the same shape. */
+/* There are exactly six availability statuses, so the column count is chosen rather than
+   fitted: auto-fit gave five across and left the sixth alone on its own row, which reads
+   as a mistake. 6, 3 and 2 all divide six evenly, so no width produces an orphan.
+
+   `.tiles.status-tiles`, not `.status-tiles` — the generic .tiles rule is declared later
+   in this file, and at equal specificity the later one wins. */
+.tiles.status-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .tiles.status-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 430px)  { .tiles.status-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Equal-height tiles with the caption pinned to the bottom, so a one-line and a two-line
+   caption still leave the row of figures on one baseline. */
+.tiles.status-tiles .stat { display: flex; flex-direction: column; gap: 7px; }
+.tiles.status-tiles .stat .stat-v { margin-top: 0; }
+.tiles.status-tiles .stat .stat-n { margin-top: auto; padding-top: 2px; }
+
+/* ── Profile ───────────────────────────────────────────────────────────── */
+.profile-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.profile-avatar {
+  width: 62px; height: 62px; border-radius: 18px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--indigo-soft); color: var(--indigo-deep);
+  font-family: var(--display); font-weight: 600; font-size: 24px;
+}
+
+/* Password field with a reveal toggle. The input reserves room for the button rather than
+   letting it sit over the text — a 40-character password ending under an eye icon is
+   exactly the case the toggle exists to help with. */
+.password-field { position: relative; display: flex; }
+.password-field .input { padding-right: 46px; }
+.password-toggle {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 42px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--ink-3);
+  cursor: pointer; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.password-toggle:hover { color: var(--ink); }
+.password-toggle:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+
 .check { display: flex; align-items: flex-start; gap: 11px; cursor: pointer; }
 /* The caption belongs under its label, not welded to the end of it. */
 .check > span { display: block; }
@@ -300,6 +377,17 @@
 .split { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; align-items: start; }
 @media (max-width: 780px) { .split { grid-template-columns: 1fr; } }
 
+/* Panels that sit side by side until they cannot. The `min(…, 100%)` is the whole point:
+   a bare minmax(290px, 1fr) track is still 290px wide in a 260px container, and the page
+   grows a horizontal scrollbar rather than the column shrinking. Set --min to override. */
+.auto-grid {
+  --min: 280px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--min), 100%), 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
 /* The segmented switch: a small set of mutually exclusive options, one of which is always
    on. It reads as a single object with a highlight sliding inside it, which is what makes
    it different from a row of buttons where any number could be pressed. */
@@ -323,7 +411,14 @@
 .toolbar {
   --control-h: 34px;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  min-width: 0;
 }
+/* A control in this row can declare a preferred width — the search bars all carry a
+   max-width in the 320–400px range — and on a phone the row itself is narrower than that.
+   A flex item is not clamped by its parent, so it simply hangs off the right of the page
+   and takes the whole document's scroll width with it. Capping every child here fixes the
+   two that did it and the next one that would. */
+.toolbar > * { min-width: 0; max-width: 100%; }
 .toolbar > .btn,
 .toolbar > .select,
 .toolbar > .seg { height: var(--control-h); }
@@ -391,6 +486,137 @@
 .meter { height: 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; display: flex; }
 .meter i { height: 100%; display: block; transition: width var(--t-med); }
 
+/* Stat tiles, stacked as one list instead of a grid of boxes.
+   A 2×2 grid of tiles on a phone gives each one about 150px, which is where the captions
+   start wrapping to three lines and the whole block costs half a screen. As rows, the
+   label and the figure share a line, the caption sits under the label, and four stats
+   read in the height two tiles used to take. */
+.tiles.as-list {
+  display: flex; flex-direction: column; gap: 0;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden;
+}
+.tiles.as-list .stat {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; column-gap: 14px;
+  border: none; border-top: 1px solid var(--line); border-radius: 0;
+  box-shadow: none; padding: 12px 16px;
+}
+.tiles.as-list .stat:first-child { border-top: none; }
+/* The lift-on-hover of a card makes no sense in a list; the row highlights instead. */
+.tiles.as-list .stat:hover { transform: none; box-shadow: none; background: var(--surface-2); }
+.tiles.as-list .stat.plain:hover { background: transparent; }
+.tiles.as-list .stat-k { grid-column: 1; grid-row: 1; }
+.tiles.as-list .stat-n { grid-column: 1; grid-row: 2; margin-top: 2px; white-space: normal; }
+/* Spans both rows when there is a caption, and the only row when there is not. */
+.tiles.as-list .stat-v { grid-column: 2; grid-row: 1 / -1; margin-top: 0; font-size: 27px; }
+
+/* ── List rows ─────────────────────────────────────────────────────────────
+   The same records a card grid would show, as one scannable column: an icon, a title with
+   its subtitle, and the figures held to the right. A card grid spends most of its area on
+   artwork, which is worth it for a file — you recognise a thumbnail — and worth nothing
+   for a folder or an artist, where the name is the whole of what you are looking for. */
+.rows { overflow: hidden; }
+.row-item {
+  display: flex; align-items: center; gap: 13px; width: 100%;
+  padding: 12px 16px; text-align: left; cursor: pointer;
+  background: transparent; border: none; border-top: 1px solid var(--line);
+  color: var(--ink); text-decoration: none; transition: background var(--t-fast);
+}
+.row-item:first-child { border-top: none; }
+.row-item:hover { background: var(--surface-2); text-decoration: none; }
+.row-icon {
+  width: 42px; height: 42px; border-radius: 13px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--indigo-soft); color: var(--indigo-deep);
+  font-family: var(--display); font-weight: 600; font-size: 16.5px;
+}
+.row-icon.info { background: var(--info-soft); color: var(--info); }
+.row-main { flex: 1; min-width: 0; }
+/* overflow-wrap, not word-break: a long name breaks only where it must, and ordinary
+   words still break at their spaces. File and folder names run long and have no spaces. */
+.row-title { display: block; font-weight: 600; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
+.row-sub { display: block; font-size: 15.5px; color: var(--ink-3); line-height: 1.45; overflow-wrap: anywhere; }
+.row-meta {
+  flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  font-size: 15px; color: var(--ink-3); text-align: right; white-space: nowrap;
+}
+.row-meta b { font-family: var(--mono); font-size: 13.5px; font-weight: 400; }
+
+/* ── Move destination list ─────────────────────────────────────────────────
+   A scrolling list of every folder, indented by depth. Capped in height so the dialog's
+   own buttons stay on screen with fifty folders in the library. */
+.move-list { max-height: 46vh; max-height: 46dvh; overflow-y: auto; }
+.move-option.on { background: var(--indigo-soft); }
+.move-option.on .row-title { color: var(--indigo-deep); }
+.move-option.on:hover { background: var(--indigo-soft); }
+.move-tick { flex: none; color: var(--indigo); }
+/* Depth indentation is applied inline; on a phone it would eat the name, so it stops. */
+@media (max-width: 560px) { .move-option { padding-left: 14px !important; } }
+
+/* ── Row action menu ───────────────────────────────────────────────────────
+   Portalled and fixed, so it escapes the panel's overflow:hidden and the table's
+   horizontal scroll container. Above the drawer and modal stack, because it is opened
+   from inside both. */
+.row-menu {
+  position: fixed; z-index: 210; width: 226px; padding: 6px;
+  box-shadow: var(--shadow-lg); animation: rise var(--t-fast);
+}
+.row-menu-item {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 11px; border: none; background: transparent; border-radius: var(--r-sm);
+  font-size: 16.5px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; text-align: left; transition: background var(--t-fast), color var(--t-fast);
+}
+.row-menu-item:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+.row-menu-item:disabled { opacity: .4; cursor: not-allowed; }
+.row-menu-item svg { flex: none; color: var(--ink-3); }
+.row-menu-item.danger { color: var(--danger); }
+.row-menu-item.danger svg { color: var(--danger); }
+.row-menu-item.danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger-ink); }
+.row-menu-item.separated { margin-top: 5px; border-top: 1px solid var(--line); padding-top: 11px; border-radius: 0 0 var(--r-sm) var(--r-sm); }
+
+/* The trigger is quiet until the row is hovered — a column of dots down a list is noise.
+   It stays permanently visible on touch, where there is no hover to reveal it. */
+.row-menu-trigger { flex: none; opacity: .55; transition: opacity var(--t-fast); }
+.row-item:hover .row-menu-trigger,
+.tbl tr:hover .row-menu-trigger,
+.row-menu-trigger:hover,
+.row-menu-trigger[aria-expanded="true"] { opacity: 1; }
+@media (pointer: coarse) { .row-menu-trigger { opacity: 1; } }
+
+/* An account. Same anatomy as a row, but it holds a control rather than a figure, so it
+   is not clickable itself and the role select sits under the name where there is room for
+   it at any width. */
+.person-row {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 14px 16px; border-top: 1px solid var(--line);
+}
+.person-row:first-child { border-top: none; }
+.person-row .row-icon { margin-top: 2px; }
+.person-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 9px; }
+.person-controls .select { width: auto; min-width: 116px; padding-top: 6px; padding-bottom: 6px; }
+
+@media (max-width: 560px) {
+  .person-row { padding: 14px; }
+  /* Icon and title keep their line; the figures drop below and run across it, rather than
+     squeezing the title down to one word a line. Indented to sit under the title, not
+     under the icon. */
+  .row-item { flex-wrap: wrap; row-gap: 5px; padding: 12px 14px; position: relative; }
+  .row-icon { order: 1; }
+  .row-main { order: 2; flex: 1 1 auto; padding-right: 40px; }
+  /* Out of the flow entirely. In it, the trigger is the one child with no order of its
+     own — it defaulted ahead of the icon — and once ordered last it was pushed onto a
+     line of its own by a full-width title. Pinned to the corner it is always in the same
+     place, which is what a per-row menu has to be. */
+  .row-item .row-menu-trigger { position: absolute; top: 8px; right: 8px; }
+  .row-meta {
+    order: 3; flex: 1 1 100%; margin-left: 55px;
+    flex-direction: row; align-items: center; justify-content: flex-start;
+    gap: 10px; text-align: left; white-space: normal;
+  }
+}
+
 /* ── Overlays ──────────────────────────────────────────────────────────────
    Every overlay in the product is the same object: centred on the screen, 80% of it,
    scrolling inside itself rather than moving the page. Nothing slides in from an edge —
@@ -404,7 +630,7 @@
 
 .modal {
   background: var(--surface); border-radius: var(--r-xl); box-shadow: var(--shadow-lg);
-  width: 80vw; max-width: 1500px; max-height: 88vh;
+  width: 80vw; max-width: 1500px; max-height: 88vh; max-height: 88dvh;
   display: flex; flex-direction: column; animation: rise var(--t-med); overflow: hidden;
 }
 .modal.wide { max-width: 1700px; }
@@ -425,7 +651,7 @@
   padding: 4vh 4vw; animation: fade var(--t-med);
 }
 .drawer {
-  position: relative; width: 80vw; max-width: 1600px; height: 88vh; z-index: 91;
+  position: relative; width: 80vw; max-width: 1600px; height: 88vh; height: 88dvh; z-index: 91;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg); overflow: hidden;
   display: flex; flex-direction: column; animation: rise var(--t-med);
@@ -579,9 +805,57 @@
 /* Sits over the sign-in and share pages, which have no top bar of their own. */
 .theme-toggle-float { position: fixed; top: 14px; right: 16px; z-index: 30; }
 
-/* ── Build marker ──────────────────────────────────────────────────────── */
+/* ── PWA dock ──────────────────────────────────────────────────────────────
+   Offline notice, update prompt, install offer. Centred over the content area rather than
+   pinned to a corner: all three are about the app itself rather than about the screen
+   under them, and one of the three is the reason nothing on that screen is loading.
+
+   Below the overlay stack (100/90) on purpose — a modal is a task in progress, and an
+   install offer does not interrupt one. */
+.pwa-dock {
+  position: fixed; z-index: 60; pointer-events: none;
+  left: 16px; right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex; justify-content: center;
+}
+/* Centred on the content area when there is a shell, and on the whole viewport when there
+   is not — sign-in and a public share link render outside it, and losing the network on
+   the sign-in screen is one of the likelier ways to meet this component. */
+body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
+.pwa-card {
+  pointer-events: auto;
+  display: flex; align-items: flex-start; gap: 12px;
+  width: min(520px, 100%); padding: 13px 15px;
+  background: var(--glass); backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--line-2); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); animation: rise var(--t-med);
+}
+.pwa-card > svg { flex: none; margin-top: 3px; }
+.pwa-card .btn { flex: none; align-self: center; }
+.pwa-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
+.pwa-body { font-size: 15.5px; color: var(--ink-2); line-height: 1.5; margin-top: 1px; }
+/* Offline is a state, not an event: it stays until it is fixed, so it is coloured as a
+   condition rather than as an alarm. */
+.pwa-card.offline { border-color: var(--warn); background: var(--warn-soft); }
+.pwa-card.offline > svg { color: var(--warn-ink); }
+.pwa-card.offline .pwa-title { color: var(--warn-ink); }
+
+/* ── Build marker ──────────────────────────────────────────────────────────
+   A real footer at the end of the document, not an overlay pinned to the corner.
+   Fixed, it sat on top of whatever was underneath it on every screen and had to be hidden
+   on phones entirely to stop it covering content. In the flow it is simply the last thing
+   on the page: you reach it by scrolling to the bottom, which is where a version number
+   belongs, and it can never obscure anything.
+
+   `margin-top: auto` is what makes a short page still put it at the foot of the window
+   rather than immediately under the content — .main is a full-height flex column, so the
+   last child takes up the slack. */
 .build-tag {
-  position: fixed; right: 14px; bottom: 10px; z-index: 5; pointer-events: none;
+  margin-top: auto;
+  padding: 18px 26px calc(18px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  text-align: right; user-select: none;
   font-family: var(--mono); font-size: 14px; letter-spacing: .1em; font-weight: 500;
   color: var(--ink-3); opacity: .62;
 }
@@ -657,6 +931,8 @@
   .sidebar.open { transform: none; box-shadow: var(--shadow-lg); }
   .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 79; background: var(--scrim-soft); animation: fade var(--t-fast); }
   .toasts { left: 20px; width: min(380px, calc(100vw - 40px)); }
+  /* No sidebar to sit beside once it is off-canvas. */
+  body:has(.shell) .pwa-dock { left: 16px; }
 }
 
 /* ── Phones ────────────────────────────────────────────────────────────────
@@ -678,8 +954,7 @@
   .dropzone { padding: 30px 16px; }
   .panel-body, .panel-head { padding: 15px 16px; }
   .note { padding: 13px 14px; font-size: 16px; }
-  /* The build marker sits over content on a narrow screen and earns nothing there. */
-  .build-tag { display: none; }
+  .build-tag { padding: 15px 14px calc(15px + env(safe-area-inset-bottom)); }
   /* A tall preview inside an 88vh dialog leaves no room for anything else. */
   .preview-stage { min-height: 150px; }
   .preview-stage img { max-height: 240px; }
@@ -723,6 +998,17 @@
      pushes past the viewport. On a phone labels wrap instead — applied to the class, so
      no individual string can reintroduce the problem later. */
   .btn { white-space: normal; max-width: 100%; }
+  /* Long names — files, folders, artists, emails — break rather than run off the edge.
+     `anywhere` and not `break-all`: ordinary prose still breaks at its spaces. */
+  .card-title, .row-title, .row-sub, .t-h1, .t-h2, .t-h3, .stat-k,
+  .def dd, .toast-title, .pwa-title { overflow-wrap: anywhere; }
+  /* A segmented switch is sized by its longest label, and three of those do not fit in
+     360px. It scrolls inside itself rather than pushing the page wide. */
+  .seg { max-width: 100%; overflow-x: auto; }
+  /* Table cells default to squeezing every column equally, which turns a name into a
+     column of single letters. They keep their content's width and the table scrolls. */
+  .tbl td, .tbl th { white-space: nowrap; }
+  .tbl td.wrap, .tbl th.wrap { white-space: normal; overflow-wrap: anywhere; }
   .searchbar { padding: 11px 13px; gap: 9px; }
   .searchbar.lg { padding: 12px 14px; }
   .searchbar.lg input { font-size: 18px; }
@@ -734,8 +1020,8 @@
   .def { grid-template-columns: 1fr; gap: 3px; }
   /* 80% of a phone is not a usable dialog — overlays take the screen instead. */
   .scrim, .drawer-scrim { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
-  .modal, .modal.narrow, .modal.wide { width: 100%; max-width: none; max-height: 94vh; }
-  .drawer { width: 100%; max-width: none; height: 94vh; }
+  .modal, .modal.narrow, .modal.wide { width: 100%; max-width: none; max-height: 94vh; max-height: 94dvh; }
+  .drawer { width: 100%; max-width: none; height: 94vh; height: 94dvh; }
   .modal-head, .modal-body, .modal-foot,
   .drawer-head, .drawer-body, .drawer-foot { padding-left: 16px; padding-right: 16px; }
   .modal-head { padding-top: 16px; padding-bottom: 13px; }
@@ -745,14 +1031,65 @@
   .stack-4 > * + * { margin-top: 18px; }
   .stack-5 > * + * { margin-top: 24px; }
   .timeline { padding-left: 18px; }
-  .palette { max-height: 84vh; }
-  .palette-list { max-height: 60vh; }
+  .palette { max-height: 84vh; max-height: 84dvh; }
+  .palette-list { max-height: 60vh; max-height: 60dvh; }
+  /* Three keyboard hints, on a device with no keyboard, eating a row of results. */
+  .palette-foot { display: none; }
   .toasts { left: 12px; right: 12px; width: auto; }
   .theme-toggle-float { top: calc(10px + env(safe-area-inset-top)); right: 10px; }
+  /* The card is anchored to whatever it is explaining, which on a phone leaves it half
+     off the bottom as often as not. It docks instead, and the spotlight ring — which is
+     positioned separately — goes on doing the pointing. */
+  .tour-card {
+    top: auto !important; left: 10px !important; right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    width: auto; max-height: 70dvh; overflow-y: auto; transform: none !important;
+  }
+  .pwa-dock, body:has(.shell) .pwa-dock { left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .pwa-card { padding: 12px 13px; gap: 10px; flex-wrap: wrap; }
+  /* The label and the button both want the full width once there is 320px to share. */
+  .pwa-card .grow { flex: 1 1 100%; }
+  .pwa-card .btn { flex: 1 1 auto; align-self: stretch; }
+  .pwa-card .btn-icon { flex: 0 0 auto; }
 }
 
 /* Very narrow — a single column of cards beats two squeezed ones. */
 @media (max-width: 380px) {
   .cards { grid-template-columns: minmax(0, 1fr); }
   .tiles { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Installed ─────────────────────────────────────────────────────────────
+   Launched from a home screen there is no browser chrome: no address bar to scroll away,
+   no back gesture that leaves the app, and on a notched phone nothing between the top of
+   the app and the status bar but whatever this stylesheet puts there.
+
+   The width-keyed rules above already pay the safe-area insets on a phone. These repeat it
+   for the standalone case at any width — an installed app on a tablet in landscape has an
+   inset on the left or the right, and no max-width rule would have caught it. */
+@media (display-mode: standalone), (display-mode: window-controls-overlay), (display-mode: fullscreen) {
+  .topbar {
+    padding-top: env(safe-area-inset-top);
+    height: calc(var(--topbar-h) + env(safe-area-inset-top));
+    padding-left: max(26px, env(safe-area-inset-left));
+    padding-right: max(26px, env(safe-area-inset-right));
+  }
+  .sidebar { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .page {
+    padding-left: max(26px, env(safe-area-inset-left));
+    padding-right: max(26px, env(safe-area-inset-right));
+    padding-bottom: calc(26px + env(safe-area-inset-bottom));
+  }
+  .build-tag {
+    padding-left: max(26px, env(safe-area-inset-left));
+    padding-right: max(26px, env(safe-area-inset-right));
+  }
+
+  @media (max-width: 720px) {
+    .topbar { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+    .page {
+      padding-left: max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+    }
+  }
 }

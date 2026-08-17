@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { KeyRound, Loader2, ArrowRight, LogOut } from 'lucide-react';
-import { ThemeToggle } from '../../components/ui';
+import { PasswordInput, ThemeToggle } from '../../components/ui';
 import { useSession } from '../../app/session';
 
 const MIN_LENGTH = 8;
@@ -44,7 +44,7 @@ export function SetPassword() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '40px 24px' }}>
+    <div className="plain-page" style={{ display: 'grid', placeItems: 'center' }}>
       <div className="theme-toggle-float"><ThemeToggle /></div>
 
       <div style={{ width: '100%', maxWidth: 420 }}>
@@ -68,12 +68,10 @@ export function SetPassword() {
         <form onSubmit={submit} className="stack-3">
           <div className="field">
             <label className="label" htmlFor="current">The password you were given</label>
-            <input
+            <PasswordInput
               id="current"
-              className="input"
-              type="password"
               value={current}
-              onChange={(e) => setCurrent(e.target.value)}
+              onChange={setCurrent}
               autoComplete="current-password"
               autoFocus
               required
@@ -82,13 +80,12 @@ export function SetPassword() {
 
           <div className="field">
             <label className="label" htmlFor="next">Your new password</label>
-            <input
+            <PasswordInput
               id="next"
-              className="input"
-              type="password"
               value={next}
-              onChange={(e) => setNext(e.target.value)}
+              onChange={setNext}
               autoComplete="new-password"
+              invalid={tooShort || unchanged}
               required
             />
             <div className="hint">
@@ -102,13 +99,12 @@ export function SetPassword() {
 
           <div className="field">
             <label className="label" htmlFor="confirm">Type it again</label>
-            <input
+            <PasswordInput
               id="confirm"
-              className="input"
-              type="password"
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={setConfirm}
               autoComplete="new-password"
+              invalid={mismatch}
               required
             />
             {mismatch && <div className="hint" style={{ color: 'var(--danger-ink)' }}>The two do not match yet.</div>}

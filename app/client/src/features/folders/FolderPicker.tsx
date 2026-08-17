@@ -6,10 +6,10 @@
 // now the Drive and the app show the same thing to anybody who opens either.
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { FolderPlus, X, Info } from 'lucide-react';
+import { FolderPlus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useFolderOptions } from '../../lib/vocabulary';
-import { useToast } from '../../components/ui';
+import { Modal, useToast } from '../../components/ui';
 import { TagPicker } from '../upload/TagPicker';
 import type { Folder } from '../../lib/types';
 
@@ -57,8 +57,16 @@ export function FolderPicker({
 }
 
 export function NewFolderDialog({
-  onClose, onCreated, defaultName = '',
-}: { onClose: () => void; onCreated: (f: Folder) => void; defaultName?: string }) {
+  onClose, onCreated, defaultName = '', parentId = null, parentName,
+}: {
+  onClose: () => void;
+  onCreated: (f: Folder) => void;
+  defaultName?: string;
+  /** Creates the folder inside this one. Null makes it a top-level folder. */
+  parentId?: string | null;
+  /** Only for the sentence in the header — the id is what the server acts on. */
+  parentName?: string;
+}) {
   const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -69,7 +77,10 @@ export function NewFolderDialog({
 
   const create = useMutation({
     mutationFn: () =>
-      api<Folder>('/folders', { method: 'POST', body: { name: name.trim(), description, tags, allowDuplicateName } }),
+      api<Folder>('/folders', {
+        method: 'POST',
+        body: { name: name.trim(), description, tags, allowDuplicateName, parentId },
+      }),
     onSuccess: (folder) => {
       qc.invalidateQueries();
       toast({
@@ -86,59 +97,44 @@ export function NewFolderDialog({
   });
 
   return (
-    <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal aria-label="New folder">
-        <div className="modal-head spread">
-          <div>
-            <h2 className="t-h2">New folder</h2>
-            <div className="t-small" style={{ marginTop: 3 }}>Created in Google Drive as well as here.</div>
-          </div>
-          <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close"><X size={17} /></button>
-        </div>
-
-        <div className="modal-body stack-4">
-          <div className="field">
-            <label className="label">Folder name</label>
-            <input
-              className="input"
-              autoFocus
-              value={name}
-              placeholder="e.g. Dil Se — launch kit"
-              onChange={(e) => { setName(e.target.value); setConflict(null); }}
-            />
-            {conflict && <div className="t-small" style={{ color: 'var(--warn-ink)' }}>{conflict}</div>}
-          </div>
-
-          <div className="field">
-            <label className="label">What is it for? (optional)</label>
-            <textarea
-              className="textarea"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="A sentence so the next person knows what belongs in here."
-            />
-          </div>
-
-          <TagPicker value={tags} onChange={setTags} label="Folder tags" />
-
-          <div className="note indigo">
-            <Info size={15} />
-            <div>
-              <b>This creates a real folder in Google Drive.</b> Open drive.google.com and it will be
-              there, laid out the way GCloud shows it. Moving files in and out re-parents them
-              in Drive without copying anything, so renaming this folder, moving files between
-              folders, or deleting it later never touches a single byte.
-            </div>
-          </div>
-        </div>
-
-        <div className="modal-foot">
+    <Modal
+      title="New folder"
+      subtitle={`${parentName ? `Inside “${parentName}”. ` : ''}Created in Google Drive as well as here.`}
+      onClose={onClose}
+      footer={
+        <>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
             <FolderPlus size={14} /> {conflict ? 'Create it anyway' : 'Create folder'}
           </button>
+        </>
+      }
+    >
+      <div className="stack-4">
+        <div className="field">
+          <label className="label">Folder name</label>
+          <input
+            className="input"
+            autoFocus
+            value={name}
+            placeholder="e.g. Dil Se — launch kit"
+            onChange={(e) => { setName(e.target.value); setConflict(null); }}
+          />
+          {conflict && <div className="t-small" style={{ color: 'var(--warn-ink)' }}>{conflict}</div>}
         </div>
+
+        <div className="field">
+          <label className="label">What is it for? (optional)</label>
+          <textarea
+            className="textarea"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="A sentence so the next person knows what belongs in here."
+          />
+        </div>
+
+        <TagPicker value={tags} onChange={setTags} label="Folder tags" />
       </div>
-    </div>
+    </Modal>
   );
 }

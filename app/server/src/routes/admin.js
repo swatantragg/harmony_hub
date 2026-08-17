@@ -395,6 +395,9 @@ adminRouter.post('/users', requires('admin:users'), async (req, res) => {
     mustChangePassword: true,
     passwordChangedAt: null,
     createdAt: new Date().toISOString(),
+    // Who let this person in. Shown on their profile, and the only record of it outside
+    // the activity log — which is trimmed, and which a User cannot read.
+    createdBy: req.user.sub,
     lastLoginAt: null,
   };
   db.users.push(user);

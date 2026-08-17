@@ -1,0 +1,47 @@
+{
+  "id": "/",
+  "name": "GCloud — music asset management",
+  "short_name": "GCloud",
+  "description": "Every release, in one place. Music asset management over Google Drive.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#FAFAFC",
+  "theme_color": "#5546E8",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["productivity", "music", "utilities"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-mono.png", "sizes": "512x512", "type": "image/png", "purpose": "monochrome" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Upload files",
+      "short_name": "Upload",
+      "description": "Send new masters, artwork or documents to Drive",
+      "url": "/#/upload",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Folders",
+      "short_name": "Folders",
+      "description": "Browse the library by folder",
+      "url": "/#/folders",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Share links",
+      "short_name": "Shares",
+      "description": "See and revoke the links you have handed out",
+      "url": "/#/shares",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

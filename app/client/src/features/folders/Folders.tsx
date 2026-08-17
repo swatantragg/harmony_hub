@@ -2,16 +2,19 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Folder as FolderIcon, FolderPlus, ArrowLeft, UploadCloud, AlertTriangle,
+  Folder as FolderIcon, FolderPlus, ArrowLeft, UploadCloud, AlertTriangle, FolderInput,
   Pencil, Trash2, Info, Search, Music2, Film, Image as ImageIcon, FileText, Share2, ExternalLink,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
-  CardSkeletons, ConfirmDialog, EmptyState, Modal, Skeleton, TagChip, useDebounced, useToast,
+  ConfirmDialog, EmptyState, Modal, RowSkeletons, Skeleton, TagChip, useDebounced, useToast,
 } from '../../components/ui';
+import { RowMenu } from '../../components/RowMenu';
+import type { RowAction } from '../../components/RowMenu';
 import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { NewFolderDialog } from './FolderPicker';
+import { MoveDialog } from './MoveDialog';
 import { ShareDialog } from '../shares/ShareDialog';
 import { TagPicker } from '../upload/TagPicker';
 import { bytes, date, pluralise, relative } from '../../lib/format';
@@ -38,6 +41,154 @@ const FOLDER_SORTS = [
 ] as const;
 type FolderSort = typeof FOLDER_SORTS[number][0];
 
+// Share, move, edit, delete — the four things you can do to a folder, offered identically
+// wherever a folder appears. Returns the menu entries and the dialogs they open, so a
+// caller renders `{dialogs}` once and hands `actions` to a RowMenu.
+//
+// The alternative — each screen wiring its own four useState flags and four dialogs — is
+// how the list and the detail page end up offering different subsets of the same verbs.
+function useFolderActions(folder: Folder | null, opts: { onDeleted?: () => void } = {}) {
+  const [editing, setEditing] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [addingChild, setAddingChild] = useState(false);
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const can = useSession((s) => s.can);
+
+  const remove = useMutation({
+    mutationFn: () => api<{ filesReleased: number }>(`/folders/${folder?._id}`, { method: 'DELETE' }),
+    onSuccess: (r) => {
+      qc.invalidateQueries();
+      toast({
+        kind: 'ok',
+        title: 'Folder removed',
+        body: `${pluralise(r.filesReleased, 'file')} moved back to the library root, in Google Drive too. Nothing was deleted.`,
+      });
+      opts.onDeleted?.();
+    },
+    onError: (e: Error) => toast({ kind: 'danger', title: 'Could not remove the folder', body: e.message }),
+  });
+
+  const actions: RowAction[] = folder ? [
+    {
+      label: 'New folder inside',
+      icon: <FolderPlus size={16} />,
+      hidden: !can('asset:upload'),
+      onSelect: () => setAddingChild(true),
+    },
+    {
+      label: 'Share folder',
+      icon: <Share2 size={16} />,
+      hidden: !can('share:create'),
+      disabled: folder.assetCount === 0,
+      disabledReason: 'There is nothing in this folder to share yet.',
+      onSelect: () => setSharing(true),
+    },
+    {
+      label: 'Move folder',
+      icon: <FolderInput size={16} />,
+      hidden: !can('asset:edit'),
+      onSelect: () => setMoving(true),
+    },
+    {
+      label: 'Edit folder',
+      icon: <Pencil size={16} />,
+      hidden: !can('asset:edit'),
+      onSelect: () => setEditing(true),
+    },
+    {
+      label: 'Delete folder',
+      icon: <Trash2 size={16} />,
+      danger: true,
+      hidden: !can('asset:delete'),
+      onSelect: () => setDeleting(true),
+    },
+  ] : [];
+
+  const dialogs = folder ? (
+    <>
+      {editing && <EditFolderDialog folder={folder} onClose={() => setEditing(false)} />}
+      {sharing && <ShareDialog folder={folder} onClose={() => setSharing(false)} />}
+      {moving && (
+        <MoveDialog
+          target={{ kind: 'folder', id: folder._id, name: folder.name, currentParentId: folder.parentId ?? null }}
+          onClose={() => setMoving(false)}
+        />
+      )}
+      {addingChild && (
+        <NewFolderDialog
+          parentId={folder._id}
+          parentName={folder.name}
+          onClose={() => setAddingChild(false)}
+          onCreated={(f) => { setAddingChild(false); navigate(`/folders/${f._id}`); }}
+        />
+      )}
+      {deleting && (
+        <ConfirmDialog
+          title={`Remove “${folder.name}”?`}
+          body={
+            <>
+              The {pluralise(folder.assetCount, 'file')} inside go back to the library — nothing is
+              deleted — they are moved back to the library root, in Google Drive as well as here, and
+              only the emptied folder goes to the bin. Any share link pointing at this folder stops
+              resolving, since the grouping it described is gone.
+            </>
+          }
+          confirmLabel="Remove folder"
+          onConfirm={() => remove.mutate()}
+          onClose={() => setDeleting(false)}
+        />
+      )}
+    </>
+  ) : null;
+
+  return { actions, dialogs, openMove: () => setMoving(true), openNewChild: () => setAddingChild(true) };
+}
+
+// A folder row that carries its own action menu. Used by the folder list and by the
+// "folders inside this one" section, so a subfolder offers exactly what a folder does.
+function FolderRow({ folder, onOpen }: { folder: Folder; onOpen: () => void }) {
+  const { actions, dialogs } = useFolderActions(folder);
+  return (
+    <>
+      <div className="row-item" role="button" tabIndex={0} onClick={onOpen}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+      >
+        <span className="row-icon info"><FolderIcon size={20} /></span>
+        <span className="row-main">
+          <span className="row-title">{folder.name}</span>
+          {/* Only set when this row came from a search, where a nested folder needs its
+              parent named to be told apart from a sibling with the same name. */}
+          {folder.parentName && <span className="row-sub">in {folder.parentName}</span>}
+          {folder.description && <span className="row-sub">{folder.description}</span>}
+          {(folder.tags.length > 0 || folder.needsAttention > 0 || folder.subfolderCount > 0) && (
+            <span className="wrap-gap" style={{ marginTop: 5 }}>
+              {folder.needsAttention > 0 && (
+                <span className="tag" style={{ background: 'var(--danger-soft)', color: 'var(--danger-ink)', borderColor: 'var(--danger-edge)' }}>
+                  {folder.needsAttention} need{folder.needsAttention === 1 ? 's' : ''} attention
+                </span>
+              )}
+              {folder.subfolderCount > 0 && (
+                <span className="tag">{pluralise(folder.subfolderCount, 'subfolder')}</span>
+              )}
+              {folder.tags.slice(0, 3).map((t) => <TagChip key={t} name={t} />)}
+            </span>
+          )}
+        </span>
+        <span className="row-meta">
+          <span>{pluralise(folder.assetCount, 'file')}</span>
+          <b>{bytes(folder.totalBytes)}</b>
+        </span>
+        <RowMenu actions={actions} label={`Actions for ${folder.name}`} />
+      </div>
+      {dialogs}
+    </>
+  );
+}
+
 export function FolderList() {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<FolderSort>('name');
@@ -46,9 +197,18 @@ export function FolderList() {
   const navigate = useNavigate();
   const can = useSession((s) => s.can);
 
+  // Browsing shows the top level only; you go into a folder to see what is inside it, the
+  // way the Drive itself behaves. Listing every folder flat made a subfolder appear twice —
+  // once here and once inside its parent — and made moving one into another look like it
+  // had done nothing at all.
+  //
+  // Searching drops the restriction: a name you half-remember is worth finding at any
+  // depth, and each result carries its path.
   const { data, isLoading } = useQuery({
     queryKey: ['folders', debounced],
-    queryFn: () => api<{ data: Folder[] }>(`/folders${debounced ? `?q=${encodeURIComponent(debounced)}` : ''}`),
+    queryFn: () => api<{ data: Folder[] }>(
+      debounced ? `/folders?q=${encodeURIComponent(debounced)}` : '/folders?parentId=root',
+    ),
   });
 
   const folders = useMemo(() => {
@@ -67,15 +227,7 @@ export function FolderList() {
   return (
     <div className="page stack-4">
       <div className="spread page-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 className="t-h1">Folders</h1>
-          <p className="t-body" style={{ maxWidth: '64ch', marginTop: 6 }}>
-            A way to keep related files together — a launch kit, a shoot, a set of contracts.
-            These are real Google Drive folders: open the Drive and the library is laid out exactly
-            as it is here. Drive moves and renames by updating an index entry, so grouping, renaming
-            and reorganising never copy a byte, however large the files are.
-          </p>
-        </div>
+        <h1 className="t-h1">Folders</h1>
         {can('asset:upload') && (
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             <FolderPlus size={15} /> New folder
@@ -95,7 +247,7 @@ export function FolderList() {
       </div>
 
       {isLoading ? (
-        <CardSkeletons n={4} />
+        <RowSkeletons n={4} />
       ) : (data?.data.length ?? 0) === 0 ? (
         <EmptyState
           icon={<FolderIcon size={26} />}
@@ -108,42 +260,9 @@ export function FolderList() {
           action={can('asset:upload') ? <button className="btn btn-primary" onClick={() => setCreating(true)}>Create a folder</button> : undefined}
         />
       ) : (
-        <div className="cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+        <div className="panel rows">
           {folders.map((f) => (
-            <button key={f._id} className="card" onClick={() => navigate(`/folders/${f._id}`)}>
-              <div
-                className="card-art"
-                data-family="Document"
-                style={{ height: 84, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <span
-                  style={{
-                    width: 44, height: 44, borderRadius: 13, background: 'var(--wash-chip)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--info)',
-                  }}
-                >
-                  <FolderIcon size={21} />
-                </span>
-                {f.needsAttention > 0 && (
-                  <span className="type-badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger-ink)' }}>
-                    {f.needsAttention} need attention
-                  </span>
-                )}
-              </div>
-              <div className="card-body">
-                <div className="card-title" style={{ fontSize: 16.5 }}>{f.name}</div>
-                {f.description && <div className="card-sub" style={{ whiteSpace: 'normal' }}>{f.description}</div>}
-                {f.tags.length > 0 && (
-                  <div className="wrap-gap" style={{ marginTop: 2 }}>
-                    {f.tags.slice(0, 3).map((t) => <TagChip key={t} name={t} />)}
-                  </div>
-                )}
-                <div className="card-foot">
-                  <span className="t-small">{pluralise(f.assetCount, 'file')}</span>
-                  <span className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 13.5 }}>{bytes(f.totalBytes)}</span>
-                </div>
-              </div>
-            </button>
+            <FolderRow key={f._id} folder={f} onOpen={() => navigate(`/folders/${f._id}`)} />
           ))}
         </div>
       )}
@@ -157,17 +276,18 @@ export function FolderDetail() {
   const { id } = useParams();
   const [openAsset, setOpenAsset] = useState<string | null>(null);
   const [familyTab, setFamilyTab] = useState<'all' | Family>('all');
-  const [editing, setEditing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const toast = useToast();
   const can = useSession((s) => s.can);
 
   const { data, isLoading } = useQuery({
     queryKey: ['folder', id],
     queryFn: () => api<Folder>(`/folders/${id}`),
+  });
+
+  // The same four verbs the list offers, from the same place — plus "new folder inside",
+  // which is how a folder tree gets built at all.
+  const { actions, dialogs, openNewChild } = useFolderActions(data ?? null, {
+    onDeleted: () => navigate('/folders'),
   });
 
   // "All" keeps the families in a deliberate order — audio, video, images, documents —
@@ -179,21 +299,8 @@ export function FolderDetail() {
     return FAMILY_ORDER.flatMap((f) => data.assetsByFamily?.[f] ?? []);
   }, [data, familyTab]);
 
-  const remove = useMutation({
-    mutationFn: () => api<{ filesReleased: number }>(`/folders/${id}`, { method: 'DELETE' }),
-    onSuccess: (r) => {
-      qc.invalidateQueries();
-      toast({
-        kind: 'ok',
-        title: 'Folder removed',
-        body: `${pluralise(r.filesReleased, 'file')} moved back to the library root, in Google Drive too. Nothing was deleted.`,
-      });
-      navigate('/folders');
-    },
-  });
-
   if (isLoading || !data) {
-    return <div className="page stack-3"><Skeleton h={32} w="34%" /><Skeleton h={96} /><CardSkeletons n={4} /></div>;
+    return <div className="page stack-3"><Skeleton h={32} w="34%" /><Skeleton h={96} /><RowSkeletons n={4} /></div>;
   }
 
   return (
@@ -249,32 +356,25 @@ export function FolderDetail() {
             )}
           </div>
 
+          {/* The two things done most often stay as buttons; the rest live in the menu, so
+              this bar does not grow a sixth control every time a verb is added. */}
           <div className="row-tight" style={{ flexWrap: 'wrap' }}>
             {can('asset:upload') && (
               <Link className="btn btn-spark" to={`/upload?folderId=${data._id}`}>
                 <UploadCloud size={15} /> Add files here
               </Link>
             )}
+            {can('asset:upload') && (
+              <button className="btn btn-secondary" onClick={openNewChild}>
+                <FolderPlus size={15} /> New folder inside
+              </button>
+            )}
             {data.driveWebViewLink && (
               <a className="btn btn-secondary" href={data.driveWebViewLink} target="_blank" rel="noreferrer">
                 <ExternalLink size={14} /> Open in Drive
               </a>
             )}
-            {can('share:create') && (
-              <button className="btn btn-secondary" onClick={() => setSharing(true)} disabled={data.assetCount === 0}>
-                <Share2 size={14} /> Share folder
-              </button>
-            )}
-            {can('asset:edit') && (
-              <button className="btn btn-secondary" onClick={() => setEditing(true)}>
-                <Pencil size={14} /> Edit folder
-              </button>
-            )}
-            {can('asset:delete') && (
-              <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => setDeleting(true)}>
-                <Trash2 size={14} /> Remove folder
-              </button>
-            )}
+            <RowMenu actions={actions} label={`Actions for ${data.name}`} />
           </div>
         </div>
       </div>
@@ -282,19 +382,9 @@ export function FolderDetail() {
       {data.subfolders && data.subfolders.length > 0 && (
         <section>
           <h2 className="t-h2" style={{ marginBottom: 13 }}>Folders inside this one</h2>
-          <div className="cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+          <div className="panel rows">
             {data.subfolders.map((sub) => (
-              <button key={sub._id} className="card" onClick={() => navigate(`/folders/${sub._id}`)}>
-                <div className="card-body">
-                  <div className="card-title row-tight" style={{ fontSize: 16 }}>
-                    <FolderIcon size={15} color="var(--info)" /> {sub.name}
-                  </div>
-                  <div className="card-foot">
-                    <span className="t-small">{pluralise(sub.assetCount, 'file')}</span>
-                    <span className="t-small" style={{ fontFamily: 'var(--mono)', fontSize: 13.5 }}>{bytes(sub.totalBytes)}</span>
-                  </div>
-                </div>
-              </button>
+              <FolderRow key={sub._id} folder={sub} onOpen={() => navigate(`/folders/${sub._id}`)} />
             ))}
           </div>
         </section>
@@ -356,24 +446,7 @@ export function FolderDetail() {
       )}
 
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
-      {editing && <EditFolderDialog folder={data} onClose={() => setEditing(false)} />}
-      {sharing && <ShareDialog folder={data} onClose={() => setSharing(false)} />}
-      {deleting && (
-        <ConfirmDialog
-          title="Remove this folder?"
-          body={
-            <>
-              The {pluralise(data.assetCount, 'file')} inside go back to the library — nothing is
-              deleted — they are moved back to the library root, in Google Drive as well as here, and
-              only the emptied folder goes to the bin. Any share link pointing at this folder stops
-              resolving, since the grouping it described is gone.
-            </>
-          }
-          confirmLabel="Remove folder"
-          onConfirm={() => remove.mutate()}
-          onClose={() => setDeleting(false)}
-        />
-      )}
+      {dialogs}
     </div>
   );
 }

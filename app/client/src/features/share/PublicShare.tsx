@@ -16,6 +16,7 @@ import { FilePreview } from '../preview/FilePreview';
 import { api, ApiError, auth } from '../../lib/api';
 import { bytes, countdown, pluralise } from '../../lib/format';
 import { KIND_LABEL, previewKind } from '../../lib/previewKind';
+import { BUILD_TAG } from '../../lib/version';
 import type { ShareAudience } from '../../lib/types';
 
 interface SharedFile {
@@ -131,7 +132,7 @@ export function PublicShare() {
   const wide = data?.kind === 'FOLDER';
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 20px' }}>
+    <div className="plain-page" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div className="theme-toggle-float"><ThemeToggle /></div>
       <div style={{ width: '100%', maxWidth: wide ? 940 : 560 }}>
         <div style={{ marginBottom: 26 }}><Brandmark /></div>
@@ -181,7 +182,7 @@ export function PublicShare() {
         )}
 
         <p className="t-small" style={{ textAlign: 'center', marginTop: 22 }}>
-          Delivered by SK-V1.4.1. This link expires on its own and can be revoked at any time.
+          Delivered by {BUILD_TAG}. This link expires on its own and can be revoked at any time.
         </p>
       </div>
     </div>

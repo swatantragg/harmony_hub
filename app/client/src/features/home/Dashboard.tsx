@@ -157,7 +157,7 @@ export function Dashboard() {
       ) : (
         <>
           {/* ── Library at a glance ──────────────────────────────────────── */}
-          <section className="tiles">
+          <section className="tiles as-list">
             <button className="stat" onClick={() => navigate('/?sort=newest')}>
               <div className="stat-k">Files</div>
               <div className="stat-v">{data?.counts.assets ?? '—'}</div>

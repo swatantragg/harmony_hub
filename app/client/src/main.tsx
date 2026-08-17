@@ -8,11 +8,14 @@ import './styles/base.css';
 import './styles/components.css';
 
 import { Shell } from './components/Shell';
+import { PwaDock } from './components/PwaDock';
 import { ToastHost } from './components/ui';
 import { useSession } from './app/session';
+import { initPwa } from './app/pwa';
 import { applyStoredThemeEarly, useTheme } from './app/theme';
 import { Login } from './features/auth/Login';
 import { SetPassword } from './features/auth/SetPassword';
+import { Profile } from './features/auth/Profile';
 import { Dashboard } from './features/home/Dashboard';
 import { ArtistDetail, ArtistList } from './features/artists/Artists';
 import { SongDetailPage, SongList } from './features/songs/Songs';
@@ -63,7 +66,7 @@ function RequirePermission({ permission, children }: { permission: string; child
 
 function BootSplash() {
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+    <div className="plain-page" style={{ display: 'grid', placeItems: 'center' }}>
       <div className="col" style={{ alignItems: 'center', gap: 14 }}>
         <div className="tile lg"><span className="b1" /><span className="b2" /><span className="b3 spark" /><span className="b4" /><span className="b5" /></div>
         <span className="t-small">Loading your library…</span>
@@ -97,6 +100,7 @@ function App() {
         <Route path="folders/:id" element={<FolderDetail />} />
         <Route path="dedupe" element={<Dedupe />} />
         <Route path="help" element={<Help />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="upload" element={<RequirePermission permission="asset:upload"><UploadCenter /></RequirePermission>} />
         <Route path="shares" element={<RequirePermission permission="share:create"><ShareManager /></RequirePermission>} />
         <Route path="admin/storage" element={<RequirePermission permission="admin:storage"><StorageHealth /></RequirePermission>} />
@@ -112,12 +116,19 @@ function App() {
 // Before the first paint, so a dark-theme reload never flashes light.
 applyStoredThemeEarly();
 
+// Outside React, and outside StrictMode's double-invoke: registering a service worker and
+// attaching window listeners twice is not idempotent.
+initPwa();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <HashRouter>
         <ToastHost>
           <App />
+          {/* Outside the routes: an offline notice is worth having on the sign-in and
+              public-share screens too, neither of which sits inside the Shell. */}
+          <PwaDock />
         </ToastHost>
       </HashRouter>
     </QueryClientProvider>

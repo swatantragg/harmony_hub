@@ -16,6 +16,11 @@ export interface User {
   /** Still holding the password an administrator handed over. Gates the whole app. */
   mustChangePassword: boolean;
   permissions: string[];
+  createdAt?: string | null;
+  passwordChangedAt?: string | null;
+  /** Null on the founding administrator, and on any account seeded before this was kept. */
+  createdBy?: string | null;
+  createdByName?: string | null;
 }
 
 // Where a file physically is: the id that addresses it, the checksums Google computed on
