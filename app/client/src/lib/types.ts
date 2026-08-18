@@ -2,8 +2,9 @@
 // itself after 30 days, so it is the one state with a deadline attached.
 export type Availability = 'AVAILABLE' | 'UNVERIFIED' | 'TRASHED' | 'RESTORING' | 'MISSING' | 'MISMATCH';
 export type Family = 'Audio' | 'Video' | 'Image' | 'Document';
-// Two roles. A User can do everything an Admin can except create another account, which
-// is the only capability the split exists to protect.
+// Two roles. The line is drawn at what cannot be undone: a User does the day's work and
+// everything it does is recoverable; an Admin additionally holds permanent deletion, the
+// account roster and the activity log.
 export type Role = 'Admin' | 'User';
 
 export interface User {
@@ -21,6 +22,8 @@ export interface User {
   /** Null on the founding administrator, and on any account seeded before this was kept. */
   createdBy?: string | null;
   createdByName?: string | null;
+  /** The minimum the server will actually enforce. Read it; do not repeat it. */
+  minPasswordLength?: number;
 }
 
 // Where a file physically is: the id that addresses it, the checksums Google computed on
@@ -138,6 +141,19 @@ export interface ActivityEntry {
 export type ShareAudience = 'PUBLIC' | 'EDITOR' | 'RESTRICTED';
 export type ShareTarget = 'ASSET' | 'FOLDER';
 
+export interface ShareRecipient {
+  _id: string;
+  email: string;
+  /** This recipient's own link. Not the same URL anybody else was sent. */
+  url: string;
+  createdAt: string;
+  revokedAt: string | null;
+  firstAccessedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+  downloadCount: number;
+}
+
 export interface Share {
   _id: string;
   target: ShareTarget;
@@ -152,6 +168,14 @@ export interface Share {
   audience: ShareAudience;
   audienceLabel: string;
   allowedEmails: string[];
+  /**
+   * One row per addressee on a specific-allocation link, each with a URL of its own.
+   * Revoking one leaves the others working — which is the point: a link that has to be
+   * withdrawn from everybody because one person forwarded their mail punishes the wrong
+   * four people.
+   */
+  recipients?: ShareRecipient[];
+  hasPasscode?: boolean;
   canEdit: boolean;
   songTitle?: string | null;
   artistName?: string | null;

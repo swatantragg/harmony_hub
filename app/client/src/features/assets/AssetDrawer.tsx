@@ -458,6 +458,7 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
           title="Destroy this file permanently?"
           danger
           requireTyped={asset.displayName}
+          requirePassword
           body={
             <>
               This is the other delete, and it is the irreversible one.

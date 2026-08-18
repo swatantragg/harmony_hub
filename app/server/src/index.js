@@ -17,13 +17,14 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cron from 'node-cron';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 
 import {
-  APP_ORIGIN, CORS_ORIGINS, DRIVE_ID, ENV, FOUNDING_ADMIN, GOOGLE, GOOGLE_CONFIGURED,
-  NODE_ENV, ORIGIN, PORT, RECONCILE_CRON, RECONCILE_ENABLED, ROOT as SERVER_ROOT, ROOTS,
-  SEED_ON_BOOT, SEED_PASSWORD, env,
+  ALLOW_DESTRUCTIVE_DEMO, APP_ORIGIN, AUDIT_RETENTION_DAYS, CORS_ORIGINS, DRIVE_ID, ENV,
+  FOUNDING_ADMIN, GOOGLE, GOOGLE_CONFIGURED, NODE_ENV, ORIGIN, PORT, RECONCILE_CRON,
+  RECONCILE_ENABLED, ROOT as SERVER_ROOT, ROOTS, SEED_ON_BOOT, SEED_PASSWORD, TRUST_PROXY, env,
 } from './config.js';
 import { connect, connectionInfo, disconnect } from './db/mongo.js';
 import { ensureIndexes } from './db/models.js';
@@ -32,6 +33,10 @@ import { seed } from './seed.js';
 import { ensureAccounts } from './services/accounts.js';
 import * as storage from './services/storage.js';
 import { runReconciliation } from './services/reconcile.js';
+
+import { authenticate, clientAddress, problem, requires } from './middleware/auth.js';
+import { notify, sweepAudit } from './services/audit.js';
+import { sweep as sweepSessions } from './services/sessions.js';
 
 import { authRouter, meRouter } from './routes/auth.js';
 import { assetsRouter } from './routes/assets.js';
@@ -46,68 +51,169 @@ import { dedupeRouter } from './routes/dedupe.js';
 import { filesRouter } from './routes/files.js';
 
 const app = express();
-app.set('trust proxy', true);
-app.disable('x-powered-by');
 
-// helmet's default CSP assumes the API also serves HTML from the same origin. It does
-// when a built client is present, and the bundle plus same-origin /api/files media are the
-// only things it ever loads.
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
+// How much of X-Forwarded-For to believe. `true` would mean "all of it, from anybody",
+// which hands every client control of req.ip — and req.ip is what the rate limiter counts
+// and what the audit trail records. So it comes from configuration, and defaults to
+// trusting nothing but the loopback interface.
+app.set('trust proxy', TRUST_PROXY);
+app.disable('x-powered-by');
+app.locals.corsOrigins = CORS_ORIGINS;
+
+// The socket address, recorded alongside req.ip so a forged header cannot rewrite history.
+app.use(clientAddress);
+
+// helmet, with the content security policy actually switched on.
+//
+// It was off because the API serves the built client from the same origin and a default
+// policy would have blocked the bundle. That is a reason to write the policy, not to have
+// none: without it, one HTML file in the library — served inline from /api/files on this
+// very origin — is a full session compromise. The byte path adds its own, stricter
+// sandbox policy per response.
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'self'"],
+      // Vite emits hashed bundles and no inline script. 'unsafe-inline' is deliberately
+      // absent, and must stay absent — it is the directive that makes the rest ornamental.
+      scriptSrc: ["'self'"],
+      // The one concession: the client sets a handful of CSS custom properties inline for
+      // theming. Styles cannot exfiltrate a token.
+      // The typeface is served from this origin, so no font host appears here — the page
+      // reaches no external origin at all.
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'"],
+      // Media and thumbnails come from this origin's own byte path.
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://lh3.googleusercontent.com'],
+      mediaSrc: ["'self'", 'blob:'],
+      // Uploads PUT straight to a Google resumable session; nothing else is called.
+      connectSrc: ["'self'", 'https://www.googleapis.com', 'https://storage.googleapis.com'],
+      workerSrc: ["'self'", 'blob:'],
+      manifestSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      frameSrc: ["'none'"],
+      upgradeInsecureRequests: NODE_ENV === 'production' ? [] : null,
+    },
+  },
+  // Same-origin. The previous 'cross-origin' let any site on the internet embed a file
+  // served by this process, which is exactly the sharing decision the share links exist
+  // to make deliberately.
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+  referrerPolicy: { policy: 'no-referrer' },
+  hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
+}));
+
+// Permissions-Policy is not one of helmet's defaults. Nothing here needs a camera, a
+// microphone or a location, so nothing here gets one.
+app.use((_req, res, next) => {
+  res.setHeader(
+    'Permissions-Policy',
+    'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()',
+  );
+  next();
+});
 
 app.use(
   cors({
     origin(origin, cb) {
       // No Origin header at all is a same-origin or server-to-server call.
       if (!origin || CORS_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(new Error(`Origin ${origin} is not allowed. Add it to CORS_ORIGINS.`));
+      // Refused by answering without the header, rather than by throwing — a throw here
+      // becomes a 500 with a stack behind it, which is a worse answer to a browser and a
+      // more interesting one to somebody probing.
+      return cb(null, false);
     },
     credentials: true,
+    maxAge: 600,
   }),
 );
 
 // 1 MB. The API cannot accept a file upload even if somebody tried to make it (P2).
 app.use(express.json({ limit: '1mb' }));
 
-const limiter = (max) =>
+const tooMany = (detail) => ({
+  type: 'https://gcloud.internal/problems/rate-limited',
+  title: 'Too Many Requests',
+  status: 429,
+  detail,
+});
+
+const limiter = (max, detail = 'Slow down — this endpoint is rate limited.') =>
   rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_SEC * 1000,
     max,
     standardHeaders: true,
     legacyHeaders: false,
+    // ipv6Subnet keeps a single /56 from counting as billions of distinct clients.
     keyGenerator: (req) => req.user?.sub || req.ip,
-    message: {
-      type: 'https://gcloud.internal/problems/rate-limited',
-      title: 'Too Many Requests',
-      status: 429,
-      detail: 'Slow down — this endpoint is rate limited.',
-    },
+    message: tooMany(detail),
   });
 
-// The byte path is mounted before the JSON rate limiter and before the CORS-checked API
-// routes: a <video> element issues one request per seek, and counting those against the
-// same budget as a search would throttle scrubbing after a few seconds of use. The ticket
-// in the URL is the authorisation, so there is no session to check either.
-app.use('/api/files', filesRouter);
+// The credential surface. Counted per address *and* per account, in a much longer window,
+// because this is the one place where an attacker's cost is a request and the defender's
+// loss is everything. The account-keyed limiter is what stops a distributed attempt from
+// getting an unlimited allowance simply by rotating addresses.
+const authLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_AUTH_WINDOW_SEC * 1000,
+  // Looser than the per-account budget on purpose — see RATE_LIMIT_AUTH_IP_MAX. One
+  // address is frequently a whole office, or Docker's port proxy standing in for every
+  // browser on the host.
+  max: env.RATE_LIMIT_AUTH_IP_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `ip:${req.ip}`,
+  message: tooMany('Too many failed sign-in attempts from this address. Wait a few minutes and try again.'),
+});
+
+const accountLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_AUTH_WINDOW_SEC * 1000,
+  max: env.RATE_LIMIT_AUTH_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `account:${String(req.body?.email || req.user?.sub || 'unknown').toLowerCase()}`,
+  message: tooMany('Too many attempts against this account. Wait a few minutes and try again.'),
+});
+
+// The byte path is mounted before the CORS-checked API routes: a <video> element issues
+// one request per seek, and counting those against the same budget as a search would
+// throttle scrubbing after a few seconds of use. It still gets a budget of its own —
+// an unauthenticated route that streams whole files is not something to leave unmetered.
+app.use('/api/files', limiter(env.RATE_LIMIT_FILES_MAX, 'Too many file requests. Slow down.'), filesRouter);
 
 app.use('/api', limiter(env.RATE_LIMIT_MAX));
 
+// Liveness only. This endpoint is unauthenticated by necessity — an orchestrator cannot
+// hold a session — so it says whether the process is serving and nothing whatsoever about
+// how it is configured. The detail moved to GET /api/admin/health, behind admin:storage.
 app.get('/healthz', (_req, res) => {
   const mongo = connectionInfo();
-  res.json({
-    ok: mongo.readyState === 1 && GOOGLE_CONFIGURED,
-    env: ENV,
-    uptime: process.uptime(),
-    mongo: { db: mongo.db, connected: mongo.readyState === 1 },
-    storage: {
-      provider: 'google-drive',
-      authMode: GOOGLE.mode,
-      configured: GOOGLE_CONFIGURED,
-      sharedDrive: Boolean(DRIVE_ID),
-      rootFolderId: ROOTS.root,
-      assetsFolderId: ROOTS.assets,
-    },
+  const drive = storage.driveStatus();
+  // Degraded is not the same as down. The process is serving — the catalogue, search and
+  // every admin screen work — so `live` stays true and a supervisor has no reason to kill
+  // it. `ok` reports whether it can do everything, which is what a load balancer should
+  // use to decide whether to send it traffic when another task is healthy.
+  const live = mongo.readyState === 1;
+  const ok = live && GOOGLE_CONFIGURED && drive.ok;
+  res.status(live ? 200 : 503).json({
+    ok,
+    live,
+    degraded: live && !ok,
+    uptime: Math.round(process.uptime()),
   });
 });
+
+// Sign-in, password change, step-up and refresh all sit behind the strict pair.
+app.use('/api/auth/login', authLimiter, accountLimiter);
+app.use('/api/auth/password', authLimiter, accountLimiter);
+app.use('/api/auth/step-up', authLimiter, accountLimiter);
+app.use('/api/auth/refresh', authLimiter);
 
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
@@ -131,17 +237,37 @@ app.use('/api/dedupe', dedupeRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationsRouter);
 
-// Reset the demo library to its seeded state. Never available in production, because it
-// destroys every file under the GCloud folder in the connected Drive.
-if (NODE_ENV !== 'production') {
-  app.post('/api/demo/reset', async (_req, res, next) => {
-    try {
-      const stats = await seed();
-      res.json({ ok: true, seeded: true, stats });
-    } catch (err) {
-      next(err);
-    }
-  });
+// Reset the demo library to its seeded state.
+//
+// This route permanently deletes every file under the GCloud folder in the connected
+// Drive — files.delete, not the trash, so there is nothing to restore — and then empties
+// every collection in MongoDB. It was previously open to anybody who could reach the port
+// whenever NODE_ENV was not exactly 'production', which is the default in the shipped
+// .env and in the container. Four things now stand in front of it, and all four are
+// required: the flag, a non-production environment, an authenticated administrator, and
+// the words typed out.
+if (ALLOW_DESTRUCTIVE_DEMO && NODE_ENV !== 'production') {
+  app.post(
+    '/api/demo/reset',
+    authenticate,
+    requires('admin:users'),
+    async (req, res, next) => {
+      if (req.body?.confirm !== 'RESET THE LIBRARY') {
+        return problem(
+          res, 428, 'Precondition Required',
+          'Type RESET THE LIBRARY to confirm. This permanently deletes every file under the GCloud folder in Drive and empties the catalogue.',
+        );
+      }
+      try {
+        console.warn(`[demo] library reset requested by ${req.user.email}`);
+        const stats = await seed();
+        res.json({ ok: true, seeded: true, stats });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+  console.warn('  ⚠  ALLOW_DESTRUCTIVE_DEMO is on: POST /api/demo/reset can wipe the library.');
 }
 
 app.use('/api', (_req, res) =>
@@ -170,6 +296,8 @@ if (fs.existsSync(clientDist)) {
     express.static(clientDist, {
       etag: true,
       lastModified: true,
+      // A dotfile in a build directory is either a mistake or a leak. Neither is served.
+      dotfiles: 'ignore',
       // index.html is served by the fallback below, so express.static should not answer
       // "/" itself — one place decides how the document is cached.
       index: false,
@@ -200,13 +328,29 @@ if (fs.existsSync(clientDist)) {
 }
 
 // RFC 7807 for everything that escapes a handler.
+//
+// A 5xx detail is whatever the failing library felt like putting in a message — a Mongo
+// URI, a Drive error body, a file path. None of that is the caller's business, and all of
+// it is useful to somebody mapping the inside of the process. So 5xx answers carry a
+// correlation id and nothing else; the message itself goes to the log, where the same id
+// finds it. Deliberate 4xx problems are written by this codebase and stay as they are.
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   const status = err.status || err.statusCode || 500;
-  if (status >= 500) console.error(err);
+  if (status >= 500) {
+    const ref = crypto.randomUUID().slice(0, 8);
+    console.error(`[error ${ref}] ${req.method} ${req.originalUrl}`, err);
+    return res.status(status).type('application/problem+json').json({
+      type: 'https://gcloud.internal/problems/internal',
+      title: 'Internal Server Error',
+      status,
+      detail: `Something went wrong at our end. Quote reference ${ref} if you report this.`,
+      reference: ref,
+    });
+  }
   res.status(status).type('application/problem+json').json({
-    type: 'https://gcloud.internal/problems/internal',
-    title: status >= 500 ? 'Internal Server Error' : 'Request Failed',
+    type: 'https://gcloud.internal/problems/request-failed',
+    title: 'Request Failed',
     status,
     detail: err.message,
   });
@@ -221,17 +365,23 @@ async function main() {
 
   // Google Drive is reached once, before the first request, so a bad credential is a
   // sentence at boot rather than a stack trace inside somebody's upload.
-  let folders;
-  let space = null;
-  try {
-    folders = await storage.ensureRoots();
-    space = await storage.quota().catch(() => null);
-  } catch (err) {
-    console.error('\n  Google Drive is not reachable.\n');
-    console.error(`    ${err.message}\n`);
+  //
+  // It is no longer a *fatal* sentence. This used to exit(1), which meant an expired
+  // refresh token took down the catalogue, the search, the audit trail and every admin
+  // screen — none of which need Google — and then crash-looped under the restart policy.
+  // The application now starts in a degraded state, says so on every surface that can
+  // show it, and keeps retrying in the background.
+  const boot = await storage.tryEnsureRoots();
+  const folders = boot.report ?? null;
+  const space = boot.ok ? await storage.quota().catch(() => null) : null;
+
+  if (!boot.ok) {
+    console.error('\n  ⚠  Google Drive is not reachable — starting in a degraded state.\n');
+    console.error(`    ${boot.error.message}\n`);
+    console.error('  The catalogue, search, sharing records and admin screens all work.');
+    console.error('  Uploads, downloads and previews will not, until Drive answers again.\n');
     console.error('  Run `npm run drive:check` from app/ for a step-by-step diagnosis,');
     console.error('  or `npm run drive:auth` to mint a fresh refresh token.\n');
-    process.exit(1);
   }
 
   let seeded = false;
@@ -268,8 +418,12 @@ async function main() {
     }
     console.log(`  Storage      Google Drive  ·  ${GOOGLE.mode === 'oauth' ? 'OAuth user account' : 'service account'}${DRIVE_ID ? `  ·  Shared Drive ${DRIVE_ID}` : '  ·  My Drive'}`);
     if (space?.account) console.log(`  Account      ${space.account.email}`);
-    console.log(`  Folder       ${folders.root.name} (${folders.root.id})`);
-    if (folders.root.webViewLink) console.log(`               ${folders.root.webViewLink}`);
+    if (folders?.root) {
+      console.log(`  Folder       ${folders.root.name} (${folders.root.id})`);
+      if (folders.root.webViewLink) console.log(`               ${folders.root.webViewLink}`);
+    } else {
+      console.log('  Folder       — unavailable, Google Drive is not answering');
+    }
     if (space) {
       console.log(`  Space        ${space.unlimited ? 'unlimited (pooled Shared Drive)' : `${gb(space.usage)} of ${gb(space.limit)} used — ${gb(space.available)} free (${space.percentUsed}%)`}`);
       if (space.usageInTrash > 0) console.log(`               ${gb(space.usageInTrash)} of that is in the trash and still counts`);
@@ -291,6 +445,14 @@ async function main() {
     console.log('');
   });
 
+  // Slowloris and friends: a connection that dribbles a request header out one byte at a
+  // time occupies a socket indefinitely unless something says otherwise. Node's defaults
+  // are permissive, so the deadlines are set explicitly. requestTimeout is generous
+  // because a resumable upload's control calls sit behind slow networks.
+  server.headersTimeout = 20_000;
+  server.requestTimeout = 120_000;
+  server.keepAliveTimeout = 61_000;
+
   // Nightly reconciliation (§10.11), 02:00 by default.
   const job = RECONCILE_ENABLED && cron.validate(RECONCILE_CRON)
     ? cron.schedule(RECONCILE_CRON, () => {
@@ -300,9 +462,34 @@ async function main() {
     : null;
   if (job) console.log(`  Reconciliation scheduled: ${RECONCILE_CRON}\n`);
 
+  // Keeps trying Google in the background. A network blip or a Drive outage heals on its
+  // own and this notices; an expired credential does not, and the log line above is what
+  // says so until somebody mints a new one.
+  const stopDriveWatch = storage.watchDrive({
+    onRecover: () => notify({
+      level: 'ok',
+      title: 'Google Drive is reachable again',
+      body: 'Uploads, downloads and previews have resumed.',
+      link: '/admin/storage',
+    }),
+  });
+
+  // Retention. An audit row carries an IP and a user agent, which is personal data with no
+  // lawful basis for being kept forever, and a rotated session record stops being evidence
+  // of anything after a month. Both are swept nightly, an hour after reconciliation.
+  const sweeper = cron.schedule('0 3 * * *', () => {
+    Promise.all([sweepAudit(AUDIT_RETENTION_DAYS), sweepSessions()])
+      .then(([audit, stale]) => {
+        if (audit || stale) console.log(`[sweep] ${audit} audit rows, ${stale} spent sessions removed`);
+      })
+      .catch((err) => console.error('[sweep]', err.message));
+  });
+
   const shutdown = async (signal) => {
     console.log(`\n${signal} — draining…`);
     job?.stop();
+    sweeper.stop();
+    stopDriveWatch();
     server.close();
     // Anything still sitting in the write-through debounce goes to MongoDB before exit.
     await flushNow().catch(() => null);

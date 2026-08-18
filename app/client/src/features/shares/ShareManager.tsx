@@ -60,6 +60,23 @@ export function ShareManager() {
     },
   });
 
+  // Withdraw one addressee. No confirmation dialog: it affects exactly one person, it is
+  // the small remedy the big one exists to avoid, and it can be undone by re-adding them
+  // (which issues a fresh link, not the old one).
+  const withdraw = useMutation({
+    mutationFn: ({ shareId, recipientId }: { shareId: string; recipientId: string }) =>
+      api(`/shares/${shareId}/recipients/${recipientId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries();
+      toast({
+        kind: 'ok',
+        title: 'That recipient’s link was withdrawn',
+        body: 'Everybody else on this allocation keeps working.',
+      });
+    },
+    onError: (e: Error) => toast({ kind: 'danger', title: 'Could not withdraw it', body: e.message }),
+  });
+
   const AUDIENCE_ICON = { PUBLIC: Globe, EDITOR: PenLine, RESTRICTED: UserCheck } as const;
 
   const state = (s: Share) =>
@@ -210,9 +227,44 @@ export function ShareManager() {
                       </td>
                       <td className="t-small">
                         <span className="row-tight"><Audience size={12} /> {s.audienceLabel ?? 'Open to all'}</span>
-                        {s.allowedEmails?.length > 0 && (
+                        {/* Each addressee holds a different URL, so each is listed with its
+                            own state and its own withdraw button — one leaked address does
+                            not cost everybody else their link. */}
+                        {s.recipients && s.recipients.length > 0 ? (
+                          <div className="stack-1" style={{ marginTop: 6 }}>
+                            {s.recipients.map((r) => (
+                              <div key={r._id} className="row-tight" style={{ fontSize: 13, gap: 8, opacity: r.revokedAt ? .5 : 1 }}>
+                                <span style={{ textDecoration: r.revokedAt ? 'line-through' : 'none' }}>{r.email}</span>
+                                {r.revokedAt ? (
+                                  <span className="t-small">withdrawn</span>
+                                ) : (
+                                  <>
+                                    <span className="t-small">
+                                      {r.accessCount > 0 ? `opened ${r.accessCount}×` : 'not opened'}
+                                      {r.downloadCount > 0 ? ` · ${r.downloadCount} downloaded` : ''}
+                                    </span>
+                                    {!s.revokedAt && (
+                                      <>
+                                        <CopyButton value={r.url} label="Link" />
+                                        {can('share:revoke') && (
+                                          <button
+                                            className="btn btn-ghost btn-sm"
+                                            title={`Withdraw ${r.email}'s link only`}
+                                            onClick={() => withdraw.mutate({ shareId: s._id, recipientId: r._id })}
+                                          >
+                                            <Ban size={11} />
+                                          </button>
+                                        )}
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : s.allowedEmails?.length > 0 ? (
                           <div className="t-small" style={{ fontSize: 13.5 }}>{s.allowedEmails.join(', ')}</div>
-                        )}
+                        ) : null}
                       </td>
                       <td><span className="badge" data-status={st.status}><span className="dot" />{st.label}</span></td>
                       <td className="t-small">
@@ -226,7 +278,9 @@ export function ShareManager() {
                       <td className="t-small">{s.createdByName}</td>
                       <td>
                         <div className="row-tight" style={{ justifyContent: 'flex-end' }}>
-                          {st.label === 'Live' && <CopyButton value={s.url} label="Copy" />}
+                          {st.label === 'Live' && !(s.recipients && s.recipients.length > 0) && (
+                            <CopyButton value={s.url} label="Copy" />
+                          )}
                           {can('share:revoke') && !s.revokedAt && (
                             <button className="btn btn-danger btn-sm" onClick={() => setRevoking(s)}>
                               <Ban size={12} /> Revoke

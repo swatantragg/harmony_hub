@@ -26,14 +26,14 @@
 //     a cold tier — the clock runs out and the file is gone.
 import {
   DriveError, FILE_FIELDS, FOLDER_MIME, EXPORT_FORMATS, isGoogleNative,
-  about, cancelResumableSession, copyFile, createResumableSession, deleteFile, driveErrorCode,
+  about, cancelResumableSession, copyFile, createResumableSession, deleteFile, downloadResponse, driveErrorCode,
   emptyTrash, ensureFolder, escapeQuery, getFile, isAccessDenied, isNotFound, isQuotaExceeded, keepRevisionForever,
   listAll, listRevisions, mapLimit, probeResumableSession, properties, trashFile, untrashFile,
   updateFile, uploadSimple,
 } from '../storage/drive.js';
 import {
-  DRIVE_ID, DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_NAME, FOLDER_ROLES, HEAD_CONCURRENCY,
-  ORIGIN, ROOTS, TRASH_DAYS, TTL,
+  BLOCKED_EXTENSIONS, BLOCKED_MIME, DRIVE_ID, DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_NAME,
+  FOLDER_ROLES, HEAD_CONCURRENCY, INLINE_MIME, ORIGIN, ROOTS, TRASH_DAYS, TTL,
 } from '../config.js';
 import { mintFileToken } from './signing.js';
 
@@ -129,13 +129,160 @@ export const assetProperties = (asset, { song, artist, folder } = {}) =>
 // at Google — the reasons are set out at the top of services/signing.js. The contract for
 // callers: short-lived, purpose-bound, unguessable and unforgeable, and they neither know
 // nor care how the bytes eventually arrive.
-export function signedUrl({ fileId, filename, inline = false, expiresIn = TTL.download, purpose = 'download', assetId = null, mimeType = null }) {
+export function signedUrl({
+  fileId, filename, inline = false, expiresIn = TTL.download, purpose = 'download',
+  assetId = null, mimeType = null, user = null, shareId = null,
+}) {
   // A Google Docs/Sheets/Slides file has no bytes to serve, so a download has to name an
   // export format. The ticket carries it, and the browser gets a .docx as it expects.
   const exportMime = isGoogleNative(mimeType) ? (EXPORT_FORMATS[mimeType]?.mimeType ?? 'application/pdf') : null;
-  const token = mintFileToken({ fileId, filename, inline, expiresIn, purpose, assetId, exportMime });
+  // Inline is a request, not a decision. What the byte path actually serves is settled by
+  // the type policy below, on the way out, against the type Drive really reports.
+  const token = mintFileToken({
+    fileId, filename, inline, expiresIn, purpose, assetId, exportMime,
+    userId: user?.sub ?? null,
+    tokenVersion: user ? Number(user.tokenVersion ?? 0) : null,
+    shareId,
+  });
   return `${ORIGIN}/api/files/${token}`;
 }
+
+// ── Content type policy (§12.5) ─────────────────────────────────────────────
+//
+// The byte path answers on the application's own origin, so anything served inline runs
+// with the application's privileges if the browser decides to execute it. HTML executes.
+// SVG executes — it carries <script>. So the question "may this be shown inline?" is
+// answered here, from an allowlist, against the type Google actually reports, and never
+// from the type the uploader claimed or the disposition the ticket asked for.
+
+export const isInlineSafe = (mimeType) => {
+  const type = String(mimeType || '').split(';')[0].trim().toLowerCase();
+  return INLINE_MIME.some((re) => re.test(type));
+};
+
+export const isBlockedType = (mimeType) => {
+  const type = String(mimeType || '').split(';')[0].trim().toLowerCase();
+  return BLOCKED_MIME.some((re) => re.test(type));
+};
+
+export const isBlockedExtension = (filename) => {
+  const name = String(filename || '').toLowerCase();
+  // Double extensions are the classic evasion — report.pdf.html is an HTML file. Every
+  // suffix is checked, not only the last one.
+  return BLOCKED_EXTENSIONS.some((ext) => name.endsWith(ext) || name.includes(`${ext}.`));
+};
+
+// What the byte path should send, given what Drive says the file is. A type that is not
+// on the inline allowlist is still served — it just downloads instead of rendering, which
+// costs a click and removes the whole class of stored-XSS-on-our-own-origin.
+export function dispositionFor(mimeType, { requested = false } = {}) {
+  if (!requested) return { inline: false, type: safeContentType(mimeType) };
+  return isInlineSafe(mimeType)
+    ? { inline: true, type: safeContentType(mimeType) }
+    : { inline: false, type: safeContentType(mimeType) };
+}
+
+// The Content-Type actually written on the response. Executable types are neutralised
+// rather than relayed, so even a forced download cannot be re-interpreted by a browser
+// that follows a link into it.
+export function safeContentType(mimeType) {
+  const type = String(mimeType || '').split(';')[0].trim().toLowerCase();
+  if (!type) return 'application/octet-stream';
+  if (isBlockedType(type)) return 'application/octet-stream';
+  return type;
+}
+
+// ── Upload session registry (§12.4) ─────────────────────────────────────────
+//
+// A resumable session URI is itself a credential, and the resume/abort routes used to
+// accept whichever URI the browser sent back — which made this server a willing agent for
+// any PUT or DELETE the caller wanted issued, to any address it liked. Only URIs this
+// process handed out are honoured now, and only to the account they were handed to.
+//
+// In memory on purpose: a session is worthless after a restart anyway (Google's own
+// staging expires in a week, and the client re-initiates on a rejection), and putting a
+// live upload credential in the durable store buys nothing.
+const uploadSessions = new Map();
+
+const SESSION_TTL_MS = 7 * 86_400_000;
+
+export function registerUploadSession(sessionUri, { userId, assetId, fileId = null, sizeBytes = 0 }) {
+  uploadSessions.set(sessionUri, {
+    userId, assetId, fileId, sizeBytes, createdAt: Date.now(),
+  });
+  // Opportunistic sweep — cheaper than a timer, and this map is small by construction.
+  if (uploadSessions.size > 500) {
+    for (const [uri, row] of uploadSessions) {
+      if (Date.now() - row.createdAt > SESSION_TTL_MS) uploadSessions.delete(uri);
+    }
+  }
+  return sessionUri;
+}
+
+// Google's own upload host, and nothing else. Belt and braces behind the registry: even a
+// bug that admitted an unregistered URI cannot turn into a request to an internal address.
+const GOOGLE_UPLOAD = /^https:\/\/(www\.googleapis\.com|storage\.googleapis\.com)\/upload\//;
+
+export function resolveUploadSession(sessionUri, userId) {
+  const uri = String(sessionUri || '');
+  if (!GOOGLE_UPLOAD.test(uri)) return { ok: false, reason: 'foreign' };
+  const row = uploadSessions.get(uri);
+  if (!row) return { ok: false, reason: 'unknown' };
+  if (row.userId !== userId) return { ok: false, reason: 'not-yours' };
+  if (Date.now() - row.createdAt > SESSION_TTL_MS) {
+    uploadSessions.delete(uri);
+    return { ok: false, reason: 'expired' };
+  }
+  return { ok: true, session: row };
+}
+
+export function forgetUploadSession(sessionUri) {
+  uploadSessions.delete(String(sessionUri || ''));
+}
+
+// ── Magic-byte verification (§12.5) ─────────────────────────────────────────
+//
+// A declared MIME type is whatever the uploader's browser felt like saying. This reads the
+// first bytes of the stored object back from Drive — one ranged request, 512 bytes — and
+// asks whether they begin the way the declared family begins. It is not a virus scanner;
+// it is the check that stops "cover.jpg" being an HTML document.
+
+const SIGNATURES = [
+  { magic: [0x3c, 0x21, 0x44, 0x4f, 0x43, 0x54, 0x59, 0x50, 0x45], verdict: 'html' }, // <!DOCTYPE
+  { magic: [0x3c, 0x68, 0x74, 0x6d, 0x6c], verdict: 'html' },                          // <html
+  { magic: [0x3c, 0x48, 0x54, 0x4d, 0x4c], verdict: 'html' },
+  { magic: [0x3c, 0x3f, 0x78, 0x6d, 0x6c], verdict: 'xml' },                           // <?xml
+  { magic: [0x3c, 0x73, 0x76, 0x67], verdict: 'svg' },                                 // <svg
+  { magic: [0x4d, 0x5a], verdict: 'executable' },                                      // MZ — PE
+  { magic: [0x7f, 0x45, 0x4c, 0x46], verdict: 'executable' },                          // ELF
+  { magic: [0x23, 0x21], verdict: 'script' },                                          // #!
+];
+
+export async function sniffBytes(fileId) {
+  try {
+    const res = await downloadResponse(fileId, { range: 'bytes=0-511', signal: AbortSignal.timeout(10_000) });
+    const buffer = Buffer.from(await res.arrayBuffer());
+    // Leading whitespace is skipped, because "   <script>" is still a script.
+    let start = 0;
+    while (start < buffer.length && [0x20, 0x09, 0x0a, 0x0d, 0xef, 0xbb, 0xbf].includes(buffer[start])) start += 1;
+    const head = buffer.subarray(start);
+    for (const { magic, verdict } of SIGNATURES) {
+      if (magic.every((byte, i) => head[i] === byte)) return { ok: true, verdict, bytes: head.length };
+    }
+    return { ok: true, verdict: 'opaque', bytes: head.length };
+  } catch (err) {
+    // A file that cannot be read back is not thereby proved dangerous; the caller decides.
+    return { ok: false, verdict: 'unknown', error: err.message };
+  }
+}
+
+// The verdicts that must never end up in the library, whatever the file was called.
+//
+// `svg` and `xml` are absent deliberately: an SVG is a legitimate library member here
+// (covers, banners) and the sandbox policy on the byte path is what makes it safe. What
+// is caught is the evasion — a file *named* cover.svg whose bytes are an HTML document,
+// which sniffs as `html` and lands in Quarantine.
+export const DANGEROUS_VERDICTS = new Set(['html', 'executable', 'script']);
 
 // What a download is actually called once Google has converted it. A Docs file catalogued
 // as "Album credits" downloads as "Album credits.docx", not as a file the OS cannot open.
@@ -515,6 +662,46 @@ export async function quota() {
 // Confirms the folders the application needs exist before the first request, and creates
 // them if they do not. Idempotent — a second boot finds what the first one made.
 
+// ── Reachability (§9.2) ─────────────────────────────────────────────────────
+//
+// Whether Google is answering right now, and why not when it is not.
+//
+// This exists because the boot sequence used to treat "Drive is unreachable" as fatal and
+// call process.exit(1). The intent was sound — a bad credential should be a sentence at
+// boot rather than a stack trace inside somebody's upload — but the consequence was that
+// an expired refresh token took the entire application down, including the catalogue,
+// the search index, the audit trail and the admin screens, none of which need Google at
+// all. Under a restart policy it then crash-looped, which is the worst of both: no
+// service, and no clear message either.
+//
+// So the failure is recorded instead. The process serves what it can, says plainly what
+// it cannot, and keeps trying — because the fix for the common case (mint a new token) is
+// something an administrator does *while the application is running*.
+const driveState = {
+  ok: false,
+  checkedAt: null,
+  error: null,
+  reason: null,
+  since: null,
+};
+
+export const driveStatus = () => ({ ...driveState, rootsResolved: Boolean(ROOTS.assets) });
+
+// True when byte operations can be attempted at all. Everything that needs a folder id —
+// an upload, a new folder — should refuse early with a readable message rather than
+// sending `parents: [null]` to Google.
+export const driveReady = () => driveState.ok && Boolean(ROOTS.assets);
+
+function markDrive(ok, err = null) {
+  const changed = driveState.ok !== ok;
+  driveState.ok = ok;
+  driveState.checkedAt = new Date().toISOString();
+  driveState.error = ok ? null : err?.message ?? String(err ?? 'unknown');
+  driveState.reason = ok ? null : driveErrorCode(err);
+  if (changed) driveState.since = driveState.checkedAt;
+  return changed;
+}
+
 export async function ensureRoots() {
   const report = {};
   let root;
@@ -541,7 +728,50 @@ export async function ensureRoots() {
     report[role] = { id: folder.id, name: folder.name, webViewLink: folder.webViewLink ?? null };
   }
 
+  markDrive(true);
   return report;
+}
+
+/**
+ * ensureRoots(), but a failure is recorded rather than thrown.
+ *
+ * Used at boot and by the retry below, so neither has to decide what an unreachable
+ * Google means — the answer is the same in both cases: note it, carry on, try again.
+ *
+ * @returns {Promise<{ok: boolean, report?: object, error?: Error}>}
+ */
+export async function tryEnsureRoots() {
+  try {
+    const report = await ensureRoots();
+    return { ok: true, report };
+  } catch (err) {
+    markDrive(false, err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * Keeps retrying in the background until Drive answers.
+ *
+ * The common failure is an expired refresh token, and the fix is to put a new one in the
+ * environment — which, for a container, means a restart anyway. But the other failures
+ * (a network blip, Google being briefly unavailable, a quota pause) heal on their own,
+ * and this is what notices when they do without anybody watching.
+ *
+ * @returns a stop function for the shutdown path.
+ */
+export function watchDrive({ intervalMs = 60_000, onRecover } = {}) {
+  const timer = setInterval(async () => {
+    if (driveState.ok) return;
+    const out = await tryEnsureRoots();
+    if (out.ok) {
+      console.log('[drive] reachable again — storage operations have resumed');
+      onRecover?.(out.report);
+    }
+  }, intervalMs);
+  // Never hold the process open for this alone.
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
 
 // A namespace object, so a call site can read `drive.stat(...)` where that is clearer:

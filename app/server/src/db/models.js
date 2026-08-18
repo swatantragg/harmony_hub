@@ -39,6 +39,10 @@ export const models = {
   activityLog: mongoose.model('ActivityEntry', schema(), 'activityLog'),
   notifications: mongoose.model('Notification', schema(), 'notifications'),
   meta: mongoose.model('Meta', schema(), 'meta'),
+  // Refresh-token families (§12.2). Deliberately NOT part of the in-memory working set:
+  // a session record has to be durable and has to be queried by token hash, and holding
+  // it in a process-local array would make "sign out everywhere" a per-task lie.
+  sessions: mongoose.model('Session', schema(), 'sessions'),
 };
 
 // §7.3. Built once at boot, in the background, so a cold start is never blocked on an
@@ -105,6 +109,13 @@ export async function ensureIndexes() {
   await build(models.reconciliationRuns, { startedAt: -1 });
   await build(models.notifications, { createdAt: -1 });
   await build(models.restoreRequests, { requestedAt: -1 });
+
+  // Sessions. The TTL index is the one that matters: expired refresh tokens are removed
+  // by MongoDB itself, so a leaked backup of this collection ages out rather than
+  // staying useful forever.
+  await build(models.sessions, { userId: 1, lastUsedAt: -1 });
+  await build(models.sessions, { familyId: 1 });
+  await build(models.sessions, { expiresAt: 1 }, { expireAfterSeconds: 0 });
 
   return created;
 }

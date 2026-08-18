@@ -161,18 +161,41 @@ export function ShareDialog({
               {created.target === 'FOLDER' ? ` · ${created.fileCount} files` : ''}
             </div>
           </div>
-          <div className="field">
-            <label className="label">Share link</label>
-            <div className="row-tight">
-              <input className="input mono" readOnly value={created.url} onFocus={(e) => e.target.select()} />
-              <CopyButton value={created.url} label="Copy" />
+          {/* A specific-allocation link has no single URL to hand out — every recipient
+              has their own, listed below. Showing one here would be showing a link that
+              deliberately does not work. */}
+          {created.audience !== 'RESTRICTED' && (
+            <div className="field">
+              <label className="label">Share link</label>
+              <div className="row-tight">
+                <input className="input mono" readOnly value={created.url} onFocus={(e) => e.target.select()} />
+                <CopyButton value={created.url} label="Copy" />
+              </div>
+              <div className="hint">A GCloud address, not a storage address. Revocable at any time.</div>
             </div>
-            <div className="hint">A GCloud address, not a storage address. Revocable at any time.</div>
-          </div>
+          )}
           {created.audience === 'RESTRICTED' && (
-            <div className="note neutral">
-              <UserCheck size={15} />
-              <div>Only {emails.join(', ')} can open this, and only after signing in.</div>
+            // Each addressee gets a different URL. Sending the wrong person's link to
+            // somebody is not just untidy — it is refused at the gate — so they are listed
+            // separately with their own copy button rather than as one link to forward.
+            <div className="stack-2">
+              <div className="note neutral">
+                <UserCheck size={15} />
+                <div>
+                  Each person below has a link of their own. Send each one only to the address
+                  beside it — opening someone else’s is refused. Any one of them can be
+                  withdrawn later without affecting the rest.
+                </div>
+              </div>
+              {(created.recipients ?? []).map((r) => (
+                <div className="field" key={r._id}>
+                  <label className="label">{r.email}</label>
+                  <div className="row-tight">
+                    <input className="input mono" readOnly value={r.url} onFocus={(e) => e.target.select()} />
+                    <CopyButton value={r.url} label="Copy" />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
           <div className="note indigo">

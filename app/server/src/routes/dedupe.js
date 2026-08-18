@@ -9,12 +9,13 @@
 // is possible because two catalogue rows can name one Drive file id.
 import express from 'express';
 import { db, persist, assetContext } from '../db.js';
-import { authenticate, requires, problem } from '../middleware/auth.js';
-import { record, notify } from '../services/audit.js';
+import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
+import { alert, record, notify } from '../services/audit.js';
 import { scan, nameSimilarity, normaliseName } from '../services/dedupe.js';
 import * as storage from '../services/storage.js';
 import { shape } from '../services/assets.js';
-import { TRASH_DAYS } from '../config.js';
+import { ALLOW_EMPTY_DRIVE_TRASH, TRASH_DAYS } from '../config.js';
+import { LIMITS, fields, list, oneOf, str } from '../util/validate.js';
 import { uuid } from '../util/crypto.js';
 
 export const dedupeRouter = express.Router();
@@ -81,10 +82,15 @@ dedupeRouter.get('/compare', requires('asset:read'), async (req, res) => {
 const ACTIONS = ['link', 'trash', 'version', 'ignore'];
 
 dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
-  const { groupId, action, keepId, assetIds } = req.body || {};
-  if (!ACTIONS.includes(action)) {
-    return problem(res, 422, 'Unprocessable Entity', `Unknown action. Use one of: ${ACTIONS.join(', ')}.`);
-  }
+  const check = fields(req.body || {}, {
+    groupId: (v) => str(v, { max: 120, field: 'groupId', required: true }),
+    action: (v) => oneOf(v, ACTIONS, { field: 'action', required: true }),
+    keepId: (v) => str(v, { max: 80, field: 'keepId' }),
+    note: (v) => str(v, { max: LIMITS.note, field: 'note', allowEmpty: true }),
+    assetIds: (v) => list(v, { max: LIMITS.ids, itemMax: 80, field: 'assetIds' }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const { groupId, action, keepId, assetIds } = check.value;
 
   const report = scan({ level: 'all' });
   const group = report.groups.find((g) => g._id === groupId);
@@ -96,7 +102,7 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
       _id: group._id, kind: group.kind, count: group.count,
       names: group.members.map((m) => m.displayName),
       ignoredBy: req.user.name, ignoredAt: new Date().toISOString(),
-      note: String(req.body?.note || ''),
+      note: check.value.note || '',
     });
     persist();
     record(req, {
@@ -265,7 +271,21 @@ dedupeRouter.delete('/ignored/:id', requires('asset:delete'), (req, res) => {
 // Emptying the Drive trash is the only way to actually get the space back before Google's
 // own 30-day sweep. Admin-only, irreversible, and it takes everything in the bin — not
 // only what GCloud put there — so it says so.
-dedupeRouter.post('/empty-trash', requires('asset:purge'), async (req, res) => {
+dedupeRouter.post(
+  '/empty-trash',
+  requires('asset:purge'),
+  requireStepUp('Emptying the Google Drive trash'),
+  async (req, res) => {
+  // Off unless a deployment deliberately turned it on. The blast radius is the connected
+  // Google account's entire trash — every file it holds, whether this application ever
+  // touched it or not — and there is no API to scope it to our own folder. A capability
+  // that broad should not be one config-free click away.
+  if (!ALLOW_EMPTY_DRIVE_TRASH) {
+    return problem(
+      res, 409, 'Conflict',
+      'Emptying the Drive trash is disabled on this deployment, because it destroys everything in the connected account’s bin — including files this library never touched. Set ALLOW_EMPTY_DRIVE_TRASH=true to enable it, or empty the trash from drive.google.com where the contents are visible first.',
+    );
+  }
   if (req.body?.confirm !== 'EMPTY TRASH') {
     return problem(res, 428, 'Precondition Required',
       'Type EMPTY TRASH to confirm. This permanently destroys everything in the connected account\'s Drive trash, including files GCloud never touched.');
@@ -281,15 +301,17 @@ dedupeRouter.post('/empty-trash', requires('asset:purge'), async (req, res) => {
 
   db.dedupeIgnores ??= [];
   persist();
-  record(req, {
-    action: 'DRIVE_TRASH_EMPTY', entity: 'storage', entityId: 'trash',
+  alert(req, {
+    action: 'DRIVE_TRASH_EMPTIED', entity: 'storage', entityId: 'trash',
     label: 'Emptied the Google Drive trash',
+    level: 'danger',
     before: { usage: before?.usage ?? null, usageInTrash: before?.usageInTrash ?? null },
     after: { usage: after?.usage ?? null },
     meta: { bytesFreed: freed },
   });
   res.json({ ok: true, bytesFreed: freed, quota: after });
-});
+  },
+);
 
 // Kicks off perceptual hashing for the files that have none. Reads bytes back out of
 // Drive and needs ffmpeg, so it is a background job with a progress endpoint rather than

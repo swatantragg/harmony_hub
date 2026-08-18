@@ -3,13 +3,13 @@
 // Deliberately not an editor. Name, email and role are an administrator's to set — a
 // person renaming themselves mid-audit-trail is a worse problem than the convenience is
 // worth — so everything on this page is read-only except the password.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound, Loader2, Mail, ShieldCheck, UserCircle2, UserPlus } from 'lucide-react';
 import { PasswordInput, useToast } from '../../components/ui';
+import { api } from '../../lib/api';
 import { useSession } from '../../app/session';
 import { date, initials, relative } from '../../lib/format';
 
-const MIN_LENGTH = 8;
 
 export function Profile() {
   const { user, setPassword } = useSession();
@@ -22,6 +22,10 @@ export function Profile() {
   const [busy, setBusy] = useState(false);
 
   if (!user) return null;
+
+  // The server is the authority on this; the form only avoids offering something it
+  // already knows will be refused.
+  const MIN_LENGTH = user.minPasswordLength ?? 8;
 
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
   const mismatch = confirm.length > 0 && next !== confirm;
@@ -39,7 +43,7 @@ export function Profile() {
       toast({
         kind: 'ok',
         title: 'Password changed',
-        body: 'This session stays signed in. Anywhere else you are signed in keeps working until its token expires.',
+        body: 'This session stays signed in. Every other session on your account has been ended — which is the point of changing a password.',
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the password');
@@ -154,6 +158,57 @@ export function Profile() {
           </button>
         </div>
       </form>
+
+      <SessionsPanel />
     </div>
   );
+}
+
+// Where this account is signed in. The point of the list is recognising a row that should
+// not be there — and the button under it, which ends all of them at once.
+function SessionsPanel() {
+  const logoutEverywhere = useSession((s) => s.logoutEverywhere);
+  const [rows, setRows] = useState<Session[] | null>(null);
+
+  useEffect(() => {
+    api<{ data: Session[] }>('/me/sessions').then((r) => setRows(r.data)).catch(() => setRows([]));
+  }, []);
+
+  return (
+    <section className="panel">
+      <div className="panel-head"><span className="t-h3">Where you are signed in</span></div>
+      <div className="panel-body stack-3">
+        {rows === null && <span className="muted">Loading…</span>}
+        {rows?.length === 0 && <span className="muted">No other sessions.</span>}
+        {rows && rows.length > 0 && (
+          <dl className="kv">
+            {rows.map((s) => (
+              <div key={s.familyId}>
+                <dt>{s.ip ?? 'unknown address'}</dt>
+                <dd>
+                  Last used {relative(s.lastUsedAt)}
+                  <div className="t-small muted" style={{ marginTop: 2 }}>{s.userAgent || 'unknown device'}</div>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <p className="t-small" style={{ margin: 0, maxWidth: '70ch' }}>
+          Signing out everywhere ends every session on every device, and invalidates every
+          download and preview link already handed out. Use it if a device goes missing.
+        </p>
+        <div>
+          <button className="btn btn-secondary" onClick={() => logoutEverywhere()}>Sign out everywhere</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+interface Session {
+  familyId: string;
+  startedAt: string;
+  lastUsedAt: string;
+  ip: string | null;
+  userAgent: string;
 }

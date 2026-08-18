@@ -60,19 +60,30 @@ export const FINDING_KINDS = [
   'SIZE_MISMATCH', 'CHECKSUM_MISMATCH', 'PARENT_DRIFT', 'NAME_DRIFT',
 ];
 
-// Two roles, and only one thing separates them. A User does everything an Admin does —
-// uploads, edits, deletes, shares, reads the activity log, fixes storage drift — because
-// splitting a small team's library into tiers of read-only spectators cost more in
-// "who can do this for me?" than it ever saved. What a User cannot do is create another
-// account, so the roster stays a deliberate decision by one person.
+// Two roles, and the line between them is drawn at what cannot be undone.
+//
+// Everything used to be shared but account creation. That was a reasonable trade for a
+// small team right up to the point where it meant one phished account could permanently
+// destroy the library: `asset:purge` deletes a file and every revision of it, and emptying
+// the Drive trash reaches files this application never touched. Neither has a backup
+// behind it, so neither belongs to the role that exists so people can get on with their
+// work. The split is therefore not "who is trusted" — it is "what is recoverable".
+//
+//   User   the working role: uploads, edits, renames, moves, soft-deletes, shares, fixes
+//          storage drift. Every one of those has a way back — a soft delete goes to the
+//          Drive trash and can be undone from either side.
+//   Admin  everything a User can do, plus the three that cannot be taken back or that
+//          nobody else should hold: permanent deletion, the account roster, and the audit
+//          trail — which is a privacy surface as much as an operational one, because it
+//          carries every user's addresses and movements.
 export const ROLES = ['Admin', 'User'];
 
-// The permission every capability is checked against. `admin:users` is the single entry
-// that appears under Admin and not under User — everything above it is shared.
+// The working set. Everything here has a way back: a soft delete is the Drive trash, a
+// rename is a metadata patch, a move is a re-parent.
 const SHARED = [
-  'asset:read', 'asset:upload', 'asset:edit', 'asset:rename', 'asset:delete', 'asset:purge',
-  'asset:download', 'asset:restore', 'share:create', 'share:revoke',
-  'catalogue:edit', 'admin:storage', 'admin:activity',
+  'asset:read', 'asset:download',
+  'asset:upload', 'asset:edit', 'asset:rename', 'asset:delete', 'asset:restore',
+  'share:create', 'share:revoke', 'catalogue:edit', 'admin:storage',
 ];
 
 // Role → capability matrix. The authorize() middleware reads this; the client reads the
@@ -81,13 +92,16 @@ const SHARED = [
 // own: Drive moves a file by re-parenting it, so it copies nothing, risks nothing, and
 // needs no special ceremony.
 export const PERMISSIONS = {
-  Admin: [...SHARED, 'admin:users'],
+  // These three are Admin-only. `asset:purge` and the Drive-trash route are additionally
+  // gated on re-authentication and a typed confirmation where they are used.
+  Admin: [...SHARED, 'asset:purge', 'admin:users', 'admin:activity'],
   User: [...SHARED],
 };
 
-// Accounts created before the roster collapsed to two roles still carry Editor, Marketing
-// or Viewer. Rather than migrate the database and hope nothing was missed, every read of a
-// role goes through here: an unrecognised role is a User, which is exactly the intent.
+// Accounts created before the roster settled still carry Editor, Marketing or Viewer.
+// Rather than migrate the database and hope nothing was missed, every read of a role goes
+// through here: an unrecognised role is a User, which is what all three of those were in
+// practice — none of them could purge, manage accounts or read the activity log.
 export const normaliseRole = (role) => (ROLES.includes(role) ? role : 'User');
 
 export const can = (role, permission) => PERMISSIONS[normaliseRole(role)].includes(permission);

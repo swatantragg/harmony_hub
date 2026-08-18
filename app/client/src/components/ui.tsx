@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { Availability, Family } from '../lib/types';
 import { STATUS_COPY } from '../lib/assetTypes';
+import { auth, stepUp } from '../lib/api';
 import { useTheme } from '../app/theme';
 
 /* ── Brandmark ─────────────────────────────────────────────────────────── */
@@ -318,13 +319,43 @@ export function FamilyArt({ family, seed, children }: { family: Family; seed: st
 
 /* ── Confirm dialog with typed confirmation for destructive actions ─────── */
 export function ConfirmDialog({
-  title, body, confirmLabel, danger, requireTyped, onConfirm, onClose,
+  title, body, confirmLabel, danger, requireTyped, requirePassword, onConfirm, onClose,
 }: {
   title: string; body: ReactNode; confirmLabel: string; danger?: boolean;
-  requireTyped?: string; onConfirm: () => void; onClose: () => void;
+  requireTyped?: string;
+  /**
+   * Re-authentication before an operation that destroys data nothing can bring back.
+   *
+   * A typed confirmation proves the right row was chosen. It proves nothing about who is
+   * choosing it — a borrowed laptop with a live session types just as well. So the
+   * account's own password is asked for, exchanged for a short-lived ticket the API
+   * client attaches automatically, and one entry then covers a few minutes of
+   * confirmations rather than a prompt per file.
+   */
+  requirePassword?: boolean;
+  onConfirm: () => void; onClose: () => void;
 }) {
   const [typed, setTyped] = useState('');
-  const ready = !requireTyped || typed === requireTyped;
+  const [password, setPassword] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [wrong, setWrong] = useState(false);
+
+  // A ticket obtained a moment ago still counts, so confirming three deletions in a row
+  // asks once.
+  const needsPassword = Boolean(requirePassword) && !auth.hasStepUp();
+  const ready = (!requireTyped || typed === requireTyped) && (!needsPassword || password.length > 0);
+
+  const go = async () => {
+    if (needsPassword) {
+      setChecking(true);
+      const ok = await stepUp(password);
+      setChecking(false);
+      if (!ok) { setWrong(true); setPassword(''); return; }
+    }
+    onConfirm();
+    onClose();
+  };
+
   return (
     <Modal
       title={title}
@@ -335,10 +366,10 @@ export function ConfirmDialog({
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button
             className={`btn ${danger ? 'btn-danger-solid' : 'btn-primary'}`}
-            disabled={!ready}
-            onClick={() => { onConfirm(); onClose(); }}
+            disabled={!ready || checking}
+            onClick={go}
           >
-            {confirmLabel}
+            {checking ? 'Checking…' : confirmLabel}
           </button>
         </>
       }
@@ -355,6 +386,24 @@ export function ConfirmDialog({
               placeholder={requireTyped}
               autoFocus
             />
+          </div>
+        )}
+        {needsPassword && (
+          <div className="field">
+            <label className="label">Your password</label>
+            <input
+              className="input"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setWrong(false); }}
+              placeholder="The password for your own account"
+            />
+            <div className="t-meta" style={{ marginTop: 6 }}>
+              {wrong
+                ? <span style={{ color: 'var(--danger, #c0392b)' }}>That is not the password for this account.</span>
+                : 'Asked because this cannot be undone — a signed-in tab is not enough on its own.'}
+            </div>
           </div>
         )}
       </div>

@@ -26,13 +26,18 @@
     <!-- A phone number is not a thing in this product, and Safari linkifying every
          duration and byte count as one is a real and recurring annoyance. -->
     <meta name="format-detection" content="telephone=no" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Poppins is the only typeface in the product. One family, six weights. -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Poppins is the only typeface in the product. One family, six weights, served from
+         this origin rather than from Google.
+
+         It used to be two <link>s to fonts.googleapis.com and fonts.gstatic.com. That is
+         one external origin that has to be allowed in the content security policy, one
+         third party told the address of every reader on every page load, and one more
+         thing that has to be reachable before the product looks like itself. Self-hosting
+         costs 308 KB, cached for a year, and removes all three. Regenerate the files with
+         `npm run --workspace client fonts:fetch` if the family ever changes. -->
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/poppins-latin-400.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/poppins-latin-600.woff2" crossorigin />
+    <link rel="stylesheet" href="/fonts/poppins.css" />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23fff'/%3E%3Crect x='5' y='18' width='3' height='9' rx='1.5' fill='%235546E8'/%3E%3Crect x='10' y='12' width='3' height='15' rx='1.5' fill='%235546E8'/%3E%3Crect x='15' y='7' width='3' height='20' rx='1.5' fill='%23FF9E44'/%3E%3Crect x='20' y='15' width='3' height='12' rx='1.5' fill='%235546E8'/%3E%3Crect x='25' y='10' width='3' height='17' rx='1.5' fill='%235546E8'/%3E%3C/svg%3E"

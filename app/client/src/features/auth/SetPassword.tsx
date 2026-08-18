@@ -10,7 +10,6 @@ import { KeyRound, Loader2, ArrowRight, LogOut } from 'lucide-react';
 import { PasswordInput, ThemeToggle } from '../../components/ui';
 import { useSession } from '../../app/session';
 
-const MIN_LENGTH = 8;
 
 export function SetPassword() {
   const { user, setPassword, logout } = useSession();
@@ -20,6 +19,10 @@ export function SetPassword() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
+
+  // The server is the authority on this, and it sends it with the account. Hardcoding it
+  // is how the number ends up saying one thing here and another in the API.
+  const MIN_LENGTH = user?.minPasswordLength ?? 8;
 
   // Checked here so the reader is told before submitting, and again on the server, which
   // is the check that actually counts.

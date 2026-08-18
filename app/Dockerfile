@@ -18,7 +18,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY client/package.json client/
-RUN npm ci
+# --ignore-scripts: a postinstall hook in any transitive dependency is arbitrary code
+# running in the build with the lockfile's full tree available to it. Nothing here needs
+# one, so nothing here gets one.
+RUN npm ci --ignore-scripts
 
 COPY client/ client/
 RUN npm run --workspace client build
@@ -30,7 +33,7 @@ COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY client/package.json client/
 # The client is already built; its toolchain has no business in the runtime image.
-RUN npm ci --omit=dev --workspace server --include-workspace-root \
+RUN npm ci --omit=dev --ignore-scripts --workspace server --include-workspace-root \
   && npm cache clean --force \
   # Workspaces hoist to the root node_modules, so server/node_modules exists only when a
   # version conflict forced something to nest. Creating it unconditionally keeps the COPY
@@ -66,17 +69,22 @@ COPY scripts ./scripts
 # node:alpine ships an unprivileged `node` user. Nothing here needs to write to disk —
 # the catalogue lives in MongoDB and the bytes live in Google Drive. Downloads are streamed
 # through this process rather than buffered, so that stays true even for a 40 GB master.
-RUN chown -R node:node /app
+#
+# Which is why the application files are owned by root and merely readable by `node`:
+# the process cannot rewrite its own code even if something in it is compromised. Pair
+# this with `read_only: true` and `cap_drop: ALL` in compose — both are set there.
+RUN chown -R root:root /app && chmod -R a-w /app
 USER node
 
 EXPOSE 8100
 
-# Reports unhealthy while MongoDB *or* Google Drive is unreachable. The second half matters:
-# a container whose refresh token has expired can still answer every JSON route while being
-# unable to serve a single file, and an orchestrator needs to know that before it sends
-# traffic.
+# Reports unhealthy only when the process cannot serve at all — which in practice means
+# MongoDB is gone. A container whose Google refresh token has expired is *degraded*, not
+# dead: it still answers every JSON route, including the admin screen that says the
+# credential expired. /healthz distinguishes the two — `live` for "serving", `ok` for
+# "can do everything" — and this probe watches the first.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${PORT}/healthz" | grep -q '"ok":true' || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PORT}/healthz" | grep -q '"live":true' || exit 1
 
 WORKDIR /app/server
 ENTRYPOINT ["dumb-init", "--"]

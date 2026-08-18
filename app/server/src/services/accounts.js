@@ -9,19 +9,20 @@
 //   3. Somebody is an Admin — otherwise no account in the library could create one.
 import { db, persist } from '../db.js';
 import { hashPassword, verifyPassword } from '../util/crypto.js';
-import { FOUNDING_ADMIN, SEED_PASSWORD } from '../config.js';
+import { FOUNDING_ADMIN, SEED_PASSWORD, isWeakPassword } from '../config.js';
 import { ROLES, normaliseRole } from '../catalogue.js';
 
 export async function ensureAccounts({ log = console.log } = {}) {
   const changes = [];
 
   // 1. Editor, Marketing and Viewer no longer exist. Everyone holding one becomes a User,
-  //    which grants strictly more than Marketing or Viewer had and differs from Editor
-  //    only by adding storage and activity access.
+  //    which is what all three were in practice — none of them could purge a file, manage
+  //    accounts or read the activity log, and a User still cannot.
   for (const user of db.users) {
     if (ROLES.includes(user.role)) continue;
-    changes.push(`${user.email}: ${user.role} → User`);
-    user.role = 'User';
+    const next = normaliseRole(user.role);
+    changes.push(`${user.email}: ${user.role} → ${next}`);
+    user.role = next;
   }
 
   // Any account still holding the shared starting password has to replace it.
@@ -47,6 +48,28 @@ export async function ensureAccounts({ log = console.log } = {}) {
       changes.push(`${user.email}: must replace the shared starting password`);
     }
     user.mustChangePassword = stillHandover || Boolean(user.mustChangePassword);
+  }
+
+  // 1b. The founding administrator is exempt from the check above, because it is the one
+  //     account born with a password of its own. That exemption used to mean it kept
+  //     whatever ADMIN_PASSWORD said forever — including the shipped default, which is
+  //     eight digits long and printed in a file in the repository. So the same question is
+  //     asked of it, against the list of values known to be worthless: if the answer is
+  //     yes, it has to set a real one at the next sign-in like everybody else.
+  for (const user of db.users) {
+    if (user.email.toLowerCase() !== FOUNDING_ADMIN.email) continue;
+    if (user.mustChangePassword) break;
+    // eslint-disable-next-line no-await-in-loop
+    const weak = await Promise.all(
+      ['12345678', 'changeme123', 'password', 'admin123', 'harmonyhub', 'password123']
+        .filter(isWeakPassword)
+        .map((candidate) => verifyPassword(candidate, user.passwordHash)),
+    );
+    if (weak.some(Boolean)) {
+      user.mustChangePassword = true;
+      changes.push(`${user.email}: administrator password is a known default — must be replaced at next sign-in`);
+    }
+    break;
   }
 
   // 2. The founding administrator. Matched on email, which is the account's identity —

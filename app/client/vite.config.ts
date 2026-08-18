@@ -60,6 +60,12 @@ function pwa(): Plugin {
         // Sourcemaps are for a debugger, not for an offline launch. sw.js cannot precache
         // itself — the browser fetches it outside the cache, by design.
         .filter((f) => !f.endsWith('.map') && f !== '/sw.js')
+        // The typeface is 308 KB across eighteen subset files, and it does not change when
+        // the application does. Precaching it would re-download all of it on every deploy,
+        // because the shell cache is dropped and rebuilt each time. The worker keeps it in
+        // a separately versioned cache instead, populated on first visit by the page load
+        // that needs it — which has already happened by the time anyone is offline.
+        .filter((f) => !f.startsWith('/fonts/'))
         .sort();
 
       // Hashed over the bytes, not the names. The names alone would miss an index.html

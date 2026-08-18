@@ -39,11 +39,32 @@ services:
       # Empty is meaningful: it falls back to the .env value.
       MONGODB_URI: ${DOCKER_MONGODB_URI:-${MONGODB_URI}}
     ports:
-      - '8100:8100'
+      # Bound to the loopback interface. Put a TLS-terminating reverse proxy in front for
+      # anything beyond this machine — the application serves sessions, refresh cookies and
+      # file tickets, and every one of those is in the clear over plain HTTP.
+      - '127.0.0.1:8100:8100'
     # Lets a container reach something listening on the host — useful if you run MongoDB
     # outside compose:  DOCKER_MONGODB_URI=mongodb://host.docker.internal:27017
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    # ── Container hardening ───────────────────────────────────────────────────
+    # The process writes nothing to disk: the catalogue is in MongoDB, the bytes are in
+    # Drive, and downloads stream rather than buffer. So the filesystem is read-only, and
+    # the two directories Node genuinely needs are tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # A crash loop or a decode bomb should exhaust a limit, not the machine.
+    mem_limit: 1g
+    pids_limit: 256
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
     # A service-account key file, when one is used instead of pasted credentials. Mounted
     # read-only, and the path inside the container is what GOOGLE_SERVICE_ACCOUNT_KEY_FILE
     # must name. Harmless when the directory does not exist and oauth mode is in use.
@@ -54,29 +75,86 @@ services:
         condition: service_healthy
         required: false
     healthcheck:
-      # /healthz reports unhealthy when Google Drive is unreachable as well as when Mongo
-      # is, so a container that cannot serve files does not sit in the pool pretending it
-      # can.
-      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8100/healthz').then(r=>r.json()).then(j=>process.exit(j.ok?0:1)).catch(()=>process.exit(1))"]
+      # `live`, not `ok`. The two differ on purpose: `ok` is false while Google Drive is
+      # unreachable, but the process is still serving the catalogue, search and every
+      # admin screen — including the one that tells you the credential expired. Killing it
+      # for that would take away the screen you need to fix it.
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8100/healthz').then(r=>r.json()).then(j=>process.exit(j.live?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 40s
+
+  # Malware scanning. Opt-in, because it is a 1.5 GB image with a signature database it
+  # updates on its own, and most libraries take files only from people who already have an
+  # account. Turn it on with:
+  #
+  #   docker compose --profile av up -d clamav
+  #   CLAMAV_ENABLED=true CLAMAV_HOST=clamav   in .env
+  #
+  # First start takes a few minutes: freshclam downloads the signatures before clamd will
+  # answer, which is why the health check has a long start period.
+  clamav:
+    image: clamav/clamav:1.4
+    container_name: gcloud-clamav
+    profiles: ['av']
+    restart: unless-stopped
+    # Not published. The app container reaches it by name on the compose network, and a
+    # scanner exposed to the host is a service that accepts arbitrary bytes from anywhere.
+    expose:
+      - '3310'
+    volumes:
+      - clamav-db:/var/lib/clamav
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    healthcheck:
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
 
   mongo:
     image: mongo:7
     container_name: gcloud-mongo
     profiles: ['local']
     restart: unless-stopped
+    # Authentication is on. It was not, and the port was published on every interface —
+    # which is an open database holding the whole catalogue, including every account's
+    # password hash, to anything that can reach this machine.
+    command: ['--auth', '--bind_ip_all']
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-gcloud}
+      # No default on purpose. Left unset, Mongo creates no root user and --auth then
+      # admits nobody — the local database fails closed rather than starting open.
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-}
+      MONGO_INITDB_DATABASE: ${MONGODB_DB:-gcloud}
     ports:
-      - '27017:27017'
+      # Loopback only. The app container reaches it over the compose network by name and
+      # does not need this published at all — it is here for mongosh on this machine.
+      - '127.0.0.1:27017:27017'
     volumes:
       - mongo-data:/data/db
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --username
+        - ${MONGO_ROOT_USER:-gcloud}
+        - --password
+        - ${MONGO_ROOT_PASSWORD:-}
+        - --authenticationDatabase
+        - admin
+        - --eval
+        - "db.adminCommand('ping').ok"
       interval: 10s
       timeout: 5s
       retries: 10
 
 volumes:
   mongo-data:
+  clamav-db:
