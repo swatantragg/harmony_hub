@@ -11,9 +11,10 @@
    ---------------------------------------------------------------------------
    Cached  · the app shell — index.html, the hashed JS/CSS bundle, icons, the manifest.
              Named by content hash, so a cache hit is always the right bytes.
-           · the webfont — Poppins, from fonts.googleapis.com and fonts.gstatic.com.
-             Cross-origin and opaque, which is fine: it is a font, and without it an
-             offline launch falls back to system-ui and looks like a different product.
+           · the webfont — Poppins, served from this origin under /fonts. Kept in its own
+             cache rather than the shell's, because the letterforms do not change when the
+             application does, and without them an offline launch falls back to system-ui
+             and looks like a different product.
 
    NOT     · anything under /api. Every one of those responses is somebody's private
              library, behind a session, on a device that may be shared or lost. A disk
@@ -27,14 +28,12 @@
 
 const BUILD = '__BUILD__';
 const SHELL = `gcloud-shell-${BUILD}`;
-const FONTS = 'gcloud-fonts-v1';
+const FONTS = 'gcloud-fonts-v2';
 const PRECACHE = __PRECACHE__;
 
 // The document every navigation resolves to. The app routes on the hash, so there is
 // exactly one of these and no server round trip is needed to pick it.
 const SHELL_DOC = '/index.html';
-
-const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -76,9 +75,9 @@ async function cacheFirst(request, cacheName) {
   const hit = await cache.match(request);
   if (hit) return hit;
   const response = await fetch(request);
-  // Opaque responses (the cross-origin font files) report status 0 and cannot be
-  // inspected; they are still worth keeping, and are the one exception to the ok check.
-  if (response.ok || response.type === 'opaque') await cache.put(request, response.clone());
+  // Everything cached is same-origin now, so an opaque response is no longer expected and
+  // no longer stored: a status this worker cannot inspect is one it should not keep.
+  if (response.ok) await cache.put(request, response.clone());
   return response;
 }
 
@@ -91,14 +90,18 @@ self.addEventListener('fetch', (event) => {
   // The control plane and the byte path, untouched. See the header of this file.
   if (url.origin === self.location.origin && (url.pathname.startsWith('/api/') || url.pathname === '/healthz')) return;
 
-  if (FONT_HOSTS.includes(url.hostname)) {
+  // Every cross-origin request — a Drive resumable session, a thumbnail — is the network's
+  // business, not ours. The typeface used to be the exception; it is served from this
+  // origin now, so there is no longer any cross-origin request worth caching.
+  if (url.origin !== self.location.origin) return;
+
+  // The self-hosted typeface. Content-addressed by name and versioned with the family, so
+  // it is kept in its own cache rather than being dropped on every deploy: the letterforms
+  // do not change when the application does.
+  if (url.pathname.startsWith('/fonts/')) {
     event.respondWith(cacheFirst(request, FONTS).catch(() => fetch(request)));
     return;
   }
-
-  // Anything else cross-origin — a Drive resumable session, a thumbnail — is the network's
-  // business, not ours.
-  if (url.origin !== self.location.origin) return;
 
   // Every navigation is the same document, and it is already in the cache. Falling back to
   // the network covers the first load after a cache eviction.

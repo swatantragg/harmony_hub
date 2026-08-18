@@ -12,32 +12,143 @@
 //                         and <video> would refuse to scrub at all.
 //   Aborts propagate.     When the browser gives up mid-stream, the fetch to Drive is
 //                         aborted too, instead of quietly finishing at Google's expense.
+//
+// And three the route did not hold before, which is what the rest of this file is about:
+//
+//   The ticket is not     A signature and an expiry say the ticket was minted by us and is
+//   the whole story.      not stale. They say nothing about whether the account it was
+//                         minted for still exists, whether the share it came from has been
+//                         revoked, or whether the asset has since been purged. All three
+//                         are checked here, at redemption, on every request.
+//   Nothing executes.     This route answers on the application's own origin, so anything
+//                         served inline runs with the application's privileges. Only an
+//                         allowlist of media types is ever served inline; everything else
+//                         downloads, with an inert content type, under a sandbox CSP.
+//   Egress is metered.    An unauthenticated route that streams whole files is a bandwidth
+//                         and Drive-quota liability without a budget on it.
 import express from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
+import { assetContext, db } from '../db.js';
 import { verifyFileToken } from '../services/signing.js';
-import { contentDisposition } from '../services/storage.js';
+import { contentDisposition, dispositionFor, safeContentType } from '../services/storage.js';
 import { downloadResponse, driveErrorCode, isNotFound } from '../storage/drive.js';
 import { problem } from '../middleware/auth.js';
+import { record } from '../services/audit.js';
 
 export const filesRouter = express.Router();
 
 // Headers Drive sets that must not be relayed: they describe Google's connection to us,
-// not ours to the browser, and copying them corrupts the response.
+// not ours to the browser, and copying them corrupts the response — or, in the case of
+// content-type and the CORS headers, overrides a decision this file has already made.
 const SKIP = new Set([
   'content-encoding', 'transfer-encoding', 'connection', 'keep-alive',
-  'content-disposition', 'access-control-allow-origin', 'alt-svc', 'set-cookie',
+  'content-disposition', 'content-type', 'content-security-policy',
+  'access-control-allow-origin', 'access-control-expose-headers',
+  'alt-svc', 'set-cookie', 'x-frame-options', 'server', 'x-guploader-uploadid',
 ]);
 
-filesRouter.get('/:token', async (req, res) => {
+/**
+ * Everything a valid signature does not prove.
+ *
+ * A ticket is a bearer credential with a lifetime, so between minting and redemption the
+ * world can change underneath it: the person can be suspended, their password changed,
+ * the share revoked, the file purged. Each of those is a revocation the product promises,
+ * and a promise that is only kept at mint time is not kept at all.
+ */
+function stillAuthorised(grant) {
+  // Minted for a person → that person must still be able to sign in, at the same session
+  // generation. A suspension, a role change or a password change bumps tokenVersion and
+  // lands here as a 403.
+  if (grant.userId) {
+    const user = db.users.find((u) => u._id === grant.userId);
+    if (!user || user.status !== 'active') {
+      return { ok: false, status: 403, detail: 'The account this link was created for is no longer active.' };
+    }
+    if (grant.tokenVersion != null && Number(grant.tokenVersion) !== Number(user.tokenVersion ?? 0)) {
+      return { ok: false, status: 403, detail: 'This link was created before the account’s sessions were reset. Open the file again for a fresh one.' };
+    }
+  }
+
+  // Minted under a share → the share's gates are the link's gates, for its whole life.
+  if (grant.shareId) {
+    const share = db.shares.find((s) => s._id === grant.shareId);
+    if (!share) return { ok: false, status: 410, detail: 'The share this link belongs to no longer exists.' };
+    if (share.revokedAt) return { ok: false, status: 410, detail: 'This link has been revoked by its owner.' };
+    if (Date.parse(share.expiresAt) < Date.now()) {
+      return { ok: false, status: 410, detail: 'The share this link belongs to has expired.' };
+    }
+  }
+
+  // Minted for a catalogued asset → a purge or a soft delete ends every outstanding link
+  // to it, rather than leaving up to an hour of working access to a file somebody
+  // deliberately removed.
+  if (grant.assetId) {
+    const ctx = assetContext(grant.assetId);
+    if (!ctx) return { ok: false, status: 410, detail: 'This file is no longer in the catalogue.' };
+    if (ctx.asset.deletedAt) return { ok: false, status: 410, detail: 'This file has been deleted.' };
+    if (ctx.asset.drive?.fileId && ctx.asset.drive.fileId !== grant.fileId) {
+      return { ok: false, status: 410, detail: 'This file has been replaced. Open it again for a current link.' };
+    }
+  }
+
+  return { ok: true };
+}
+
+// Applied to every response on this route, whatever it carries.
+//
+// The sandbox directive is the load-bearing one: even if an executable type were somehow
+// served inline, a sandboxed document has an opaque origin — no access to the
+// application's storage, no scripts, no forms, no navigation of the opener.
+function harden(res) {
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('content-security-policy', "sandbox; default-src 'none'; frame-ancestors 'none'");
+  res.setHeader('cross-origin-resource-policy', 'same-origin');
+  res.setHeader('x-frame-options', 'DENY');
+  res.setHeader('referrer-policy', 'no-referrer');
+  // The ticket already expires; a cached copy that outlived it would defeat the point.
+  res.setHeader('cache-control', 'private, max-age=0, no-store');
+}
+
+function verify(req, res) {
   const grant = verifyFileToken(req.params.token);
   if (!grant.ok) {
-    const detail = grant.reason === 'expired'
-      ? 'This link has expired. Links are deliberately short-lived — reopen the file in GCloud for a fresh one.'
-      : 'This link is not valid.';
-    return problem(res, grant.reason === 'expired' ? 410 : 403, grant.reason === 'expired' ? 'Gone' : 'Forbidden', detail);
+    const expired = grant.reason === 'expired';
+    harden(res);
+    problem(
+      res,
+      expired ? 410 : 403,
+      expired ? 'Gone' : 'Forbidden',
+      expired
+        ? 'This link has expired. Links are deliberately short-lived — reopen the file in GCloud for a fresh one.'
+        : 'This link is not valid.',
+    );
+    return null;
   }
+
+  const live = stillAuthorised(grant);
+  if (!live.ok) {
+    harden(res);
+    // Recorded: a burst of these is either a revoked partner still trying, or a leaked
+    // link being worked through by somebody who should not have it.
+    record(
+      { ip: req.ip, socketIp: req.socketIp, get: (h) => req.get(h), user: null },
+      {
+        action: 'FILE_TICKET_REJECTED', entity: 'asset', entityId: grant.assetId ?? 'unknown',
+        label: `Rejected a file link: ${live.detail}`,
+        meta: { purpose: grant.purpose, shareId: grant.shareId ?? null, ticketId: grant.ticketId },
+      },
+    );
+    problem(res, live.status, live.status === 410 ? 'Gone' : 'Forbidden', live.detail);
+    return null;
+  }
+  return grant;
+}
+
+filesRouter.get('/:token', async (req, res) => {
+  const grant = verify(req, res);
+  if (!grant) return;
 
   const controller = new AbortController();
   // The browser closing the tab, or the <video> element seeking elsewhere, must stop the
@@ -54,6 +165,7 @@ filesRouter.get('/:token', async (req, res) => {
       signal: controller.signal,
     });
   } catch (err) {
+    harden(res);
     if (isNotFound(err)) {
       return problem(res, 410, 'Gone', 'Google Drive no longer has this file. GCloud will flag it as missing on the next check.');
     }
@@ -64,11 +176,18 @@ filesRouter.get('/:token', async (req, res) => {
   for (const [name, value] of upstream.headers) {
     if (!SKIP.has(name.toLowerCase())) res.setHeader(name, value);
   }
-  res.setHeader('content-disposition', contentDisposition(grant.filename, { inline: grant.inline }));
+
+  // The content type Google reports for the stored bytes — not the one the uploader
+  // claimed, and not one this process is free to trust. The policy decides what happens
+  // to it: media renders inline, everything else downloads, and an executable type is
+  // rewritten to application/octet-stream on the way out.
+  const upstreamType = grant.exportMime || upstream.headers.get('content-type');
+  const decision = dispositionFor(upstreamType, { requested: grant.inline });
+
+  harden(res);
+  res.setHeader('content-type', safeContentType(decision.type));
+  res.setHeader('content-disposition', contentDisposition(grant.filename, { inline: decision.inline }));
   res.setHeader('accept-ranges', 'bytes');
-  // The ticket already expires; a cached copy that outlived it would defeat the point.
-  res.setHeader('cache-control', 'private, max-age=0, no-store');
-  res.setHeader('x-content-type-options', 'nosniff');
 
   if (!upstream.body) return res.end();
 
@@ -87,19 +206,21 @@ filesRouter.get('/:token', async (req, res) => {
 // HEAD is what a <video> element issues first to learn the length and whether ranges are
 // supported. Answering it saves a wasted full-body request on every media preview.
 filesRouter.head('/:token', async (req, res) => {
-  const grant = verifyFileToken(req.params.token);
-  if (!grant.ok) return res.status(grant.reason === 'expired' ? 410 : 403).end();
+  const grant = verify(req, res);
+  if (!grant) return;
   try {
     const upstream = await downloadResponse(grant.fileId, { range: 'bytes=0-0' });
     const total = Number(String(upstream.headers.get('content-range') || '').split('/')[1] || 0);
     upstream.body?.cancel?.();
+    const decision = dispositionFor(upstream.headers.get('content-type'), { requested: grant.inline });
+    harden(res);
     res.setHeader('accept-ranges', 'bytes');
     if (total) res.setHeader('content-length', String(total));
-    const type = upstream.headers.get('content-type');
-    if (type) res.setHeader('content-type', type);
-    res.setHeader('content-disposition', contentDisposition(grant.filename, { inline: grant.inline }));
+    res.setHeader('content-type', safeContentType(decision.type));
+    res.setHeader('content-disposition', contentDisposition(grant.filename, { inline: decision.inline }));
     return res.status(200).end();
   } catch {
+    harden(res);
     return res.status(502).end();
   }
 });

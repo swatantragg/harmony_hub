@@ -155,21 +155,28 @@ export function runSearch(query) {
   return { results, facets, sort };
 }
 
+// The ceiling on a page. It used to be 5,000, which is a whole library serialised into
+// one JSON body on demand — a cheap request to make and an expensive one to answer, which
+// is the shape of every denial-of-service. 500 is still far more than any screen renders.
+const MAX_PAGE = 500;
+// A live verification is one Drive call per row, against a per-application quota shared by
+// everybody. It is capped much lower than the page it verifies.
+const MAX_LIVE_VERIFY = 25;
+
 searchRouter.get('/', async (req, res) => {
-  const page = Math.max(1, Number(req.query.page) || 1);
-  // The ceiling exists to stop one request rendering the whole library into a single JSON
-  // body, not to dictate a page size. It is high enough for the "All rows" option the UI
-  // offers on a library of this scale, and the search itself is an in-memory pass either way.
-  const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 24));
+  const page = Math.max(1, Math.min(10_000, Number(req.query.page) || 1));
+  const limit = Math.min(MAX_PAGE, Math.max(1, Number(req.query.limit) || 24));
+  const q = String(req.query.q ?? '');
+  if (q.length > 200) {
+    return problem(res, 422, 'Unprocessable Entity', 'That search term is too long.');
+  }
   const { results, facets, sort } = runSearch(req.query);
 
   const slice = results.slice((page - 1) * limit, page * limit);
 
-  // &verify=live forces a real files.get for the current page — slower, but definitive.
-  // The page is capped at 96 and the fan-out is bounded, so "verify these N" is one
-  // bounded burst against Drive rather than one call per result in series.
+  // &verify=live forces a real files.get for the visible rows — slower, but definitive.
   if (req.query.verify === 'live') {
-    await storage.verifyAssets(slice.map((row) => row.asset));
+    await storage.verifyAssets(slice.slice(0, MAX_LIVE_VERIFY).map((row) => row.asset));
     persist();
   }
 
@@ -239,6 +246,7 @@ searchRouter.get('/quick', (req, res) => {
 searchRouter.get('/drive', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.json({ data: [], total: 0, query: null });
+  if (q.length > 200) return problem(res, 422, 'Unprocessable Entity', 'That search term is too long.');
 
   const escaped = escapeQuery(q);
   const clauses = [

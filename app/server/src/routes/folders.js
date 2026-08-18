@@ -22,6 +22,7 @@ import { record } from '../services/audit.js';
 import * as storage from '../services/storage.js';
 import { ROOTS } from '../config.js';
 import { uuid } from '../util/crypto.js';
+import { LIMITS, fields, list, str } from '../util/validate.js';
 
 export const foldersRouter = express.Router();
 foldersRouter.use(authenticate);
@@ -125,11 +126,32 @@ foldersRouter.get('/:id', (req, res) => {
 });
 
 foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
-  const name = String(req.body?.name || '').trim();
-  if (!name) return problem(res, 422, 'Unprocessable Entity', 'A folder needs a name.');
+  // A catalogue folder is backed by a real Drive folder, so it cannot be created while
+  // Google is unreachable — and a catalogue row with no folder behind it is exactly the
+  // drift reconciliation exists to clean up.
+  if (!storage.driveReady()) {
+    const status = storage.driveStatus();
+    return problem(
+      res, 503, 'Service Unavailable',
+      `Google Drive is not reachable, so a folder cannot be created right now. (${status.error ?? 'no detail'})`,
+      { degraded: true },
+    );
+  }
+
+  const check = fields(req.body || {}, {
+    name: (v) => str(v, { max: LIMITS.name, field: 'name', required: true }),
+    description: (v) => str(v, { max: LIMITS.description, field: 'description', allowEmpty: true }),
+    tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
+    parentId: (v) => str(v, { max: 80, field: 'parentId' }),
+    songId: (v) => str(v, { max: 80, field: 'songId' }),
+    artistId: (v) => str(v, { max: 80, field: 'artistId' }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+
+  const name = check.value.name;
   if (/[/\\]/.test(name)) return problem(res, 422, 'Unprocessable Entity', 'Folder names cannot contain / or \\.');
 
-  const parentId = req.body?.parentId || null;
+  const parentId = check.value.parentId || null;
   const parent = parentId ? db.folders.find((f) => f._id === parentId && !f.deletedAt) : null;
   if (parentId && !parent) return problem(res, 404, 'Not Found', 'The parent folder no longer exists.');
 
@@ -152,14 +174,14 @@ foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
   const folder = {
     _id: `folder_${uuid().slice(0, 8)}`,
     name,
-    description: String(req.body?.description || ''),
-    tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
+    description: check.value.description || '',
+    tags: check.value.tags || [],
     parentId,
     // The link between the two worlds. Everything else about a folder is presentation.
     driveFolderId: driveFolder.fileId,
     driveWebViewLink: driveFolder.webViewLink ?? null,
-    songId: req.body?.songId || null,
-    artistId: req.body?.artistId || null,
+    songId: check.value.songId || null,
+    artistId: check.value.artistId || null,
     createdBy: req.user.sub,
     createdAt: now,
     updatedAt: now,
@@ -181,19 +203,36 @@ foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
 foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   const folder = db.folders.find((f) => f._id === req.params.id && !f.deletedAt);
   if (!folder) return problem(res, 404, 'Not Found', 'No folder with that id.');
+
+  const check = fields(req.body || {}, {
+    name: (v) => str(v, { max: LIMITS.name, field: 'name' }),
+    description: (v) => str(v, { max: LIMITS.description, field: 'description', allowEmpty: true }),
+    tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
+    parentId: (v) => str(v, { max: 80, field: 'parentId' }),
+    songId: (v) => str(v, { max: 80, field: 'songId' }),
+    artistId: (v) => str(v, { max: 80, field: 'artistId' }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  if ('name' in check.value && !check.value.name) {
+    return problem(res, 422, 'Unprocessable Entity', 'A folder needs a name.');
+  }
+  if (check.value.name && /[/\\]/.test(check.value.name)) {
+    return problem(res, 422, 'Unprocessable Entity', 'Folder names cannot contain / or \\.');
+  }
+
   const before = { name: folder.name, tags: [...folder.tags], description: folder.description, parentId: folder.parentId };
 
   let renamedInDrive = null;
   let movedInDrive = null;
 
-  if (req.body?.name && req.body.name !== folder.name && folder.driveFolderId) {
-    renamedInDrive = await storage.renameFolder(folder.driveFolderId, req.body.name).then(() => true).catch(() => false);
+  if (check.value.name && check.value.name !== folder.name && folder.driveFolderId) {
+    renamedInDrive = await storage.renameFolder(folder.driveFolderId, check.value.name).then(() => true).catch(() => false);
   }
 
   // Re-parenting a folder. Refused when the destination sits inside the folder being
   // moved, because that is a cycle and Drive would reject it with a much worse message.
-  if ('parentId' in (req.body || {}) && (req.body.parentId ?? null) !== (folder.parentId ?? null)) {
-    const nextParentId = req.body.parentId || null;
+  if ('parentId' in (req.body || {}) && (check.value.parentId ?? null) !== (folder.parentId ?? null)) {
+    const nextParentId = check.value.parentId || null;
     if (nextParentId && isDescendant(nextParentId, folder._id)) {
       return problem(res, 422, 'Unprocessable Entity', 'A folder cannot be moved inside itself.');
     }
@@ -212,13 +251,13 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   }
 
   for (const field of ['name', 'description', 'tags', 'songId', 'artistId', 'parentId']) {
-    if (field in (req.body || {})) folder[field] = req.body[field];
+    if (field in (req.body || {})) folder[field] = check.value[field] ?? null;
   }
   folder.updatedAt = new Date().toISOString();
   persist();
   record(req, {
     action: 'FOLDER_UPDATE', entity: 'folder', entityId: folder._id,
-    label: `Updated folder “${folder.name}”`, before, after: req.body,
+    label: `Updated folder “${folder.name}”`, before, after: check.value,
     meta: { bytesMoved: 0, renamedInDrive, movedInDrive },
   });
   res.json(decorate(folder));
@@ -274,7 +313,11 @@ foldersRouter.post('/:id/assets', requires('asset:edit'), async (req, res) => {
   if (req.params.id !== 'none' && !target) return problem(res, 404, 'Not Found', 'No folder with that id.');
 
   const destination = target?.driveFolderId || ROOTS.assets;
-  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds : [];
+  // Bounded: this loop issues one Drive call per id, so an unbounded list is both a
+  // request that never ends and a way to exhaust the shared Drive quota.
+  const idCheck = list(req.body?.assetIds, { max: LIMITS.ids, itemMax: 80, field: 'assetIds' });
+  if (idCheck.problem) return problem(res, 422, 'Unprocessable Entity', idCheck.problem);
+  const ids = idCheck.value ?? [];
 
   let moved = 0;
   const failed = [];

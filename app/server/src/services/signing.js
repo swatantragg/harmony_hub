@@ -44,7 +44,10 @@ const sign = (payload) =>
  * @param {string}  [grant.exportMime] set for Google Docs/Sheets/Slides, which must be
  *                                     converted on the way out because they have no bytes
  */
-export function mintFileToken({ fileId, filename, inline = false, expiresIn = 300, purpose = 'download', assetId = null, exportMime = null }) {
+export function mintFileToken({
+  fileId, filename, inline = false, expiresIn = 300, purpose = 'download',
+  assetId = null, exportMime = null, userId = null, tokenVersion = null, shareId = null,
+}) {
   const claims = {
     f: fileId,
     n: filename || null,
@@ -52,8 +55,17 @@ export function mintFileToken({ fileId, filename, inline = false, expiresIn = 30
     p: purpose,
     a: assetId,
     x: exportMime,
+    // Who the ticket was minted for, and which generation of their session. Both are
+    // re-checked at redemption, which is what makes a suspension, a role change or a
+    // password change reach a link that was handed out before any of them happened.
+    u: userId,
+    tv: tokenVersion,
+    // The share a ticket was minted under, so revoking the share kills the link rather
+    // than leaving up to an hour of working access behind it.
+    s: shareId,
     e: Math.floor(Date.now() / 1000) + Math.max(10, Math.floor(expiresIn)),
-    // Makes two tickets for the same file in the same second distinguishable in the log.
+    // Makes two tickets for the same file in the same second distinguishable in the log,
+    // and gives the egress limiter something per-ticket to count.
     j: crypto.randomBytes(6).toString('base64url'),
   };
   const payload = b64(JSON.stringify(claims));
@@ -91,6 +103,10 @@ export function verifyFileToken(token) {
     purpose: claims.p,
     assetId: claims.a ?? null,
     exportMime: claims.x ?? null,
+    userId: claims.u ?? null,
+    tokenVersion: claims.tv ?? null,
+    shareId: claims.s ?? null,
+    ticketId: claims.j ?? null,
     expiresAt: new Date(Number(claims.e) * 1000).toISOString(),
   };
 }

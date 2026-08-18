@@ -7,11 +7,24 @@ mongoose.set('strictQuery', false);
 
 // A driver failure here arrives as a sixty-line TopologyDescription dump that says
 // nothing about what to do. These are the three things it is almost always caused by.
+//
+// The per-server errors have to be included in the text being matched, and that is not a
+// detail. Mongoose replaces the real cause with one generic sentence about IP allowlists
+// on *every* server-selection failure, whatever went wrong; the actual reason — a TLS
+// alert, a refused connection, a DNS failure — survives only inside
+// `err.reason.servers`. Matching on the message alone meant every branch below was
+// unreachable for exactly the class of failure it was written for.
 function explain(err) {
-  const text = `${err?.name} ${err?.message}`;
+  const perServer = [...(err?.reason?.servers?.values?.() ?? [])]
+    .map((desc) => desc?.error?.message ?? '')
+    .join(' ');
+  const text = `${err?.name} ${err?.message} ${perServer}`;
   if (/SSL alert number 8|tlsv1 alert internal error/i.test(text)) {
-    return 'Atlas closed the TLS connection. That is what it does when your IP is not on the'
-      + ' allowlist — check Atlas → Network Access, and remember a home IP changes.';
+    return 'Atlas accepted the TCP connection and then closed the TLS one. That is what it'
+      + ' does when the connecting IP is not on the allowlist — it is not a password'
+      + ' problem, and a wrong password would fail differently.\n'
+      + '    Atlas → Network Access → IP Access List → Add current IP address.\n'
+      + '    A home or office IP is reassigned by the ISP without warning, so this recurs.';
   }
   if (/Authentication failed|bad auth/i.test(text)) {
     return 'The username or password in MONGODB_URI was rejected. A password containing'

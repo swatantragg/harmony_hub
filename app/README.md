@@ -1,5 +1,11 @@
 # GCloud
 
+> **Security:** [`SECURITY.md`](SECURITY.md) sets out what protects the library, the two
+> configuration switches that matter most (`TRUST_PROXY` and the destructive-operation
+> flags), and what to do when a link leaks or an account is compromised. Before a deploy:
+> `npm run audit:security`. Back the catalogue up with `npm run backup` — Drive protects
+> the bytes, nothing but this protects everything that makes them a library.
+
 Music asset management on **Google Drive** and **MongoDB**.
 
 Every screen, the folder model, the three share audiences, the preview panel, the
@@ -198,13 +204,21 @@ which is a handover value rather than a credential: it opens the sign-in screen 
 nothing else, and every route stays closed until the person sets a password of their own.
 The boot banner names any account still in that state.
 
-There are two roles and one difference between them:
+There are two roles, and the line between them is drawn at what cannot be undone:
 
-| | Admin | User |
-|---|---|---|
-| Search, upload, edit, rename, delete, restore, share | ✅ | ✅ |
-| Storage health, drift remediation, activity log | ✅ | ✅ |
-| Add and manage accounts | ✅ | ❌ |
+| | User | Admin |
+|---|:-:|:-:|
+| Search, preview, download | ✅ | ✅ |
+| Upload, edit, rename, move, share | ✅ | ✅ |
+| Delete — to the Drive bin, recoverable for 30 days | ✅ | ✅ |
+| Storage health and drift remediation | ✅ | ✅ |
+| **Purge permanently** (no bin, no revisions, no undo) | ❌ | ✅ |
+| **Empty the Drive bin** (the whole account's, not just ours) | ❌ | ✅ |
+| Activity log, add and manage accounts | ❌ | ✅ |
+
+The two rows in bold destroy data nothing can bring back, so they also re-ask for the
+operator's own password — a signed-in tab is not evidence that the person at the keyboard
+meant it. Everything a User can do has a way back.
 
 The last active Admin cannot be demoted or suspended — including by themselves — because a
 library with no administrator has no route back.

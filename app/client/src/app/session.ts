@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, auth } from '../lib/api';
+import { api, auth, resume } from '../lib/api';
 import type { User } from '../lib/types';
 
 interface SessionState {
@@ -10,6 +10,8 @@ interface SessionState {
   /** Replaces the password on the signed-in account and clears the first-run gate. */
   setPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Ends every session on this account, on every device. */
+  logoutEverywhere: () => Promise<void>;
   can: (permission: string) => boolean;
 }
 
@@ -17,8 +19,13 @@ export const useSession = create<SessionState>((set, get) => ({
   user: null,
   loading: true,
 
+  // The access token is in memory, so a reload starts with nothing. What survives is the
+  // HttpOnly refresh cookie, which this exchanges for a fresh access token — which is
+  // also what makes "signed in" survive a browser restart without a token sitting in
+  // storage where a script could read it.
   bootstrap: async () => {
-    if (!auth.get()) { set({ user: null, loading: false }); return; }
+    const restored = await resume();
+    if (!restored) { set({ user: null, loading: false }); return; }
     try {
       const user = await api<User>('/me');
       set({ user, loading: false });
@@ -53,6 +60,12 @@ export const useSession = create<SessionState>((set, get) => ({
 
   logout: async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch { /* best effort */ }
+    auth.clear();
+    set({ user: null });
+  },
+
+  logoutEverywhere: async () => {
+    try { await api('/auth/logout-all', { method: 'POST' }); } catch { /* best effort */ }
     auth.clear();
     set({ user: null });
   },

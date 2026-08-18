@@ -1,14 +1,15 @@
 import express from 'express';
 import { db, persist } from '../db.js';
-import { authenticate, requires, problem } from '../middleware/auth.js';
+import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { context, shape, validateName } from '../services/assets.js';
-import { record, notify } from '../services/audit.js';
+import { alert, record, notify } from '../services/audit.js';
 import * as storage from '../services/storage.js';
-import { CHUNK_SIZE, ROOTS, TRASH_DAYS, TTL, VERIFY_BATCH_MAX } from '../config.js';
+import { APP_ORIGIN, CHUNK_SIZE, ROOTS, TRASH_DAYS, TTL, VERIFY_BATCH_MAX } from '../config.js';
 import { VERSION_LABELS } from '../catalogue.js';
 import { allTypes, resolveFamily } from '../services/vocabulary.js';
 import { properties } from '../storage/drive.js';
 import { uuid } from '../util/crypto.js';
+import { LIMITS, fields, list, str } from '../util/validate.js';
 
 export const assetsRouter = express.Router();
 assetsRouter.use(authenticate);
@@ -16,8 +17,15 @@ assetsRouter.use(authenticate);
 const notFound = (res) => problem(res, 404, 'Not Found', 'No asset with that id exists in the catalogue.');
 
 // ── Bulk existence probe (§10.5.3) — declared before /:id so it is not shadowed ──
+// The ceiling is deliberately far below VERIFY_BATCH_MAX for an interactive caller: each
+// id is a live files.get, Drive enforces roughly 1,000 requests per 100 seconds per user
+// for the whole application, and one caller looping this at the old limit of 500 could
+// exhaust that budget for everybody in a few seconds. Reconciliation, which is a
+// background job with its own pacing, still uses the larger number.
+const INTERACTIVE_VERIFY_MAX = Math.min(50, VERIFY_BATCH_MAX);
+
 assetsRouter.post('/verify-batch', async (req, res) => {
-  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds.slice(0, VERIFY_BATCH_MAX) : [];
+  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds.slice(0, INTERACTIVE_VERIFY_MAX) : [];
   const summary = { available: 0, missing: 0, trashed: 0, restoring: 0, mismatch: 0, unverified: 0 };
   const results = [];
 
@@ -218,7 +226,15 @@ assetsRouter.post('/:id/replace', requires('asset:edit'), async (req, res) => {
       mimeType: contentType || ctx.asset.mimeType,
       sizeBytes: Number(sizeBytes || 0),
       appProperties: properties({ replacedBy: req.user.sub, replacedAt: new Date().toISOString() }),
-      origin: req.get('origin') || undefined,
+      // The configured origin, never the request's Origin header — that header is written
+      // by the caller, and Google mirrors it into the session's CORS policy.
+      origin: APP_ORIGIN,
+    });
+    // Registered so /uploads/resume and /uploads/abort will speak to it. An unregistered
+    // session URI is refused outright, which is what closes the request-forgery hole.
+    storage.registerUploadSession(session.sessionUri, {
+      userId: req.user.sub, assetId: ctx.asset.assetId, fileId: ctx.asset.drive.fileId,
+      sizeBytes: Number(sizeBytes || 0),
     });
     res.json({
       uploadUrl: session.sessionUri,
@@ -311,6 +327,10 @@ assetsRouter.post('/:id/download', requires('asset:download'), async (req, res) 
     expiresIn: TTL.download,
     purpose: 'download',
     assetId: ctx.asset.assetId,
+    // Binds the ticket to this person and this session generation, so suspending the
+    // account or resetting its sessions kills the link rather than leaving it live for
+    // the rest of its window.
+    user: req.user,
   });
   persist();
   record(req, {
@@ -320,7 +340,10 @@ assetsRouter.post('/:id/download', requires('asset:download'), async (req, res) 
   res.json({ url, expiresIn: TTL.download, downloadAs, webViewLink: ctx.asset.drive.webViewLink ?? null });
 });
 
-assetsRouter.post('/:id/preview', async (req, res) => {
+// A preview ticket is a full-byte, Range-capable grant to the file — the only thing
+// separating it from a download is the Content-Disposition. It therefore needs the same
+// permission a download needs; leaving it ungated meant `asset:download` decided nothing.
+assetsRouter.post('/:id/preview', requires('asset:download'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
   const url = storage.signedUrl({
@@ -331,11 +354,16 @@ assetsRouter.post('/:id/preview', async (req, res) => {
     expiresIn: TTL.preview,
     purpose: 'preview',
     assetId: ctx.asset.assetId,
+    user: req.user,
   });
   res.json({
     url,
     expiresIn: TTL.preview,
     contentType: ctx.asset.mimeType,
+    // Whether the browser will actually render it here, or download it instead. Decided
+    // by the same policy the byte path applies, so the UI can say so up front rather
+    // than opening a viewer that turns into a download.
+    inlineSupported: storage.isInlineSafe(ctx.asset.mimeType),
     // Drive renders its own preview for anything it understands, including formats no
     // browser will play. Offered alongside rather than instead of the inline preview.
     webViewLink: ctx.asset.drive?.webViewLink ?? null,
@@ -349,17 +377,34 @@ const EDITABLE = ['displayName', 'description', 'type', 'tags', 'version'];
 assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
+
+  // Every editable field is coerced and bounded before it is written. Without this a
+  // description is however many megabytes fit in the body cap, a tag list is unbounded,
+  // and a field the code expects to be text can arrive as an object.
+  const check = fields(req.body || {}, {
+    displayName: (v) => str(v, { max: LIMITS.name, field: 'displayName' }),
+    description: (v) => str(v, { max: LIMITS.description, field: 'description', allowEmpty: true }),
+    type: (v) => str(v, { max: 80, field: 'type' }),
+    version: (v) => str(v, { max: 40, field: 'version' }),
+    tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+
+  if (check.value.type != null && !allTypes().some((t) => t.type === check.value.type)) {
+    return problem(res, 422, 'Unprocessable Entity', 'That is not an asset type in this library.');
+  }
+
   const before = {};
   const after = {};
   for (const field of EDITABLE) {
     if (!(field in (req.body || {}))) continue;
     if (field === 'displayName') {
-      const check = validateName(req.body.displayName, { current: ctx.asset.displayName, siblings: ctx.list });
-      if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problems.join(' '));
+      const nameCheck = validateName(check.value.displayName, { current: ctx.asset.displayName, siblings: ctx.list });
+      if (!nameCheck.ok) return problem(res, 422, 'Unprocessable Entity', nameCheck.problems.join(' '));
     }
     before[field] = ctx.asset[field];
-    ctx.asset[field] = req.body[field];
-    after[field] = req.body[field];
+    ctx.asset[field] = check.value[field];
+    after[field] = check.value[field];
   }
   if (after.type) ctx.asset.family = resolveFamily(after.type);
   ctx.asset.updatedAt = new Date().toISOString();
@@ -452,8 +497,13 @@ assetsRouter.post('/:id/undelete', requires('asset:delete'), async (req, res) =>
   return res.json({ ok: true, untrashedInDrive: restored });
 });
 
-// Permanent purge — the file and every revision of it. Requires the display name typed back.
-assetsRouter.delete('/:id/purge', requires('asset:purge'), async (req, res) => {
+// Permanent purge — the file and every revision of it.
+//
+// Three gates, because this is the one operation in the product with nothing behind it:
+// no trash, no revision, no backup. The Admin role, the account's own password re-entered
+// (so a borrowed session cannot do it), and the display name typed back (so the wrong row
+// cannot do it).
+assetsRouter.delete('/:id/purge', requires('asset:purge'), requireStepUp('Purging a file'), async (req, res) => {
   const found = context(req.params.id);
   if (!found) return notFound(res);
   if (req.body?.confirm !== found.asset.displayName) {
@@ -474,8 +524,9 @@ assetsRouter.delete('/:id/purge', requires('asset:purge'), async (req, res) => {
   if (at >= 0) found.list.splice(at, 1);
   db.shares = db.shares.filter((s) => s.assetId !== req.params.id && s.targetId !== req.params.id);
   persist();
-  record(req, {
+  alert(req, {
     action: 'ASSET_PURGE', entity: 'asset', entityId: req.params.id,
+    level: 'danger',
     label: `Permanently purged ${found.asset.displayName}`,
     before: { fileId: found.asset.drive?.fileId, sizeBytes: found.asset.drive?.sizeBytes },
     meta: { revisionsDestroyed },

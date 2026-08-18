@@ -1,18 +1,59 @@
 // Admin surface: storage health and drift remediation (§10.11), quota, audit, users.
 import express from 'express';
-import { db, persist, allAssets } from '../db.js';
-import { authenticate, requires, problem } from '../middleware/auth.js';
+import { db, persist, flushNow, allAssets } from '../db.js';
+import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { runReconciliation, latestRun, healthSummary } from '../services/reconcile.js';
-import { record } from '../services/audit.js';
+import { alert, record, notify } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
 import * as storage from '../services/storage.js';
-import { DRIVE_ID, GOOGLE, GOOGLE_CONFIGURED, MIN_PASSWORD_LENGTH, ROOTS, SEED_PASSWORD, TRASH_DAYS } from '../config.js';
+import { connectionInfo } from '../db/mongo.js';
+import {
+  DRIVE_ID, ENV, GOOGLE, GOOGLE_CONFIGURED, MIN_PASSWORD_LENGTH, ROOTS, SEED_PASSWORD, TRASH_DAYS,
+} from '../config.js';
 import { uuid, hashPassword } from '../util/crypto.js';
 import { ROLES, PERMISSIONS, familyOf, normaliseRole } from '../catalogue.js';
-import { passwordProblem } from './auth.js';
+import { invalidateSessions, passwordProblem } from './auth.js';
+import { allTypes } from '../services/vocabulary.js';
+import * as antivirus from '../services/antivirus.js';
+import { LIMITS, email, fields, oneOf, str } from '../util/validate.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(authenticate);
+
+// The detailed health picture that used to sit on the unauthenticated /healthz: which
+// Drive, which folder ids, which account, which database. Every one of those is a useful
+// thing to know before attacking the deployment, and none of them is something a load
+// balancer needs — so the liveness probe answers {ok} and this answers the rest.
+adminRouter.get('/health', requires('admin:storage'), async (_req, res) => {
+  const mongo = connectionInfo();
+  const space = await storage.quota().catch(() => null);
+  // Whether the scanner is actually answering, not only whether it is switched on. A
+  // configured-but-unreachable scanner is the state worth surfacing: with the fail-closed
+  // default it stops every upload, and with fail-open it silently stops protecting.
+  const scanner = antivirus.enabled()
+    ? { enabled: true, ...(await antivirus.ping()), version: await antivirus.version() }
+    : { enabled: false };
+  const drive = storage.driveStatus();
+  res.json({
+    ok: mongo.readyState === 1 && GOOGLE_CONFIGURED && drive.ok,
+    // Why file operations are failing, in the one place somebody looks when they are.
+    drive,
+    scanner,
+    env: ENV,
+    uptime: process.uptime(),
+    node: process.version,
+    mongo: { db: mongo.db, host: mongo.host, connected: mongo.readyState === 1 },
+    storage: {
+      provider: 'google-drive',
+      authMode: GOOGLE.mode,
+      configured: GOOGLE_CONFIGURED,
+      sharedDrive: Boolean(DRIVE_ID),
+      rootFolderId: ROOTS.root,
+      assetsFolderId: ROOTS.assets,
+      account: space?.account ?? null,
+    },
+  });
+});
 
 // ── Quota (§6.4) ────────────────────────────────────────────────────────────
 // The single most operationally useful number in the product: everything stops working
@@ -101,11 +142,23 @@ adminRouter.get('/storage/runs', requires('admin:storage'), (_req, res) => {
 // Remediation. Each action maps to a row in the §10.11 remediation table. Most of the
 // drift a Drive produces is somebody rearranging files by hand rather than anything being
 // broken, so most of these settle a disagreement rather than repair damage.
+const REMEDIATIONS = [
+  'accept-storage-truth', 'accept-drive-name', 'restore-catalogue-name', 'follow-drive-folder',
+  'move-back', 'untrash', 'mark-lost', 'adopt', 'adopt-folder', 'quarantine', 'delete-orphan', 'accept',
+];
+
 adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage'), async (req, res) => {
   const run = latestRun();
   const finding = run?.findings.find((f) => f._id === req.params.findingId);
   if (!finding) return problem(res, 404, 'Not Found', 'That finding is not part of the latest run.');
-  const action = req.body?.action;
+
+  const check = fields(req.body || {}, {
+    action: (v) => oneOf(v, REMEDIATIONS, { field: 'action', required: true }),
+    songId: (v) => str(v, { max: 80, field: 'songId' }),
+    assetType: (v) => str(v, { max: 80, field: 'assetType' }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const action = check.value.action;
   const fileId = finding.fileId ?? finding.key;
 
   const complete = (note) => {
@@ -223,7 +276,19 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         const song = songId ? db.songs.find((s) => s._id === songId) : null;
         if (songId && !song) return problem(res, 422, 'Unprocessable Entity', 'That song no longer exists.');
         const drive = await storage.stat(fileId);
-        const assetType = req.body?.assetType || 'Master Audio';
+        // A file that would never have been allowed in through the front door is not
+        // allowed in through reconciliation either. Adoption is a normal upload as far as
+        // content policy is concerned.
+        if (storage.isBlockedType(drive.mimeType) || storage.isBlockedExtension(drive.name)) {
+          return problem(
+            res, 422, 'Unprocessable Entity',
+            `“${drive.name}” is a type the library does not accept (${drive.mimeType}). Quarantine it instead.`,
+          );
+        }
+        const requestedType = req.body?.assetType || 'Master Audio';
+        // The type decides the family, the icon and the facet. An arbitrary string from a
+        // request body would put a file in a family nothing lists.
+        const assetType = allTypes().some((t) => t.type === requestedType) ? requestedType : 'Master Audio';
         const now = new Date().toISOString();
         const assetId = drive.appProperties?.assetId || uuid();
         const folder = db.folders.find((f) => f.driveFolderId === drive.parentId && !f.deletedAt) ?? null;
@@ -352,6 +417,10 @@ const publicUser = (u) => ({
   // Surfaced so the People table can say "has not set their own password yet" rather
   // than leaving an administrator to guess whether a handover landed.
   mustChangePassword: Boolean(u.mustChangePassword),
+  // So the People table can show an account the lockout counter has closed, rather than
+  // leaving an administrator to wonder why somebody cannot sign in.
+  locked: u.lockedUntil ? Date.parse(u.lockedUntil) > Date.now() : false,
+  lockedUntil: u.lockedUntil ?? null,
   permissions: PERMISSIONS[normaliseRole(u.role)],
 });
 
@@ -367,33 +436,39 @@ adminRouter.get('/users', requires('admin:users'), (_req, res) => {
 });
 
 adminRouter.post('/users', requires('admin:users'), async (req, res) => {
-  const { name, email, role, password } = req.body || {};
-  if (!name?.trim() || !email?.trim()) {
-    return problem(res, 422, 'Unprocessable Entity', 'A name and an email are required.');
-  }
-  const address = String(email).trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
-    return problem(res, 422, 'Unprocessable Entity', 'That does not look like an email address.');
-  }
+  const check = fields(req.body || {}, {
+    name: (v) => str(v, { max: LIMITS.name, field: 'name', required: true }),
+    email: (v) => email(v, { field: 'email', required: true }),
+    role: (v) => oneOf(v, ROLES, { field: 'role', fallback: 'User' }),
+    password: (v) => str(v, { max: 200, field: 'password' }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const { name, role, password } = check.value;
+  const address = check.value.email;
   if (db.users.some((u) => u.email.toLowerCase() === address)) {
     return problem(res, 409, 'Conflict', 'That email address already has an account.');
   }
 
-  const initial = String(password || SEED_PASSWORD);
-  const invalid = passwordProblem(initial);
+  const initial = password || SEED_PASSWORD;
+  const invalid = await passwordProblem(initial, { email: address, name });
   if (invalid) return problem(res, 422, 'Unprocessable Entity', invalid);
 
   const user = {
     _id: `user_${uuid().slice(0, 8)}`,
-    name: name.trim(),
+    name,
     email: address,
     passwordHash: await hashPassword(initial),
-    role: ROLES.includes(role) ? role : 'User',
+    role,
     status: 'active',
     // The starting password is a handover, not a credential: it is good for exactly one
     // sign-in, and every route stays closed until the person replaces it.
     mustChangePassword: true,
     passwordChangedAt: null,
+    // Session generation, lockout counters. Present from the start so nothing downstream
+    // has to reason about an absent field.
+    tokenVersion: 0,
+    failedLogins: 0,
+    lockedUntil: null,
     createdAt: new Date().toISOString(),
     // Who let this person in. Shown on their profile, and the only record of it outside
     // the activity log — which is trimmed, and which a User cannot read.
@@ -402,16 +477,25 @@ adminRouter.post('/users', requires('admin:users'), async (req, res) => {
   };
   db.users.push(user);
   persist();
-  record(req, { action: 'USER_CREATE', entity: 'user', entityId: user._id, label: `Created ${user.name} (${user.role})` });
+  alert(req, { action: 'USER_CREATE', entity: 'user', entityId: user._id, label: `Created ${user.name} (${user.role})` });
   res.status(201).json(publicUser(user));
 });
 
-adminRouter.patch('/users/:id', requires('admin:users'), (req, res) => {
+const STATUSES = ['active', 'suspended'];
+
+adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   const user = db.users.find((u) => u._id === req.params.id);
   if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
 
   const nextRole = req.body?.role && ROLES.includes(req.body.role) ? req.body.role : null;
+  if (req.body?.role && !nextRole) {
+    return problem(res, 422, 'Unprocessable Entity', `Role must be one of: ${ROLES.join(', ')}.`);
+  }
+  // An unconstrained status field is how an account ends up in a state nothing checks for.
   const nextStatus = req.body?.status ?? null;
+  if (nextStatus && !STATUSES.includes(nextStatus)) {
+    return problem(res, 422, 'Unprocessable Entity', `Status must be one of: ${STATUSES.join(', ')}.`);
+  }
 
   // A library with no administrator has no way back: nobody left can create an account or
   // restore the role. So the last active Admin cannot be demoted or suspended, including
@@ -429,11 +513,67 @@ adminRouter.patch('/users/:id', requires('admin:users'), (req, res) => {
   const before = { role: normaliseRole(user.role), status: user.status };
   if (nextRole) user.role = nextRole;
   if (nextStatus) user.status = nextStatus;
+
+  // A demotion or a suspension has to reach the sessions already open, or it is only a
+  // change to what the screen offers: the access token in that browser still carries the
+  // old role until it expires, and the middleware would keep honouring it.
+  const changed = before.role !== normaliseRole(user.role) || before.status !== user.status;
+  if (changed) {
+    await invalidateSessions(user, nextStatus === 'suspended' ? 'account-suspended' : 'role-changed');
+    await flushNow().catch(() => null);
+  }
+
   persist();
-  record(req, {
+  alert(req, {
     action: 'USER_UPDATE', entity: 'user', entityId: user._id,
     label: `Updated ${user.name}`, before, after: { role: normaliseRole(user.role), status: user.status },
+    meta: { sessionsRevoked: changed },
   });
+  res.json(publicUser(user));
+});
+
+// Hand somebody a new starting password. The account is put back into the handover state,
+// so the value set here is good for exactly one sign-in — an administrator never ends up
+// knowing a password somebody else is still using.
+adminRouter.post('/users/:id/reset-password', requires('admin:users'), requireStepUp('Resetting a password'), async (req, res) => {
+  const user = db.users.find((u) => u._id === req.params.id);
+  if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
+
+  const supplied = str(req.body?.password, { max: 200, field: 'password', required: true });
+  if (supplied.problem) return problem(res, 422, 'Unprocessable Entity', supplied.problem);
+  const initial = supplied.value;
+  const invalid = await passwordProblem(initial, { email: user.email, name: user.name });
+  if (invalid) return problem(res, 422, 'Unprocessable Entity', invalid);
+
+  user.passwordHash = await hashPassword(initial);
+  user.mustChangePassword = true;
+  user.passwordChangedAt = null;
+  user.failedLogins = 0;
+  user.lockedUntil = null;
+  await invalidateSessions(user, 'password-reset-by-admin');
+  await flushNow().catch(() => null);
+
+  alert(req, {
+    action: 'USER_PASSWORD_RESET', entity: 'user', entityId: user._id,
+    label: `Reset the password for ${user.name}`,
+    meta: { sessionsRevoked: true, mustChangeAtNextSignIn: true },
+  });
+  notify({
+    userId: user._id, level: 'warn',
+    title: 'An administrator reset your password',
+    body: 'Every session on your account was ended. Sign in with the new password and set one of your own.',
+  });
+  res.json(publicUser(user));
+});
+
+// Unlock an account the lockout counter closed, without waiting the window out.
+adminRouter.post('/users/:id/unlock', requires('admin:users'), (req, res) => {
+  const user = db.users.find((u) => u._id === req.params.id);
+  if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
+  user.failedLogins = 0;
+  user.lockedUntil = null;
+  persist();
+  record(req, { action: 'USER_UNLOCK', entity: 'user', entityId: user._id, label: `Unlocked ${user.name}` });
   res.json(publicUser(user));
 });
 
@@ -442,12 +582,33 @@ export const notificationsRouter = express.Router();
 notificationsRouter.use(authenticate);
 
 notificationsRouter.get('/', (req, res) => {
-  const rows = db.notifications.filter((n) => !n.userId || n.userId === req.user.sub).slice(0, 40);
-  res.json({ data: rows, unread: rows.filter((n) => !n.readAt).length });
+  const seen = (n) => Boolean(n.readAt) || (n.readBy || []).includes(req.user.sub);
+  const rows = db.notifications
+    .filter((n) => !n.userId || n.userId === req.user.sub)
+    .slice(0, 40)
+    .map((n) => ({ ...n, readBy: undefined, read: seen(n) }));
+  res.json({ data: rows, unread: rows.filter((n) => !n.read).length });
 });
 
+// Marks the caller's own notifications read — the ones addressed to them, and the
+// broadcast ones they can see. It used to mark every row in the collection, so one person
+// clearing their bell cleared everybody's.
 notificationsRouter.post('/read', (req, res) => {
-  for (const n of db.notifications) if (!n.readAt) n.readAt = new Date().toISOString();
+  const at = new Date().toISOString();
+  let marked = 0;
+  for (const n of db.notifications) {
+    if (n.readAt) continue;
+    if (n.userId && n.userId !== req.user.sub) continue;
+    // A broadcast row is read per person, so it is recorded per person rather than being
+    // destroyed for everyone by whoever saw it first.
+    if (!n.userId) {
+      n.readBy = [...new Set([...(n.readBy || []), req.user.sub])];
+      marked += 1;
+      continue;
+    }
+    n.readAt = at;
+    marked += 1;
+  }
   persist();
-  res.json({ ok: true });
+  res.json({ ok: true, marked });
 });

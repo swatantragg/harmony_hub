@@ -8,6 +8,7 @@ import { record } from '../services/audit.js';
 import { uuid } from '../util/crypto.js';
 import { CONTROLLED_TAGS, LANGUAGES, MOODS, FAMILIES } from '../catalogue.js';
 import { similarTags, similarTypes, allTypes } from '../services/vocabulary.js';
+import { LIMITS, fields, list, oneOf, str } from '../util/validate.js';
 
 export const artistsRouter = express.Router();
 export const songsRouter = express.Router();
@@ -35,10 +36,12 @@ typesRouter.get('/similar', (req, res) => {
 });
 
 typesRouter.post('/', requires('asset:upload'), (req, res) => {
-  const type = String(req.body?.type || '').trim();
+  const check = fields(req.body || {}, {
+    type: (v) => str(v, { max: 60, field: 'type', required: true }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const type = check.value.type;
   const family = FAMILIES.includes(req.body?.family) ? req.body.family : 'Document';
-  if (!type) return problem(res, 422, 'Unprocessable Entity', 'Give the new type a name.');
-  if (type.length > 60) return problem(res, 422, 'Unprocessable Entity', 'Keep type names under 60 characters.');
 
   const { exact, suggestions } = similarTypes(type);
   if (exact) {
@@ -160,13 +163,23 @@ artistsRouter.get('/:id', (req, res) => {
   });
 });
 
+const ARTIST_FIELDS = {
+  name: (v) => str(v, { max: LIMITS.name, field: 'name' }),
+  genre: (v) => str(v, { max: 60, field: 'genre' }),
+  label: (v) => str(v, { max: 120, field: 'label', allowEmpty: true }),
+  city: (v) => str(v, { max: 80, field: 'city', allowEmpty: true }),
+  bio: (v) => str(v, { max: LIMITS.description, field: 'bio', allowEmpty: true }),
+  contact: (v) => str(v, { max: 200, field: 'contact', allowEmpty: true }),
+};
+
 artistsRouter.post('/', requires('catalogue:edit'), (req, res) => {
-  const { name, genre, label, city, bio } = req.body || {};
-  if (!name?.trim()) return problem(res, 422, 'Unprocessable Entity', 'An artist name is required.');
+  const check = fields(req.body || {}, { ...ARTIST_FIELDS, name: (v) => str(v, { max: LIMITS.name, field: 'name', required: true }) });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const { name, genre, label, city, bio } = check.value;
   const artist = {
     _id: `artist_${uuid().slice(0, 8)}`,
-    name: name.trim(),
-    slug: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+    name,
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     genre: genre || 'Unclassified', label: label || '', city: city || '', bio: bio || '',
     contact: '', socials: [], imageAssetId: null,
     createdAt: new Date().toISOString(), deletedAt: null,
@@ -181,14 +194,20 @@ artistsRouter.post('/', requires('catalogue:edit'), (req, res) => {
 artistsRouter.patch('/:id', requires('catalogue:edit'), (req, res) => {
   const artist = db.artists.find((a) => a._id === req.params.id);
   if (!artist) return problem(res, 404, 'Not Found', 'No artist with that id.');
+  const check = fields(req.body || {}, ARTIST_FIELDS);
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  if ('name' in check.value && !check.value.name) {
+    return problem(res, 422, 'Unprocessable Entity', 'An artist name is required.');
+  }
+
   const before = { name: artist.name, genre: artist.genre, label: artist.label, city: artist.city, bio: artist.bio };
   for (const field of ['name', 'genre', 'label', 'city', 'bio', 'contact']) {
-    if (field in (req.body || {})) artist[field] = req.body[field];
+    if (field in (req.body || {})) artist[field] = check.value[field] ?? '';
   }
   persist();
   record(req, {
     action: 'ARTIST_UPDATE', entity: 'artist', entityId: artist._id,
-    label: `Updated ${artist.name}`, before, after: req.body, meta: { bytesMoved: 0, driveFilesTouched: 0 },
+    label: `Updated ${artist.name}`, before, after: check.value, meta: { bytesMoved: 0, driveFilesTouched: 0 },
   });
   res.json({ ...artist, ...artistStats(artist) });
 });
@@ -229,13 +248,30 @@ songsRouter.get('/:id', (req, res) => {
   });
 });
 
+const SONG_FIELDS = {
+  title: (v) => str(v, { max: LIMITS.name, field: 'title' }),
+  artistId: (v) => str(v, { max: 80, field: 'artistId' }),
+  // Free text rather than an enum: the vocabulary lists are suggestions, and a library
+  // that refuses an unlisted language is a library somebody works around.
+  language: (v) => str(v, { max: 60, field: 'language' }),
+  mood: (v) => str(v, { max: 60, field: 'mood' }),
+  isrc: (v) => str(v, { max: 40, field: 'isrc', allowEmpty: true }),
+  releaseDate: (v) => str(v, { max: 40, field: 'releaseDate' }),
+  description: (v) => str(v, { max: LIMITS.description, field: 'description', allowEmpty: true }),
+  tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
+};
+
 songsRouter.post('/', requires('catalogue:edit'), (req, res) => {
-  const { title, artistId, language, mood, isrc, releaseDate, tags } = req.body || {};
-  if (!title?.trim()) return problem(res, 422, 'Unprocessable Entity', 'A song title is required.');
+  const check = fields(req.body || {}, { ...SONG_FIELDS, title: (v) => str(v, { max: LIMITS.name, field: 'title', required: true }) });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const { title, artistId, language, mood, isrc, releaseDate, tags } = check.value;
   if (!db.artists.some((a) => a._id === artistId)) return problem(res, 422, 'Unprocessable Entity', 'Pick an existing artist.');
+  if (releaseDate && Number.isNaN(Date.parse(releaseDate))) {
+    return problem(res, 422, 'Unprocessable Entity', 'That release date is not a date.');
+  }
   const song = {
     _id: `song_${uuid().slice(0, 8)}`,
-    title: title.trim(), artistId, featuring: [],
+    title, artistId, featuring: [],
     language: language || 'Hindi', mood: mood || 'Romantic', isrc: isrc || '',
     releaseDate: releaseDate || new Date().toISOString(), tags: tags || [], description: '',
     assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), deletedAt: null,
@@ -249,15 +285,27 @@ songsRouter.post('/', requires('catalogue:edit'), (req, res) => {
 songsRouter.patch('/:id', requires('catalogue:edit'), (req, res) => {
   const song = db.songs.find((s) => s._id === req.params.id);
   if (!song) return problem(res, 404, 'Not Found', 'No song with that id.');
+  const check = fields(req.body || {}, SONG_FIELDS);
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  if ('title' in check.value && !check.value.title) {
+    return problem(res, 422, 'Unprocessable Entity', 'A song title is required.');
+  }
+  if (check.value.artistId && !db.artists.some((a) => a._id === check.value.artistId)) {
+    return problem(res, 422, 'Unprocessable Entity', 'Pick an existing artist.');
+  }
+  if (check.value.releaseDate && Number.isNaN(Date.parse(check.value.releaseDate))) {
+    return problem(res, 422, 'Unprocessable Entity', 'That release date is not a date.');
+  }
+
   const before = { title: song.title, language: song.language, mood: song.mood, artistId: song.artistId };
   for (const field of ['title', 'language', 'mood', 'isrc', 'releaseDate', 'tags', 'description', 'artistId']) {
-    if (field in (req.body || {})) song[field] = req.body[field];
+    if (field in (req.body || {})) song[field] = check.value[field] ?? '';
   }
   song.updatedAt = new Date().toISOString();
   persist();
   record(req, {
     action: 'SONG_UPDATE', entity: 'song', entityId: song._id,
-    label: `Updated ${song.title}`, before, after: req.body, meta: { bytesMoved: 0, driveFilesTouched: 0 },
+    label: `Updated ${song.title}`, before, after: check.value, meta: { bytesMoved: 0, driveFilesTouched: 0 },
   });
   res.json(song);
 });
@@ -280,8 +328,11 @@ tagsRouter.get('/similar', (req, res) => {
 });
 
 tagsRouter.post('/', requires('asset:upload'), (req, res) => {
-  const name = String(req.body?.name || '').trim();
-  if (!name) return problem(res, 422, 'Unprocessable Entity', 'A tag name is required.');
+  const check = fields(req.body || {}, {
+    name: (v) => str(v, { max: LIMITS.tag, field: 'name', required: true }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+  const name = check.value.name;
 
   const { exact, suggestions } = similarTags(name);
 
@@ -310,8 +361,10 @@ tagsRouter.post('/', requires('asset:upload'), (req, res) => {
 tagsRouter.patch('/:id/promote', requires('admin:users'), (req, res) => {
   const tag = db.tags.find((t) => t._id === req.params.id);
   if (!tag) return problem(res, 404, 'Not Found', 'No tag with that id.');
+  const group = oneOf(req.body?.group, Object.keys(CONTROLLED_TAGS), { field: 'group', fallback: 'Format / use' });
+  if (group.problem) return problem(res, 422, 'Unprocessable Entity', group.problem);
   tag.type = 'controlled';
-  tag.group = req.body?.group || 'Format / use';
+  tag.group = group.value;
   persist();
   record(req, { action: 'TAG_PROMOTE', entity: 'tag', entityId: tag._id, label: `Promoted "${tag.name}" to the controlled vocabulary` });
   res.json(tag);

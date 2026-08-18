@@ -114,11 +114,22 @@ function extractFrames(stream, { frames, durationSec, isImage }) {
       '-frames:v', String(frames),
     ];
 
+  // ffmpeg is a very large decoder surface being pointed at files somebody uploaded, so
+  // the process is given as little room as possible: no stdin protocols beyond the pipe
+  // it is being fed on (which stops an input file describing a URL or a local path for
+  // ffmpeg to go and fetch), no interactive stdin, and a hard wall-clock deadline.
   const proc = spawn('ffmpeg', [
     '-hide_banner', '-loglevel', 'error',
+    '-nostdin',
+    '-protocol_whitelist', 'pipe',
     ...args,
     '-pix_fmt', 'gray', '-f', 'rawvideo', 'pipe:1',
   ]);
+
+  // A decoder that hangs — on a malformed file, or a deliberately crafted one — must not
+  // hold a worker slot forever.
+  const deadline = setTimeout(() => proc.kill('SIGKILL'), 60_000);
+  proc.on('close', () => clearTimeout(deadline));
 
   const chunks = [];
   proc.stdout.on('data', (c) => chunks.push(c));

@@ -25,6 +25,8 @@
     "reseed": "npm run --workspace server reseed",
     "reconcile": "npm run --workspace server reconcile",
     "dedupe": "npm run --workspace server dedupe",
+    "audit:security": "bash scripts/audit.sh",
+    "backup": "bash scripts/backup-mongo.sh",
     "smoke": "node scripts/smoke.mjs",
     "smoke:ui": "npm run --workspace client smoke:ui",
     "docker:build": "docker compose build app",

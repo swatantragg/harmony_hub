@@ -23,7 +23,7 @@ import {
   Copy, Loader2, Trash2, Link2, Layers, EyeOff, RefreshCw, AlertTriangle,
   CheckCircle2, Info, ExternalLink, Sparkles, HardDrive, ChevronDown,
 } from 'lucide-react';
-import { api, qs } from '../../lib/api';
+import { api, auth, qs, stepUp } from '../../lib/api';
 import { EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
 import { bytes, date, pluralise, relative } from '../../lib/format';
 import { useSession } from '../../app/session';
@@ -600,6 +600,9 @@ function ResolveDialog({ group, onClose }: { group: DuplicateGroup; onClose: () 
 function EmptyTrashPanel() {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
+  const [password, setPassword] = useState('');
+  const [wrong, setWrong] = useState(false);
+  const needsPassword = !auth.hasStepUp();
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -652,8 +655,14 @@ function EmptyTrashPanel() {
               <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
               <button
                 className="btn btn-danger"
-                disabled={typed !== 'EMPTY TRASH' || empty.isPending}
-                onClick={() => empty.mutate()}
+                disabled={typed !== 'EMPTY TRASH' || (needsPassword && !password) || empty.isPending}
+                onClick={async () => {
+                  // Re-authentication first: this reaches files the library never touched
+                  // and there is nothing behind it. A live session is not sufficient
+                  // evidence that the person at the keyboard meant this.
+                  if (needsPassword && !(await stepUp(password))) { setWrong(true); setPassword(''); return; }
+                  empty.mutate();
+                }}
               >
                 {empty.isPending ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
                 Empty it permanently
@@ -673,6 +682,19 @@ function EmptyTrashPanel() {
               <label className="label">Type <span className="keytext">EMPTY TRASH</span> to confirm</label>
               <input className="input mono" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
             </div>
+            {needsPassword && (
+              <div className="field">
+                <label className="label">Your password</label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setWrong(false); }}
+                />
+                {wrong && <div className="t-meta" style={{ marginTop: 6, color: 'var(--danger, #c0392b)' }}>That is not the password for this account.</div>}
+              </div>
+            )}
           </div>
         </Modal>
       )}
