@@ -19,7 +19,7 @@
 // sharing settings are untouched, so revoking a GCloud link genuinely revokes access
 // rather than leaving a Google link working behind it.
 import express from 'express';
-import { db, persist, assetsInFolder } from '../db.js';
+import { db, persist, assetsUnderFolder } from '../db.js';
 import { authenticate, optionalAuthenticate, requires, problem } from '../middleware/auth.js';
 import { context } from '../services/assets.js';
 import { record, notify } from '../services/audit.js';
@@ -108,21 +108,36 @@ const normaliseEmails = (list) =>
     .map((e) => String(e).trim().toLowerCase())
     .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)))];
 
+// What a folder link actually covers: the folder and everything filed underneath it.
+//
+// It used to be the folder's own files only. Folders nest — the catalogue tree is the
+// Drive tree — so on any library organised into subfolders that was wrong twice over: a
+// recipient was handed a link that silently omitted most of the material, and a folder
+// whose files all live one level down was refused outright as "empty, so there is nothing
+// to share yet". Sharing a folder now means sharing the tree, which is what the wording
+// on the dialog has always promised.
+const shareableRows = (folderId) =>
+  assetsUnderFolder(folderId).filter(({ asset }) => !asset.deletedAt);
+
 // A folder link is only worth as much as the files inside it, so the manifest is built
 // the same way the folder page is: catalogue membership, one signed URL per object. Every
 // file is verified and signed concurrently — a 40-file folder should not open in 40 round
 // trips one after another.
 async function folderManifest(folder, { expiresIn, shareId }) {
-  const rows = assetsInFolder(folder._id).filter(({ asset }) => !asset.deletedAt);
+  const rows = shareableRows(folder._id);
   await storage.verifyAssets(rows.map((r) => r.asset));
 
   return Promise.all(
-    rows.map(async ({ asset, song, artist }) => {
+    rows.map(async ({ asset, song, artist, folder: parent }) => {
       const status = asset.availability.status;
       const shareable = status !== 'MISSING' && status !== 'TRASHED';
       return {
         assetId: asset.assetId,
         displayName: asset.displayName,
+        // Which subfolder it came out of, so a tree does not arrive as a flat list of
+        // names with no way to tell two "master.wav"s apart. Null for the shared folder's
+        // own files.
+        subfolder: parent && parent._id !== folder._id ? parent.name : null,
         type: asset.type,
         family: asset.family,
         mimeType: asset.mimeType,
@@ -216,9 +231,9 @@ sharesRouter.post('/', requires('share:create'), async (req, res) => {
   if (target === 'FOLDER') {
     const folder = db.folders.find((f) => f._id === targetId && !f.deletedAt);
     if (!folder) return problem(res, 404, 'Not Found', 'No folder with that id.');
-    const files = assetsInFolder(folder._id).filter(({ asset }) => !asset.deletedAt);
+    const files = shareableRows(folder._id);
     if (files.length === 0) {
-      return problem(res, 409, 'Conflict', 'This folder is empty, so there is nothing to share yet.');
+      return problem(res, 409, 'Conflict', 'This folder is empty — nothing is filed in it or in any folder inside it — so there is nothing to share yet.');
     }
     share = {
       ...base,
@@ -560,7 +575,7 @@ publicShareRouter.post('/:token/download', optionalAuthenticate, async (req, res
 
   if ((share.target ?? 'ASSET') === 'FOLDER') {
     if (!wanted) return problem(res, 422, 'Unprocessable Entity', 'Name the file to download.');
-    const inFolder = assetsInFolder(share.targetId).some(({ asset }) => asset.assetId === wanted && !asset.deletedAt);
+    const inFolder = shareableRows(share.targetId).some(({ asset }) => asset.assetId === wanted);
     if (!inFolder) return problem(res, 403, 'Forbidden', 'That file is not in the shared folder.');
     assetId = wanted;
   }
@@ -618,7 +633,7 @@ publicShareRouter.post('/:token/download-all', optionalAuthenticate, async (req,
   if ((share.target ?? 'ASSET') !== 'FOLDER') return problem(res, 422, 'Unprocessable Entity', 'This link is a single file.');
   if (!share.canDownload) return problem(res, 403, 'Forbidden', 'This link is preview-only.');
 
-  const rows = assetsInFolder(share.targetId).filter(({ asset }) => !asset.deletedAt);
+  const rows = shareableRows(share.targetId);
   const remaining = share.maxDownloads == null ? Infinity : share.maxDownloads - share.downloadCount;
   if (remaining <= 0) return problem(res, 429, 'Too Many Requests', 'This link has reached its download limit.');
 

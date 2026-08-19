@@ -15,4 +15,6 @@ export {
   assetContext,
   allAssets,
   assetsInFolder,
+  assetsUnderFolder,
+  folderSubtreeIds,
 } from './db/store.js';

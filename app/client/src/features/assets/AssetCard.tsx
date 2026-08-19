@@ -60,8 +60,24 @@ export function AssetRow({
 }: { asset: Asset; onOpen: (a: Asset) => void; selected?: boolean; dense?: boolean }) {
   const Icon = FAMILY_ICON[asset.family];
   const { actions, dialogs } = useAssetActions(asset);
+
+  // The row's dialogs are rendered from inside the row, and a Modal portals its DOM to
+  // <body> — but a React portal still bubbles its events through the React tree, not the
+  // DOM tree. So without this guard every click inside "Share", "Edit details", "Rename",
+  // "Move" or the delete confirmation also reached this handler and opened the file's
+  // details drawer over the top of the dialog, which is what made those five verbs
+  // unusable from any file list — the library, a song, a search result, and the file
+  // list inside a folder.
+  //
+  // The test is the DOM, which is the thing that actually knows where the click happened:
+  // a portalled dialog is not a descendant of this row.
+  const openIfFromRow = (e: React.MouseEvent<HTMLTableRowElement>) => {
+    if (!e.currentTarget.contains(e.target as Node)) return;
+    onOpen(asset);
+  };
+
   return (
-    <tr className={selected ? 'selected' : ''} onClick={() => onOpen(asset)}>
+    <tr className={selected ? 'selected' : ''} onClick={openIfFromRow}>
       <td>
         <div className="row-tight">
           <span
@@ -88,8 +104,9 @@ export function AssetRow({
       <td><AvailabilityBadge status={asset.availability.status} /></td>
       <td style={{ width: 1, paddingLeft: 0, paddingRight: 8 }}>
         <RowMenu actions={actions} label={`Actions for ${asset.displayName}`} />
-        {/* The dialogs render from here, inside the row. They portal to the body, so the
-            table's overflow and the row's click handler never reach them. */}
+        {/* The dialogs render from here, inside the row, and portal their DOM to the
+            body so the table's overflow never clips them. The row's own click handler is
+            kept off them by the DOM check above. */}
         {dialogs}
       </td>
     </tr>

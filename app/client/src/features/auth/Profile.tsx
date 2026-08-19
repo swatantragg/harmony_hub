@@ -4,7 +4,7 @@
 // person renaming themselves mid-audit-trail is a worse problem than the convenience is
 // worth — so everything on this page is read-only except the password.
 import { useEffect, useState } from 'react';
-import { KeyRound, Loader2, Mail, ShieldCheck, UserCircle2, UserPlus } from 'lucide-react';
+import { KeyRound, LogIn, Loader2, Mail, ShieldCheck, UserCircle2, UserPlus } from 'lucide-react';
 import { PasswordInput, useToast } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useSession } from '../../app/session';
@@ -105,6 +105,29 @@ export function Profile() {
                 {user.passwordChangedAt
                   ? relative(user.passwordChangedAt)
                   : <span className="muted">Still the one you were handed</span>}
+              </dd>
+            </div>
+            {/* Both ways in, and which of them this account has actually used. Linking
+                happens by itself the first time somebody signs in with Google under this
+                address — there is nothing to switch on, and nothing switches the password
+                off. */}
+            <div className="def">
+              <dt className="row-tight"><LogIn size={14} /> Ways to sign in</dt>
+              <dd>
+                <div>Password · always available</div>
+                {user.google ? (
+                  <div>
+                    Google · {user.google.email}
+                    <span className="t-small"> · linked {relative(user.google.linkedAt)}</span>
+                  </div>
+                ) : user.googleSignInAvailable ? (
+                  <div className="muted">
+                    Google · not used yet. Choose “Continue with Google” at sign-in with{' '}
+                    <b>{user.email}</b> and it links itself.
+                  </div>
+                ) : (
+                  <div className="muted">Google · not configured on this deployment</div>
+                )}
               </dd>
             </div>
           </dl>

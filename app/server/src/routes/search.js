@@ -10,7 +10,7 @@
 import express from 'express';
 import { db, allAssets, persist } from '../db.js';
 import { authenticate, problem } from '../middleware/auth.js';
-import { shape } from '../services/assets.js';
+import { shape, resolveLanguage } from '../services/assets.js';
 import * as storage from '../services/storage.js';
 import { escapeQuery, listFiles, FOLDER_MIME } from '../storage/drive.js';
 import { ROOTS } from '../config.js';
@@ -19,6 +19,11 @@ export const searchRouter = express.Router();
 searchRouter.use(authenticate);
 
 const asArray = (v) => (v == null || v === '' ? [] : Array.isArray(v) ? v : String(v).split(',').filter(Boolean));
+
+// A file's own language when it has one, otherwise its release's. Resolved through the
+// shared helper so this screen, the master log and the asset drawer can never disagree
+// about what language a file is in — which they did, when each computed it itself.
+const languageOf = (row) => resolveLanguage(row.asset, row.song).language;
 
 // Naive relevance scoring, standing in for a MongoDB $text score.
 //
@@ -36,7 +41,7 @@ function score(row, terms) {
     [row.folder?.tags?.join(' '), 3],
     [row.asset.type, 3],
     [row.asset.description, 1],
-    [row.song?.language, 1],
+    [languageOf(row), 1],
     [row.song?.mood, 1],
     [row.asset.originalName, 1],
   ];
@@ -100,7 +105,7 @@ export function runSearch(query) {
     const get = {
       family: () => row.asset.family,
       type: () => row.asset.type,
-      language: () => row.song?.language,
+      language: () => languageOf(row),
       mood: () => row.song?.mood,
       tags: () => row.asset.tags,
       availability: () => row.asset.availability?.status ?? 'UNVERIFIED',
@@ -125,7 +130,7 @@ export function runSearch(query) {
   const facets = {
     family: tally(narrowed('family'), (r) => r.asset.family),
     type: tally(narrowed('type'), (r) => r.asset.type),
-    language: tally(narrowed('language'), (r) => r.song?.language),
+    language: tally(narrowed('language'), languageOf),
     mood: tally(narrowed('mood'), (r) => r.song?.mood),
     folder: tally(narrowed('folderId'), (r) => r.folder?.name),
     tags: tally(narrowed('tags'), (r) => r.asset.tags),

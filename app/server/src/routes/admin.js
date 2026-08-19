@@ -7,8 +7,10 @@ import { alert, record, notify } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
 import * as storage from '../services/storage.js';
 import { connectionInfo } from '../db/mongo.js';
+import { models } from '../db/models.js';
 import {
-  DRIVE_ID, ENV, GOOGLE, GOOGLE_CONFIGURED, MIN_PASSWORD_LENGTH, ROOTS, SEED_PASSWORD, TRASH_DAYS,
+  AUDIT_RETENTION_DAYS, DRIVE_ID, ENV, GOOGLE, GOOGLE_CONFIGURED, MIN_PASSWORD_LENGTH,
+  ROOTS, SEED_PASSWORD, TRASH_DAYS,
 } from '../config.js';
 import { uuid, hashPassword } from '../util/crypto.js';
 import { ROLES, PERMISSIONS, familyOf, normaliseRole } from '../catalogue.js';
@@ -16,6 +18,7 @@ import { invalidateSessions, passwordProblem } from './auth.js';
 import { allTypes } from '../services/vocabulary.js';
 import * as antivirus from '../services/antivirus.js';
 import { LIMITS, email, fields, oneOf, str } from '../util/validate.js';
+import { safeFilename, workbook } from '../util/xlsx.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(authenticate);
@@ -358,39 +361,62 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
 });
 
 // ── Activity log ────────────────────────────────────────────────────────────
-adminRouter.get('/activity', requires('admin:activity'), (req, res) => {
-  const { action, userId, entity, q, from, to } = req.query;
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 50));
-
+//
+// One set of filters, read once and applied by both the screen and the export. Two copies
+// of this would be two definitions of "the entries I am looking at", and an export that
+// quietly disagrees with the table it was taken from is worse than no export.
+function activityQuery(query) {
+  const { action, userId, entity, q, from, to } = query;
   // A date filter on an audit trail is almost always "what happened on the day X went
   // wrong?", so `to` is inclusive of the whole day rather than of midnight on it.
   const fromMs = from ? Date.parse(`${from}T00:00:00`) : null;
   const toMs = to ? Date.parse(`${to}T23:59:59.999`) : null;
-
-  const rows = db.activityLog.filter((e) => {
-    if (action && e.action !== action) return false;
-    if (userId && e.userId !== userId) return false;
-    if (entity && e.entity !== entity) return false;
-    if (q && !`${e.label} ${e.userName} ${e.action}`.toLowerCase().includes(String(q).toLowerCase())) return false;
-    const at = Date.parse(e.timestamp);
-    if (fromMs != null && !Number.isNaN(fromMs) && at < fromMs) return false;
-    if (toMs != null && !Number.isNaN(toMs) && at > toMs) return false;
-    return true;
-  });
-
-  const sorters = {
-    newest: (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
-    oldest: (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
-    // Alphabetical by the person, then by time, so one person's entries stay together and
-    // read in order rather than being shuffled within their own block.
-    person: (a, b) => a.userName.localeCompare(b.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
-    personDesc: (a, b) => b.userName.localeCompare(a.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
-    label: (a, b) => String(a.label).localeCompare(String(b.label)),
-    labelDesc: (a, b) => String(b.label).localeCompare(String(a.label)),
+  return {
+    action: action ? String(action) : null,
+    userId: userId ? String(userId) : null,
+    entity: entity ? String(entity) : null,
+    q: q ? String(q) : null,
+    from: from ? String(from) : null,
+    to: to ? String(to) : null,
+    fromMs: fromMs != null && !Number.isNaN(fromMs) ? fromMs : null,
+    toMs: toMs != null && !Number.isNaN(toMs) ? toMs : null,
+    active: Boolean(action || userId || entity || q || from || to),
   };
-  const sort = sorters[req.query.sort] ? req.query.sort : 'newest';
-  const sorted = [...rows].sort(sorters[sort]);
+}
+
+const matchesActivity = (f) => (e) => {
+  if (f.action && e.action !== f.action) return false;
+  if (f.userId && e.userId !== f.userId) return false;
+  if (f.entity && e.entity !== f.entity) return false;
+  if (f.q && !`${e.label} ${e.userName} ${e.action}`.toLowerCase().includes(f.q.toLowerCase())) return false;
+  const at = Date.parse(e.timestamp);
+  if (f.fromMs != null && at < f.fromMs) return false;
+  if (f.toMs != null && at > f.toMs) return false;
+  return true;
+};
+
+const ACTIVITY_SORTERS = {
+  newest: (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  oldest: (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+  // Alphabetical by the person, then by time, so one person's entries stay together and
+  // read in order rather than being shuffled within their own block.
+  person: (a, b) => a.userName.localeCompare(b.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  personDesc: (a, b) => b.userName.localeCompare(a.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  label: (a, b) => String(a.label).localeCompare(String(b.label)),
+  labelDesc: (a, b) => String(b.label).localeCompare(String(a.label)),
+};
+
+const activitySort = (value) => (ACTIVITY_SORTERS[value] ? String(value) : 'newest');
+
+adminRouter.get('/activity', requires('admin:activity'), (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 50));
+
+  const filters = activityQuery(req.query);
+  const rows = db.activityLog.filter(matchesActivity(filters));
+
+  const sort = activitySort(req.query.sort);
+  const sorted = [...rows].sort(ACTIVITY_SORTERS[sort]);
 
   res.json({
     data: sorted.slice((page - 1) * limit, page * limit),
@@ -408,6 +434,204 @@ adminRouter.get('/activity', requires('admin:activity'), (req, res) => {
   });
 });
 
+// ── Activity log → Excel ────────────────────────────────────────────────────
+//
+// The same rows the screen is showing, as an .xlsx an auditor can be sent. Every filter on
+// the screen — the search, the action, the date range, the order — is carried on the
+// query string, so what comes out is what was on screen and not "everything, sorted some
+// other way".
+//
+// Two things it does that the screen cannot:
+//
+//   · It reads MongoDB rather than the in-memory tail. The working set holds the most
+//     recent 2,000 entries for display; the collection holds the whole retention window.
+//     "Export everything that happened in March" is exactly the request the screen cannot
+//     answer, and it is the reason this exists.
+//   · It carries the columns a log needs and a table has no room for — the socket
+//     address, the forwarded-for header when it disagreed with it, the user agent, and the
+//     full before/after payloads rather than a truncated preview.
+//
+// The file itself is built in this process with no spreadsheet dependency; see
+// util/xlsx.js for why.
+
+// A ceiling, because an export is one response held whole in memory. Twenty thousand rows
+// is about 6 MB of XML and comfortably more than any real audit question needs; past it
+// the range wants narrowing, and the file says so on its second sheet rather than
+// silently ending.
+const MAX_EXPORT_ROWS = 20_000;
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// The same filters, expressed for MongoDB. `timestamp` is stored as an ISO string, and
+// ISO strings sort lexicographically in timestamp order — which is what makes a range
+// query on it correct and what lets the { timestamp: -1 } index serve it.
+function activityMongoFilter(f) {
+  const where = {};
+  if (f.action) where.action = f.action;
+  if (f.userId) where.userId = f.userId;
+  if (f.entity) where.entity = f.entity;
+  if (f.fromMs != null || f.toMs != null) {
+    where.timestamp = {};
+    if (f.fromMs != null) where.timestamp.$gte = new Date(f.fromMs).toISOString();
+    if (f.toMs != null) where.timestamp.$lte = new Date(f.toMs).toISOString();
+  }
+  if (f.q) {
+    const like = { $regex: escapeRegex(f.q), $options: 'i' };
+    where.$or = [{ label: like }, { userName: like }, { action: like }];
+  }
+  return where;
+}
+
+// Objects are written as JSON rather than flattened into columns: `before` and `after`
+// have no fixed shape — they are whatever the action changed — and a column per key would
+// be four hundred columns wide and empty nearly everywhere.
+const asText = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const COLUMNS = [
+  { key: 'timestamp', header: 'When (UTC, ISO 8601)', width: 26 },
+  { key: 'date', header: 'Date', width: 12 },
+  { key: 'time', header: 'Time', width: 11 },
+  { key: 'userName', header: 'Who', width: 22 },
+  { key: 'userRole', header: 'Role', width: 10 },
+  { key: 'action', header: 'Action', width: 26 },
+  { key: 'label', header: 'What happened', width: 52 },
+  { key: 'entity', header: 'Entity', width: 12 },
+  { key: 'entityId', header: 'Entity id', width: 26 },
+  { key: 'before', header: 'Before', width: 44 },
+  { key: 'after', header: 'After', width: 44 },
+  { key: 'meta', header: 'Details', width: 40 },
+  { key: 'ip', header: 'IP address', width: 18 },
+  { key: 'socketIp', header: 'Socket address', width: 18 },
+  { key: 'forwardedFor', header: 'Forwarded-for (when it disagreed)', width: 26 },
+  { key: 'userAgent', header: 'Device', width: 46 },
+  { key: 'userId', header: 'Account id', width: 22 },
+];
+
+const toRow = (e) => {
+  // Split out so the two most common things anybody does to an exported log — filter to a
+  // day, group by hour — are a column each rather than a formula over a timestamp.
+  const at = new Date(e.timestamp);
+  const valid = !Number.isNaN(at.getTime());
+  return {
+    timestamp: e.timestamp ?? '',
+    date: valid ? at.toISOString().slice(0, 10) : '',
+    time: valid ? at.toISOString().slice(11, 19) : '',
+    userName: e.userName ?? '',
+    userRole: e.userRole ?? '',
+    action: e.action ?? '',
+    label: e.label ?? '',
+    entity: e.entity ?? '',
+    entityId: e.entityId ?? '',
+    before: asText(e.before),
+    after: asText(e.after),
+    meta: asText(e.meta),
+    ip: e.ip ?? '',
+    socketIp: e.socketIp ?? '',
+    forwardedFor: e.forwardedFor ?? '',
+    userAgent: e.userAgent ?? '',
+    userId: e.userId ?? '',
+  };
+};
+
+adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req, res) => {
+  const filters = activityQuery(req.query);
+  const sort = activitySort(req.query.sort);
+
+  // MongoDB holds the whole retention window; the in-memory array holds the display tail.
+  // The fallback matters — an export is the one thing somebody reaches for when something
+  // has gone wrong, which is exactly when the database might be the thing that is wrong.
+  let rows;
+  let source = 'archive';
+  try {
+    rows = await models.activityLog
+      .find(activityMongoFilter(filters))
+      .sort({ timestamp: -1 })
+      .limit(MAX_EXPORT_ROWS + 1)
+      .lean()
+      .exec();
+  } catch {
+    rows = db.activityLog.filter(matchesActivity(filters));
+    source = 'in-memory tail (the database could not be read)';
+  }
+
+  const truncated = rows.length > MAX_EXPORT_ROWS;
+  if (truncated) rows = rows.slice(0, MAX_EXPORT_ROWS);
+  const sorted = [...rows].sort(ACTIVITY_SORTERS[sort]);
+
+  const at = new Date();
+  const stamp = at.toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const range = filters.from || filters.to
+    ? `-${filters.from || 'start'}-to-${filters.to || 'now'}`
+    : '';
+  const filename = safeFilename(`gcloud-activity${range}-${stamp}.xlsx`);
+
+  // The second sheet is the provenance of the first. A spreadsheet of audit rows with no
+  // record of what was filtered out of it is a spreadsheet nobody should rely on — and
+  // "there were no deletions that week" reads very differently once you can see that the
+  // export was narrowed to one person.
+  const details = [
+    ['Exported at', at.toISOString()],
+    ['Exported by', `${req.user.name} (${req.user.role})`],
+    ['Rows in this file', sorted.length],
+    ['Source', source === 'archive' ? 'Full audit archive' : source],
+    ['Order', sort],
+    ['Search text', filters.q || '— none —'],
+    ['Action', filters.action || 'Every action'],
+    ['Entity', filters.entity || 'Every entity'],
+    ['Person (account id)', filters.userId || 'Everybody'],
+    ['From date', filters.from || '— no lower bound —'],
+    ['To date', filters.to ? `${filters.to} (inclusive of the whole day)` : '— no upper bound —'],
+    ['Retention', `Entries older than ${AUDIT_RETENTION_DAYS} days are deleted automatically.`],
+  ];
+  if (truncated) {
+    details.push([
+      'Truncated',
+      `This export hit the ${MAX_EXPORT_ROWS.toLocaleString('en-GB')}-row ceiling — there are more entries matching these filters. Narrow the date range and export again.`,
+    ]);
+  }
+
+  const file = workbook([
+    { name: 'Activity', columns: COLUMNS, rows: sorted.map(toRow) },
+    {
+      name: 'Export details',
+      columns: [{ key: 'setting', header: 'Setting', width: 24 }, { key: 'value', header: 'Value', width: 76 }],
+      rows: details.map(([setting, value]) => ({ setting, value })),
+      filter: false,
+    },
+  ], { createdAt: at });
+
+  // Reading the audit trail is a privileged act and taking a copy of it out of the
+  // building is more so — every export is itself an entry, with what was asked for.
+  record(req, {
+    action: 'ACTIVITY_EXPORT',
+    entity: 'activity',
+    entityId: 'export',
+    label: `Exported ${sorted.length} activity ${sorted.length === 1 ? 'entry' : 'entries'} to Excel`,
+    after: {
+      rows: sorted.length, truncated, sort,
+      filters: {
+        q: filters.q, action: filters.action, entity: filters.entity,
+        userId: filters.userId, from: filters.from, to: filters.to,
+      },
+    },
+  });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  res.setHeader('Content-Length', String(file.length));
+  // A generated report is never a cached one: the next request is a different moment.
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(file);
+});
+
 // ── Users ───────────────────────────────────────────────────────────────────
 // Creating an account is the one capability an Admin holds and a User does not, so every
 // route below sits behind `admin:users` and nothing else in the product does.
@@ -422,6 +646,10 @@ const publicUser = (u) => ({
   locked: u.lockedUntil ? Date.parse(u.lockedUntil) > Date.now() : false,
   lockedUntil: u.lockedUntil ?? null,
   permissions: PERMISSIONS[normaliseRole(u.role)],
+  // Whether this person has ever come in through Google. Nothing to configure — the link
+  // forms itself the first time they use it — but an administrator asked "can they use
+  // Google?" deserves an answer other than "try it and see".
+  google: u.google ? { email: u.google.email, linkedAt: u.google.linkedAt } : null,
 });
 
 const admins = () => db.users.filter((u) => normaliseRole(u.role) === 'Admin' && u.status === 'active');

@@ -24,12 +24,18 @@ export function SetPassword() {
   // is how the number ends up saying one thing here and another in the API.
   const MIN_LENGTH = user?.minPasswordLength ?? 8;
 
+  // Somebody who has just come in through Google has proved who they are already, and may
+  // never have been sent the handover password at all — asking them for it would be a
+  // dead end on the one screen there is no way past. The server grants this for a few
+  // minutes after a Google sign-in and re-checks it on the write.
+  const viaGoogle = Boolean(user?.canSetPasswordWithoutCurrent);
+
   // Checked here so the reader is told before submitting, and again on the server, which
   // is the check that actually counts.
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
   const mismatch = confirm.length > 0 && next !== confirm;
-  const unchanged = next.length > 0 && next === current;
-  const ready = current.length > 0 && next.length >= MIN_LENGTH && next === confirm && !unchanged;
+  const unchanged = !viaGoogle && next.length > 0 && next === current;
+  const ready = (viaGoogle || current.length > 0) && next.length >= MIN_LENGTH && next === confirm && !unchanged;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,22 +70,34 @@ export function SetPassword() {
 
         <h1 className="t-h1" style={{ textAlign: 'center' }}>Choose your password</h1>
         <p className="t-body" style={{ textAlign: 'center', margin: '8px 0 26px' }}>
-          {user?.name ? `${user.name}, this` : 'This'} is your first sign-in. The password you were
-          given works once — set one only you know, and you will not be asked again.
+          {viaGoogle ? (
+            <>
+              {user?.name ? `${user.name}, you` : 'You'} signed in with Google, so there is nothing
+              to type here that you already know. Set a password as well and you can use either from
+              now on.
+            </>
+          ) : (
+            <>
+              {user?.name ? `${user.name}, this` : 'This'} is your first sign-in. The password you were
+              given works once — set one only you know, and you will not be asked again.
+            </>
+          )}
         </p>
 
         <form onSubmit={submit} className="stack-3">
-          <div className="field">
-            <label className="label" htmlFor="current">The password you were given</label>
-            <PasswordInput
-              id="current"
-              value={current}
-              onChange={setCurrent}
-              autoComplete="current-password"
-              autoFocus
-              required
-            />
-          </div>
+          {!viaGoogle && (
+            <div className="field">
+              <label className="label" htmlFor="current">The password you were given</label>
+              <PasswordInput
+                id="current"
+                value={current}
+                onChange={setCurrent}
+                autoComplete="current-password"
+                autoFocus
+                required
+              />
+            </div>
+          )}
 
           <div className="field">
             <label className="label" htmlFor="next">Your new password</label>
@@ -88,6 +106,7 @@ export function SetPassword() {
               value={next}
               onChange={setNext}
               autoComplete="new-password"
+              autoFocus={viaGoogle}
               invalid={tooShort || unchanged}
               required
             />

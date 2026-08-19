@@ -37,6 +37,20 @@ export const TYPE_INDEX = Object.fromEntries(ASSET_TYPES.map((t) => [t.type, t])
 export const familyOf = (type) => TYPE_INDEX[type]?.family || 'Document';
 export const tierOf = (type) => TYPE_INDEX[type]?.tier || 'HOT';
 
+// Which families a language can be *stated on*, as opposed to inherited.
+//
+// A language is a property of something spoken or sung, so it is asked for on audio and
+// video and on nothing else. A cover, a banner or a credits sheet has no language of its
+// own — pressing somebody to answer for one produces a guess, and a guess in a register is
+// worse than a blank.
+//
+// This governs the field, not the value. An image or a document attached to a Hindi
+// release still reports Hindi in the master log, because that is inherited from the
+// release rather than claimed about the file, and it is what makes "every asset for the
+// Hindi catalogue" a filter that returns the artwork too.
+export const LANGUAGE_FAMILIES = ['Audio', 'Video'];
+export const carriesLanguage = (family) => LANGUAGE_FAMILIES.includes(family);
+
 // Controlled tag vocabulary (§11.2 of v2). Editors pick from these; custom tags are
 // free-form and surface in the Admin review queue for promotion.
 export const CONTROLLED_TAGS = {

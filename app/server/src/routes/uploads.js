@@ -14,6 +14,7 @@ import * as storage from '../services/storage.js';
 import { APP_ORIGIN, CHUNK_SIZE, ROOTS, TRASH_DAYS, UPLOAD_DAILY_BYTES, UPLOAD_MAX_BYTES } from '../config.js';
 import { uuid } from '../util/crypto.js';
 import { resolveFamily, resolveTier, typeExists } from '../services/vocabulary.js';
+import { carriesLanguage } from '../catalogue.js';
 import { shape } from '../services/assets.js';
 import * as antivirus from '../services/antivirus.js';
 import { properties } from '../storage/drive.js';
@@ -260,6 +261,10 @@ uploadsRouter.post('/complete', requires('asset:upload'), async (req, res) => {
     dimensions: (v) => str(v, { max: 40, field: 'dimensions' }),
     tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
     durationSec: (v) => int(v, { min: 0, max: 60 * 60 * 24 * 7, field: 'durationSec' }),
+    // Optional. A file attached to a song inherits the release's language, so this is
+    // what gives the rest of the library — loose reels, stills, paperwork — a language
+    // at all, and what lets one file disagree with its release when it genuinely does.
+    language: (v) => str(v, { max: 60, field: 'language', allowEmpty: true }),
   });
   if (!meta.ok) return problem(res, 422, 'Unprocessable Entity', meta.problem);
   const metadata = meta.value;
@@ -393,6 +398,11 @@ uploadsRouter.post('/complete', requires('asset:upload'), async (req, res) => {
     durationSec: drive.durationSec ?? metadata?.durationSec ?? null,
     dimensions: drive.dimensions ?? metadata?.dimensions ?? null,
     tags: metadata?.tags || [],
+    // Empty means "not stated here" — the release's language answers for it, and if there
+    // is no release the file honestly has no language recorded. Only audio and video may
+    // state one at all, so anything a client sends for a cover or a contract is dropped
+    // rather than stored somewhere no screen will ever show it.
+    language: carriesLanguage(resolveFamily(assetType)) ? metadata?.language || '' : '',
     // Kept alongside Drive's own sha256 because the browser computed it before the upload
     // and it is what the pre-upload duplicate warning matched on.
     checksumSHA256: metadata?.checksumSHA256 ?? null,

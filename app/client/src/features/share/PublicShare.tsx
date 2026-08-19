@@ -33,6 +33,8 @@ interface SharedFile {
   artistName: string | null;
   availability: string;
   previewUrl: string | null;
+  /** Set when the file came out of a folder inside the shared one. */
+  subfolder?: string | null;
 }
 
 interface Resolved {
@@ -335,6 +337,10 @@ function FolderShare({
                     {f.displayName}
                   </span>
                   <span className="t-small" style={{ display: 'block', fontSize: 13.5 }}>
+                    {/* A folder link covers the tree, so a file one level down says where
+                        it came from — otherwise two masters with the same name in two
+                        subfolders are indistinguishable in this list. */}
+                    {f.subfolder ? `${f.subfolder} · ` : ''}
                     {KIND_LABEL[previewKind(f.mimeType, f.displayName)]} · {bytes(f.sizeBytes)}
                     {f.availability !== 'AVAILABLE' ? ` · ${f.availability.toLowerCase()}` : ''}
                   </span>

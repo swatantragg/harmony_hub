@@ -15,7 +15,7 @@
 // Folders nest. A folder may carry a parentId, and the tree in the catalogue is the tree
 // in Drive.
 import express from 'express';
-import { db, persist, assetsInFolder, assetContext } from '../db.js';
+import { db, persist, assetsInFolder, assetsUnderFolder, assetContext } from '../db.js';
 import { authenticate, requires, problem } from '../middleware/auth.js';
 import { shape } from '../services/assets.js';
 import { record } from '../services/audit.js';
@@ -49,6 +49,21 @@ const stats = (folder) => {
 
 const childrenOf = (folderId) => db.folders.filter((f) => !f.deletedAt && f.parentId === folderId);
 
+// What the whole tree under a folder holds, alongside what the folder itself holds.
+//
+// The two numbers answer different questions and both are needed. `assetCount` is what
+// this folder lists, and it is what "delete this folder releases N files" has to count.
+// The deep numbers are what a share link covers, and without them a folder whose files
+// all sit one level down looked empty — the Share action was greyed out with "there is
+// nothing in this folder to share yet" while the folder plainly had a hundred files in it.
+const deepStats = (folder) => {
+  const rows = assetsUnderFolder(folder._id);
+  return {
+    totalAssetCount: rows.length,
+    totalBytesDeep: rows.reduce((n, { asset }) => n + (asset.drive?.sizeBytes ?? 0), 0),
+  };
+};
+
 const decorate = (folder) => {
   const song = folder.songId ? db.songs.find((s) => s._id === folder.songId) : null;
   const artist = folder.artistId
@@ -65,6 +80,7 @@ const decorate = (folder) => {
     subfolderCount: childrenOf(folder._id).length,
     createdByName: db.users.find((u) => u._id === folder.createdBy)?.name ?? 'Unknown',
     ...stats(folder),
+    ...deepStats(folder),
   };
 };
 

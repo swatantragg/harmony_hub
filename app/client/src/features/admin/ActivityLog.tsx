@@ -3,9 +3,9 @@
 // rather than a single truncated slice of the most recent hundred entries.
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ScrollText, Search, X } from 'lucide-react';
-import { api, qs } from '../../lib/api';
-import { EmptyState, Skeleton, useDebounced } from '../../components/ui';
+import { Loader2, ScrollText, Search, Sheet, X } from 'lucide-react';
+import { api, downloadFile, qs } from '../../lib/api';
+import { EmptyState, Skeleton, useDebounced, useToast } from '../../components/ui';
 import { Pagination } from '../../components/Pagination';
 import { ACTION_COPY } from '../../lib/assetTypes';
 import { date, relative } from '../../lib/format';
@@ -38,7 +38,9 @@ export function ActivityLog() {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [exporting, setExporting] = useState<'filtered' | 'all' | null>(null);
   const debounced = useDebounced(q);
+  const toast = useToast();
 
   const { data, isLoading } = useQuery({
     queryKey: ['activity', debounced, action, sort, from, to, page, pageSize],
@@ -57,10 +59,59 @@ export function ActivityLog() {
 
   const clear = () => { setQ(''); setAction(''); setFrom(''); setTo(''); setPage(1); };
 
+  // The export takes the filters, never the page. A page is a scrolling position — nobody
+  // wants rows 51 to 100 of an audit trail in a spreadsheet — whereas the filters are the
+  // question being asked, and they are exactly what should survive into the file.
+  //
+  // It also reaches past what this screen can see: the table is served from the most
+  // recent entries held in memory, and the export reads the full archive, so a date range
+  // months back returns rows that were never on screen.
+  const exportXlsx = async (scope: 'filtered' | 'all') => {
+    setExporting(scope);
+    try {
+      const query = scope === 'filtered' ? qs({ q: debounced, action, sort, from, to }) : qs({ sort });
+      await downloadFile(`/admin/activity/export.xlsx${query}`, 'gcloud-activity.xlsx');
+      toast({
+        kind: 'ok',
+        title: 'Export ready',
+        body: scope === 'filtered'
+          ? 'The rows matching these filters, as an .xlsx. A second sheet records exactly what was filtered — an audit extract with no note of what it left out is not worth much.'
+          : 'The whole retention window, as an .xlsx — not just the entries this screen holds.',
+      });
+    } catch (e) {
+      toast({ kind: 'danger', title: 'Could not build the export', body: e instanceof Error ? e.message : 'Unknown error' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="page stack-4">
       <div className="page-head">
-        <h1 className="t-h1">Activity log</h1>
+        <div className="spread" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <h1 className="t-h1">Activity log</h1>
+          <div className="row-tight" style={{ flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-primary"
+              disabled={exporting !== null}
+              onClick={() => exportXlsx('filtered')}
+              title="Everything matching the search, action and date range below"
+            >
+              {exporting === 'filtered' ? <Loader2 size={15} /> : <Sheet size={15} />}
+              {filtered ? `Export these ${data?.total ?? 0} to Excel` : 'Export to Excel'}
+            </button>
+            {filtered && (
+              <button
+                className="btn btn-secondary"
+                disabled={exporting !== null}
+                onClick={() => exportXlsx('all')}
+                title="Ignores the filters below — the whole retention window"
+              >
+                {exporting === 'all' ? <Loader2 size={15} /> : <Sheet size={15} />} Export everything
+              </button>
+            )}
+          </div>
+        </div>
 
         <div className="stack-3" style={{ marginTop: 16 }}>
           <div className="toolbar">
