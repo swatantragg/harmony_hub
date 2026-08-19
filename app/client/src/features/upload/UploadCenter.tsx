@@ -13,10 +13,12 @@ import {
 import { api } from '../../lib/api';
 import { VERSION_LABELS } from '../../lib/assetTypes';
 import { useAssetTypes } from '../../lib/vocabulary';
+import { carriesLanguage, familyOf } from '../../lib/assetTypes';
 import { bytes } from '../../lib/format';
 import { EmptyState, useToast } from '../../components/ui';
 import { TagPicker } from './TagPicker';
 import { TypePicker } from './TypePicker';
+import { LanguagePicker } from '../../components/LanguagePicker';
 import { FolderPicker } from '../folders/FolderPicker';
 import { abortUpload, checksum, runUpload, useQueue } from './useUploadQueue';
 import type { QueueItem } from './useUploadQueue';
@@ -111,6 +113,26 @@ export function UploadCenter() {
   const applyToAll = (patch: Partial<QueueItem>) => {
     for (const i of items) if (!['DONE', 'UPLOADING', 'FINALISING'].includes(i.state)) update(i.id, patch);
   };
+
+  // A queued file carries a type, and the family behind it may belong to a custom type the
+  // built-in table has never heard of — so the registry answers, and `familyOf` is only
+  // the fallback for a type chosen before the registry arrived.
+  const familyOfType = (type: string) =>
+    typeData?.data.find((t) => t.type === type)?.family ?? familyOf(type);
+
+  const speaks = (i: QueueItem) => carriesLanguage(familyOfType(i.assetType));
+
+  // Applying a language to "all" must not write one onto the covers in the queue: the
+  // field is not offered for them, so a value they could never see or remove would be
+  // stranded on the record. It reaches the audio and video only, and the control says so.
+  const applyLanguageToAll = (language: string) => {
+    for (const i of items) {
+      if (['DONE', 'UPLOADING', 'FINALISING'].includes(i.state) || !speaks(i)) continue;
+      update(i.id, { language });
+    }
+  };
+
+  const spokenInQueue = items.filter((i) => i.state === 'READY' && speaks(i)).length;
 
   return (
     <div className="page stack-4">
@@ -215,6 +237,14 @@ export function UploadCenter() {
                     <div className="hint">Optional — leave as “No song” for files that are not tied to a release.</div>
                   </div>
                   <FolderPicker value="" onChange={(folderId) => applyToAll({ folderId })} label="Put all in a folder" />
+                  {spokenInQueue > 0 && (
+                    <LanguagePicker
+                      value=""
+                      onChange={applyLanguageToAll}
+                      label="Language for all"
+                      hint={`Optional, and reaches the ${spokenInQueue} audio and video ${spokenInQueue === 1 ? 'file' : 'files'} only. Anything attached to a song inherits the release’s language.`}
+                    />
+                  )}
                 </div>
                 <TagPicker
                   value={[]}
@@ -232,6 +262,7 @@ export function UploadCenter() {
               <UploadRow
                 key={item.id}
                 item={item}
+                family={familyOfType(item.assetType)}
                 songs={songs?.data ?? []}
                 knownTags={sessionTags}
                 onChange={(patch) => update(item.id, patch)}
@@ -261,9 +292,11 @@ function guessType(file: File): string {
 }
 
 function UploadRow({
-  item, songs, knownTags, onChange, onStart, onPause, onRemove,
+  item, family, songs, knownTags, onChange, onStart, onPause, onRemove,
 }: {
   item: QueueItem;
+  /** Resolved by the parent from the live type registry, so custom types are right too. */
+  family: string;
   songs: SongRow[];
   knownTags: string[];
   onChange: (patch: Partial<QueueItem>) => void;
@@ -361,6 +394,22 @@ function UploadRow({
                   {VERSION_LABELS.map((v) => <option key={v} value={v}>{v}</option>)}
                 </select>
               </div>
+
+              {/* Audio and video only — a cover or a credits sheet has no language of
+                  its own, and a field that insists otherwise collects a guess. It says
+                  which of the two answers will be used rather than leaving somebody to
+                  wonder why it looks redundant next to a song. */}
+              {carriesLanguage(family) && (
+                <LanguagePicker
+                  value={item.language}
+                  onChange={(language) => onChange({ language })}
+                  hint={
+                    item.songId
+                      ? 'Optional. Leave blank to use the language on the release; fill it in only when this file differs.'
+                      : 'Optional, and the only place this file can get one — it is not tied to a release.'
+                  }
+                />
+              )}
             </div>
 
             <TagPicker required value={item.tags} knownTags={knownTags} onChange={(tags) => onChange({ tags })} />

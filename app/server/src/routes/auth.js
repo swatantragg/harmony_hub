@@ -1,16 +1,21 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { db, persist, flushNow } from '../db.js';
-import { signJwt, verifyPassword, hashPassword } from '../util/crypto.js';
+import { signJwt, token, verifyPassword, hashPassword } from '../util/crypto.js';
 import {
-  ACCESS_TTL_SEC, LOGIN_LOCKOUT_SEC, LOGIN_MAX_FAILURES, MIN_PASSWORD_LENGTH,
+  ACCESS_TTL_SEC, APP_ORIGIN, GOOGLE_SIGNIN, GOOGLE_SIGNIN_CONFIGURED,
+  LOGIN_LOCKOUT_SEC, LOGIN_MAX_FAILURES, MIN_PASSWORD_LENGTH,
   NODE_ENV, ORIGIN, PASSWORD_BREACH_CHECK, REFRESH_TTL_SEC, isWeakPassword,
 } from '../config.js';
 import { PERMISSIONS, normaliseRole } from '../catalogue.js';
 import { authenticate, authenticatePending, mintStepUpTicket, problem } from '../middleware/auth.js';
 import { record, notify } from '../services/audit.js';
 import * as sessions from '../services/sessions.js';
-import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from '../util/cookies.js';
+import {
+  clearRefreshCookie, clearSignInStateCookie, readRefreshCookie,
+  readSignInStateCookie, setRefreshCookie, setSignInStateCookie,
+} from '../util/cookies.js';
+import * as google from '../services/google-signin.js';
 
 export const authRouter = express.Router();
 
@@ -41,6 +46,18 @@ const publicUser = (u) => ({
   // the server said 12 while one screen said 12 and another said 8 — and a form that
   // accepts what the API then refuses is worse than no hint at all.
   minPasswordLength: MIN_PASSWORD_LENGTH,
+  // How this account can get in. Both ways are always open — a password is never
+  // withdrawn because somebody used Google, and Google never has to be set up before a
+  // password works — so this describes what has happened, not what is permitted.
+  google: u.google
+    ? { linkedAt: u.google.linkedAt, email: u.google.email, lastSignInAt: u.google.lastSignInAt ?? null }
+    : null,
+  googleSignInAvailable: GOOGLE_SIGNIN_CONFIGURED,
+  // Set only in the few minutes after a Google sign-in, and only while the handover
+  // password is still in place. The set-a-password screen reads it to decide whether to
+  // ask for a password the person may never have been sent — the server makes the same
+  // decision again on the write, which is the one that counts.
+  canSetPasswordWithoutCurrent: googleVerifiedRecently(u),
 });
 
 const signAccess = (user) => signJwt({
@@ -182,6 +199,169 @@ authRouter.post('/login', async (req, res) => {
   res.json({ accessToken: signAccess(user), expiresIn: ACCESS_TTL_SEC, user: publicUser(user) });
 });
 
+// ── Sign in with Google (§12.1) ─────────────────────────────────────────────
+//
+// A second way through the same door, not a second door. Everything past this point is
+// identical to a password sign-in: the same session, the same refresh cookie, the same
+// token generation, the same audit row. What differs is only how the account was proved.
+//
+// Three rules, and they are what make this safe to switch on for a library whose accounts
+// are created by an administrator:
+//
+//   1. It never creates an account. Google says "this is really user01@gmail.com"; the
+//      account for user01@gmail.com has to already exist here. An address Google
+//      verifies but nobody has been given access to is refused, and told so plainly.
+//   2. It never withdraws the password. Once an account exists, both routes work — the
+//      person picks whichever is in front of them, and the same account answers.
+//   3. It is matched on the verified email address and nothing else, because that is the
+//      identifier an administrator typed when they created the account. The Google
+//      subject id is recorded the first time as a second, stronger key: an address can
+//      in principle be reassigned, and if the id ever stops matching, something has
+//      changed underneath the account and the sign-in stops rather than guessing.
+
+// Where the browser is sent when the flow finishes, either way. The client reads the
+// query it lands with, exchanges the refresh cookie for an access token, and carries on —
+// or shows the reason it could not.
+const signInLanding = (params) => `${APP_ORIGIN}/#/login?${new URLSearchParams(params)}`;
+
+authRouter.get('/providers', (_req, res) => {
+  res.json({
+    password: true,
+    google: {
+      enabled: GOOGLE_SIGNIN_CONFIGURED,
+      // Shown under the button when a deployment restricts sign-in to one Workspace.
+      hostedDomain: GOOGLE_SIGNIN.hostedDomain,
+    },
+  });
+});
+
+// Step one. Nothing is decided here — the browser is handed to Google with a state value
+// this server signed and a nonce it also set as a cookie.
+authRouter.get('/google', (req, res) => {
+  if (!GOOGLE_SIGNIN_CONFIGURED) return res.redirect(302, signInLanding({ google: 'error', reason: 'disabled' }));
+
+  const nonce = token(18);
+  const state = google.mintState({ nonce, returnTo: String(req.query.returnTo || '/') });
+  setSignInStateCookie(res, nonce, { maxAgeSec: google.STATE_TTL_SEC, secure: SECURE_COOKIES });
+  res.redirect(302, google.authorizeUrl({
+    state,
+    // Prefills the chooser when somebody typed their address before giving up on the
+    // password. Only a hint — Google still decides, and the callback still checks.
+    loginHint: String(req.query.email || '').trim().toLowerCase() || null,
+  }));
+});
+
+// Step two. Everything is decided here.
+authRouter.get('/google/callback', async (req, res) => {
+  const fail = (reason, detail) => {
+    clearSignInStateCookie(res, { secure: SECURE_COOKIES });
+    return res.redirect(302, signInLanding({ google: 'error', reason, ...(detail ? { detail } : {}) }));
+  };
+
+  if (!GOOGLE_SIGNIN_CONFIGURED) return fail('disabled');
+  // The visitor pressed "cancel" on Google's own screen, or Google refused before it ever
+  // reached us. Not an error worth a red banner.
+  if (req.query.error) return fail(req.query.error === 'access_denied' ? 'cancelled' : 'refused');
+
+  // The state has to be one this server signed *and* have come back in the browser it was
+  // issued to. Either half missing is a sign-in somebody else started.
+  const state = google.readState(req.query.state);
+  const nonce = readSignInStateCookie(req);
+  if (!state || !nonce || state.nonce !== nonce) return fail('state');
+  clearSignInStateCookie(res, { secure: SECURE_COOKIES });
+
+  let identity;
+  try {
+    identity = await google.identityFromCode(String(req.query.code || ''));
+  } catch (err) {
+    record({ ...req, user: { sub: null, name: 'unknown', role: 'anonymous' } }, {
+      action: 'AUTH_GOOGLE_FAILED', entity: 'user', entityId: 'unknown',
+      label: `Google sign-in failed (${err.reason ?? 'error'})`,
+      after: { reason: err.reason ?? null },
+    });
+    return fail(err.reason ?? 'refused', err.message);
+  }
+
+  const user = db.users.find((u) => u.email.toLowerCase() === identity.email);
+
+  // No account. Recorded like any other failed sign-in — a run of these against addresses
+  // nobody has been given is the same signal a run of failed passwords is.
+  if (!user) {
+    record({ ...req, user: { sub: null, name: identity.email, role: 'anonymous' } }, {
+      action: 'AUTH_GOOGLE_NO_ACCOUNT', entity: 'user', entityId: 'unknown',
+      label: `Google sign-in for ${identity.email} — no account in this library`,
+    });
+    return fail('no-account');
+  }
+  if (user.status !== 'active') {
+    record({ ...req, user: { sub: user._id, name: user.name, role: 'system' } }, {
+      action: 'AUTH_GOOGLE_BLOCKED', entity: 'user', entityId: user._id,
+      label: `Google sign-in refused — ${user.name}'s account is suspended`,
+    });
+    return fail('suspended');
+  }
+  // A locked account is locked whichever door is tried. Otherwise the lockout is a
+  // speed bump that Google walks straight past.
+  if (lockedUntil(user) > Date.now()) {
+    record({ ...req, user: { sub: user._id, name: user.name, role: 'system' } }, {
+      action: 'AUTH_GOOGLE_BLOCKED', entity: 'user', entityId: user._id,
+      label: `Google sign-in refused — ${user.name}'s account is locked`,
+    });
+    return fail('locked');
+  }
+  // The address matches but the Google account behind it does not. Either the address was
+  // reassigned or somebody is standing in front of an account that is not theirs; neither
+  // is a thing to resolve by guessing.
+  if (user.google?.sub && user.google.sub !== identity.sub) {
+    record({ ...req, user: { sub: user._id, name: user.name, role: 'system' } }, {
+      action: 'AUTH_GOOGLE_MISMATCH', entity: 'user', entityId: user._id,
+      label: `Google sign-in refused — ${user.email} is linked to a different Google account`,
+    });
+    return fail('mismatch');
+  }
+
+  const at = new Date().toISOString();
+  const firstLink = !user.google;
+  user.google = {
+    sub: identity.sub,
+    email: identity.email,
+    name: identity.name,
+    picture: identity.picture,
+    linkedAt: user.google?.linkedAt ?? at,
+    lastSignInAt: at,
+  };
+  user.failedLogins = 0;
+  user.lockedUntil = null;
+  user.lastLoginAt = at;
+  // Proof of identity, good for a few minutes and for exactly one thing: replacing a
+  // handover password without knowing it. See POST /password.
+  if (user.mustChangePassword) user.googleVerifiedAt = at;
+  persist();
+
+  const { refreshToken } = await sessions.open(user, req);
+  setRefreshCookie(res, refreshToken, { maxAgeSec: REFRESH_TTL_SEC, secure: SECURE_COOKIES });
+
+  record({ ...req, user: { sub: user._id, name: user.name, role: normaliseRole(user.role) } }, {
+    action: 'AUTH_LOGIN_GOOGLE', entity: 'user', entityId: user._id,
+    label: `${user.name} signed in with Google`,
+    after: { email: identity.email, firstLink },
+  });
+  if (firstLink) {
+    notify({
+      userId: user._id,
+      level: 'info',
+      title: 'Your Google account is now linked',
+      body: `${identity.email} can sign in to GCloud from now on. Your password still works exactly as before.`,
+      link: '/profile',
+    });
+  }
+
+  // No token in the URL. The refresh cookie is already set, so the client exchanges it for
+  // an access token the moment it loads — a token in a query string ends up in history,
+  // in logs, and in the referrer of the next request.
+  res.redirect(302, signInLanding({ google: 'ok', returnTo: state.returnTo }));
+});
+
 // ── Refresh ─────────────────────────────────────────────────────────────────
 // The only route in the product authorised by a cookie rather than a bearer header, and
 // therefore the only one with any CSRF surface. Three things close it: SameSite=Strict on
@@ -235,13 +415,30 @@ authRouter.post('/refresh', async (req, res) => {
 // token is real and the account is real, but `mustChangePassword` is still set, so the
 // first change is let through on the starting password alone. Every later change asks for
 // the current one just the same.
+// A Google sign-in is proof of identity, and for a few minutes after one it stands in for
+// the handover password on this one route. Without this, somebody added by an
+// administrator and told "just use Google" would still be stopped at the set-a-password
+// screen and asked for a value nobody sent them.
+//
+// Deliberately narrow. It only ever applies while `mustChangePassword` is set — that is,
+// to a password the administrator chose and at least two people know, which is the one
+// password there is nothing to protect. Every later change asks for the current one, and
+// a Google sign-in does not help.
+const GOOGLE_GRANT_SEC = 15 * 60;
+
+const googleVerifiedRecently = (user) =>
+  Boolean(user.mustChangePassword)
+  && Boolean(user.googleVerifiedAt)
+  && Date.now() - Date.parse(user.googleVerifiedAt) < GOOGLE_GRANT_SEC * 1000;
+
 authRouter.post('/password', authenticatePending, async (req, res) => {
   const user = db.users.find((u) => u._id === req.user.sub);
   if (!user) return problem(res, 401, 'Unauthorized', 'This account no longer exists.');
 
   const { currentPassword, newPassword } = req.body || {};
 
-  const ok = await verifyPassword(String(currentPassword || ''), user.passwordHash);
+  const viaGoogle = googleVerifiedRecently(user);
+  const ok = viaGoogle || await verifyPassword(String(currentPassword || ''), user.passwordHash);
   if (!ok) {
     registerFailure(user, req);
     record(req, {
@@ -260,6 +457,8 @@ authRouter.post('/password', authenticatePending, async (req, res) => {
 
   user.passwordHash = await hashPassword(newPassword);
   user.mustChangePassword = false;
+  // Spent. The grant covers exactly one password, not fifteen minutes of them.
+  user.googleVerifiedAt = null;
   user.passwordChangedAt = new Date().toISOString();
   user.failedLogins = 0;
   user.lockedUntil = null;
@@ -274,7 +473,7 @@ authRouter.post('/password', authenticatePending, async (req, res) => {
   record(req, {
     action: 'AUTH_PASSWORD_CHANGE', entity: 'user', entityId: user._id,
     label: `${user.name} set a new password`,
-    meta: { sessionsRevoked: true },
+    meta: { sessionsRevoked: true, authorisedBy: viaGoogle ? 'google' : 'current-password' },
   });
 
   // The caller keeps working: a fresh session replaces the one just invalidated.

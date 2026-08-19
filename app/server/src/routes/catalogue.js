@@ -272,7 +272,10 @@ songsRouter.post('/', requires('catalogue:edit'), (req, res) => {
   const song = {
     _id: `song_${uuid().slice(0, 8)}`,
     title, artistId, featuring: [],
-    language: language || 'Hindi', mood: mood || 'Romantic', isrc: isrc || '',
+    // No default language. 'Hindi' used to be filled in whenever the field was left
+    // alone, which meant the catalogue asserted a language nobody had chosen — and a
+    // register that states an unchosen fact is worse than one that admits it is blank.
+    language: language || '', mood: mood || 'Romantic', isrc: isrc || '',
     releaseDate: releaseDate || new Date().toISOString(), tags: tags || [], description: '',
     assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), deletedAt: null,
   };

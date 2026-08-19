@@ -112,8 +112,17 @@ export function ShareDialog({
 
   if (!target) return null;
   const name = target.kind === 'folder' ? target.folder.name : target.asset.displayName;
+  // A folder link resolves to the folder *and everything under it*, so the counts shown
+  // here are the deep ones — the recipient's manifest and this line have to agree.
+  const folderFiles = target.kind === 'folder'
+    ? target.folder.totalAssetCount ?? target.folder.assetCount
+    : 0;
+  const folderBytes = target.kind === 'folder'
+    ? target.folder.totalBytesDeep ?? target.folder.totalBytes
+    : 0;
+  const nested = target.kind === 'folder' ? folderFiles - target.folder.assetCount : 0;
   const subtitle = target.kind === 'folder'
-    ? `${target.folder.assetCount} files · ${bytes(target.folder.totalBytes)}`
+    ? `${folderFiles} files · ${bytes(folderBytes)}`
     : name;
 
   /* ── Preview step ─────────────────────────────────────────────────────── */
@@ -292,8 +301,14 @@ export function ShareDialog({
           <div className="note indigo">
             <ShieldCheck size={15} />
             <div>
-              <b>{target.folder.assetCount} files, each preview-able and downloadable on its own.</b> Nothing
-              is zipped or copied — the link always shows what is in the folder right now.
+              <b>{folderFiles} files, each preview-able and downloadable on its own.</b>{' '}
+              {nested > 0 && (
+                <>
+                  {nested} of them {nested === 1 ? 'sits' : 'sit'} in a folder inside this one — a link
+                  covers the whole tree.{' '}
+                </>
+              )}
+              Nothing is zipped or copied — the link always shows what is in the folder right now.
             </div>
           </div>
         )}

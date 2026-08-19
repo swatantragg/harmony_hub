@@ -223,6 +223,127 @@ meant it. Everything a User can do has a way back.
 The last active Admin cannot be demoted or suspended — including by themselves — because a
 library with no administrator has no route back.
 
+### Signing in with Google
+
+Every account can also be opened with **Continue with Google**, against the same email
+address the administrator typed when they created it. It is a second way through the same
+door, not a second account: `user01@gmail.com` signs in with the password *or* with Google,
+and the session, the role and the audit trail are identical either way. Using one never
+switches the other off, and there is nothing to enable per person — the link forms itself
+the first time somebody uses it, and the People screen then says so.
+
+It never creates accounts. Google settles *who this is*; GCloud still decides whether that
+address has access, so an address nobody has been added is refused and told to ask an
+administrator.
+
+It reuses the OAuth client `npm run drive:auth` already set up, so the only step is to
+authorise the callback address on it:
+
+> Google Cloud console → **APIs & Services → Credentials** → your OAuth client →
+> **Authorised redirect URIs** → add `http://localhost:8100/api/auth/google/callback`
+> (that is `PUBLIC_ORIGIN` + `/api/auth/google/callback`, so add the deployed https one too)
+
+Until it is listed, Google answers `redirect_uri_mismatch` and the sign-in screen says
+exactly that. Set `GOOGLE_SIGNIN_ENABLED=false` to remove the button, or
+`GOOGLE_SIGNIN_HOSTED_DOMAIN=yourdomain.com` to accept one Workspace only. A separate
+client can be used instead through `GOOGLE_SIGNIN_CLIENT_ID` / `_SECRET`.
+
+Somebody added by an administrator who signs in with Google before ever using the handover
+password is still asked to choose a password — but is not asked for the one they were never
+sent, because Google has just proved who they are. That exemption lasts a few minutes,
+covers exactly one password, and never applies to an account that has already set one.
+
+### The master log
+
+**Master log** is the register of record: one row per catalogued file, sixty-nine
+available columns, and nothing summarised away. It is not the activity log — that is a
+stream of events, this is the state of the library as it stands. *"Who deleted the master
+on Tuesday"* is a question for one; *"what do we hold, in what state, and can we prove it"*
+is a question for the other.
+
+Seventeen columns are on by default. The rest are one click away in **Columns**, grouped by
+what they describe — identity, classification, state, placement, storage, integrity,
+release, custody, distribution — with five named presets for the questions people arrive
+with: a standard register, a delivery sheet, a storage audit, a chain of custody, and
+everything at once.
+
+Every column sorts in both directions, every filter lives in the URL — so *"the register of
+everything missing, oldest first"* is a link somebody can be sent — and blanks always sort
+last, in both directions, because an empty cell is absent rather than smallest.
+
+Deleted files are excluded by default and one dropdown away, so *"how many files do we
+hold"* never silently counts the recycle bin.
+
+### Where a file's language comes from
+
+Language began as a property of the **song**, which is right for the common case: the six
+files that make up one release share a language, and recording it once on the release is
+the only thing that keeps them in step. But most of the library is not attached to a song —
+a loose reel, a BTS clip, an artist photo, a lyric sheet filed in a folder — and those had
+nowhere to put a language at all. They came out blank on every screen, and a language
+filter silently excluded them rather than saying so.
+
+So a file may now carry a language of its own. It is asked for at upload, beside the type
+and the tags, and it is editable afterwards from **Edit details**. Both places offer the
+controlled list and still accept anything typed, because a library that refuses an unlisted
+language is a library somebody works around; a typed value is snapped to a list entry when
+it differs only by case.
+
+**The field is offered on audio and video only.** A cover, a banner or a credits sheet has
+no language of its own, and a field that insists otherwise collects a guess. This governs
+the field rather than the value: artwork attached to a Hindi release still reports Hindi in
+the master log, marked *inherited*, which is what keeps *"every asset for the Hindi
+catalogue"* a filter that returns the artwork too. Re-typing a reel as a cover clears the
+file-level language in the same save — leaving it behind would strand a value no screen
+could show or remove. The server enforces the rule as well as the form.
+
+The order of resolution is: **the file's own language, then its release's.** A file-level
+value exists only because somebody stated it about *that file*, which is a stronger claim
+than the release's default — an English-subtitled cut of a Hindi single is exactly the case
+that needs it. The master log carries a **Language stated on** column saying which of the
+two answered, so a register never shows a value without saying where it came from.
+
+Nothing is guessed. A file with no language of its own and no release behind it reports no
+language, and the master log's language filter offers **—** so *"which files have no
+language recorded?"* is an answerable question rather than a gap in a dropdown. Creating a
+song no longer fills in `Hindi` when the field is left alone, for the same reason.
+
+### Taking the master log out
+
+Three scopes, each saying in words what it will contain: the rows ticked on screen, the
+rows matching the filters, or the whole library. Two formats: `.xlsx` and `.csv`. What
+leaves is what is on screen — the same filters, the same order, the same columns — unless
+**every column** is chosen in the column picker.
+
+The workbook is a report rather than a data dump. Beyond the register itself it carries a
+summary, roll-ups by artist, by asset type and by folder, and a final sheet recording who
+exported it, when, in what order, and precisely which filters produced it — including the
+columns it left out. A register with no note of what was filtered out of it is a register
+nobody should quote from.
+
+The CSV is RFC 4180 with every field quoted and a byte-order mark, so Excel on Windows
+reads it as UTF-8 rather than as the system code page.
+
+A hand-picked selection is POSTed rather than put in a URL: six hundred asset ids is
+twenty-two kilobytes, and a URL that long is refused by proxies. Taking a copy is itself an
+entry in the activity log, with the scope, the columns and the filters that were used.
+
+### Taking the activity log out
+
+**Admin → Activity log** exports to `.xlsx`. The button carries whatever the screen is
+filtered to — the search, the action, the date range, the order — so what lands in the file
+is what was on screen, and a second **Export everything** appears whenever a filter is
+active in case the wider view was wanted.
+
+The export reads the full audit archive rather than the 2,000 most recent entries the
+screen holds, so *"everything that happened in March"* is answerable months later. It
+carries the columns a table has no room for — the socket address, the forwarded-for header
+when it disagreed with it, the device, and the complete before/after payloads — and a
+second sheet records who exported it, when, and precisely which filters were applied. An
+audit extract with no note of what it left out is not worth much.
+
+Taking a copy is itself an entry in the log, with the filters that were used.
+
 For front-end work, run the API and the Vite dev server side by side:
 
 ```bash

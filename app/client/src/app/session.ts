@@ -7,7 +7,10 @@ interface SessionState {
   loading: boolean;
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<User>;
-  /** Replaces the password on the signed-in account and clears the first-run gate. */
+  /**
+   * Replaces the password on the signed-in account and clears the first-run gate.
+   * `currentPassword` is empty when a live Google sign-in is standing in for it.
+   */
   setPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Ends every session on this account, on every device. */

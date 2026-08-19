@@ -83,8 +83,12 @@ function useFolderActions(folder: Folder | null, opts: { onDeleted?: () => void 
       label: 'Share folder',
       icon: <Share2 size={16} />,
       hidden: !can('share:create'),
-      disabled: folder.assetCount === 0,
-      disabledReason: 'There is nothing in this folder to share yet.',
+      // A share link covers the whole tree, so the count that decides whether there is
+      // anything to share is the deep one. Testing `assetCount` greyed this out on every
+      // folder that keeps its files in subfolders — which is most of them once a library
+      // has been organised.
+      disabled: (folder.totalAssetCount ?? folder.assetCount) === 0,
+      disabledReason: 'Nothing is filed in this folder or in any folder inside it yet.',
       onSelect: () => setSharing(true),
     },
     {

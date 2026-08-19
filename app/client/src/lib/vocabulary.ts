@@ -99,3 +99,18 @@ export function groupTypes(types: AssetTypeDef[]): [Family, AssetTypeDef[]][] {
     .map((f) => [f, types.filter((t) => t.family === f).sort((a, b) => Number(a.custom) - Number(b.custom))] as [Family, AssetTypeDef[]])
     .filter(([, list]) => list.length > 0);
 }
+
+// ── Languages ───────────────────────────────────────────────────────────────
+//
+// The controlled list is a set of suggestions, not a constraint: the server bounds the
+// field at 60 characters and otherwise accepts what it is given, because a library that
+// refuses an unlisted language is a library somebody works around. So the picker offers
+// the list and still lets a name be typed.
+export function useLanguages() {
+  return useQuery({
+    queryKey: ['vocabulary-languages'],
+    queryFn: () => api<{ languages: string[]; moods: string[] }>('/tags'),
+    staleTime: 300_000,
+    select: (d) => d.languages ?? [],
+  });
+}

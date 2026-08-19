@@ -44,6 +44,12 @@ export interface QueueItem {
   version: string;
   tags: string[];
   description: string;
+  /**
+   * Optional. A file attached to a song inherits the release's language, so this is what
+   * gives a loose reel, a still or a lyric sheet a language at all — and what lets one
+   * file disagree with its release when it genuinely does.
+   */
+  language: string;
   // Runtime
   assetId?: string;
   /** The Drive resumable session URI. This is itself the credential — treat it as one. */
@@ -86,6 +92,7 @@ export const useQueue = create<QueueStore>((set) => ({
           version: 'V1',
           tags: [] as string[],
           description: '',
+          language: '',
           uploadedBytes: 0,
           bytesSent: 0,
           ...defaults,
@@ -384,6 +391,7 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
           assetType: item.assetType,
           version: item.version,
           tags: item.tags,
+          language: item.language,
           checksumSHA256: item.checksum,
         },
       },

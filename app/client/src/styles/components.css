@@ -1093,3 +1093,118 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
     }
   }
 }
+
+/* ── Master log ────────────────────────────────────────────────────────────
+   The register of record, as a real spreadsheet: sixty-nine available columns, a header
+   that stays put while the rows scroll under it, and the three leftmost columns — the
+   tick box, the row number and the title — pinned to the left edge so a row scrolled
+   forty columns sideways still says which file it is about. Without the pin, the SHA-256
+   column is an anonymous wall of hex.
+
+   Below 900px the pinning is dropped: 340px of frozen columns on a 390px screen leaves
+   nothing to scroll into. */
+
+.mlog-filters { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; }
+.mlog-filter { display: flex; flex-direction: column; gap: 5px; flex: 1 1 168px; min-width: 0; }
+/* One height across the strip. A select, a date input and a search bar each set their own
+   vertical padding, and left alone the row sits on three baselines. */
+.mlog-filter > .select,
+.mlog-filter > .input { height: 36px; padding-top: 0; padding-bottom: 0; line-height: 1; }
+.mlog-filter .searchbar { height: 36px; padding: 0 12px; box-shadow: none; }
+.mlog-filter .searchbar input { font-size: 16.5px; }
+.mlog-filter .eyebrow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mlog-more { border-top: 1px dashed var(--line); padding-top: 13px; }
+
+/* Both axes scroll inside the panel, so the page itself never grows a horizontal bar. */
+.mlog-scroll {
+  overflow: auto;
+  max-height: min(70vh, 780px);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.mlog-scroll > .tbl { min-width: max-content; }
+
+/* A register cell never wraps: a wrapping cell makes every row a different height and the
+   eye loses the line it was reading. The value is elided, and the full text is in the
+   title attribute. */
+.tbl.mlog th, .tbl.mlog td {
+  white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+}
+.tbl.mlog.dense td { padding: 7px 12px; font-size: 15.5px; }
+.tbl.mlog.dense th { padding: 7px 12px; }
+.tbl.mlog input[type="checkbox"] { accent-color: var(--indigo); width: 15px; height: 15px; cursor: pointer; }
+
+.tbl.mlog .mlog-pin { position: sticky; background: var(--surface); z-index: 2; }
+.tbl.mlog thead .mlog-pin { z-index: 4; }
+/* The three offsets have to be exact, or the pinned block overlaps itself as it scrolls.
+   Each cell is therefore pinned to a fixed width rather than left to the table's own
+   layout algorithm, and the next one starts where the last one ends. The row-number
+   column is sized for five figures — a library of ten thousand files is not unusual. */
+.tbl.mlog .mlog-pin-check { left: 0; width: 42px; min-width: 42px; max-width: 42px; padding-left: 14px; padding-right: 0; }
+.tbl.mlog .mlog-pin-no { left: 42px; width: 70px; min-width: 70px; max-width: 70px; }
+.tbl.mlog .mlog-pin-title { left: 112px; min-width: 230px; box-shadow: 1px 0 0 var(--line); }
+/* The pinned cells have their own background, so they need the row's hover and selection
+   states repeated or they sit as three opaque squares over a highlighted row. */
+.tbl.mlog tbody tr:hover .mlog-pin { background: var(--surface-2); }
+.tbl.mlog tbody tr.selected .mlog-pin { background: var(--indigo-soft); }
+@media (max-width: 900px) {
+  .tbl.mlog .mlog-pin { position: static; box-shadow: none; }
+}
+
+.mlog-sort {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+}
+.mlog-sort:hover { color: var(--ink); }
+.mlog-sort svg { flex: none; opacity: .55; }
+.mlog-h.on, .mlog-h.on .mlog-sort { color: var(--indigo-deep); }
+.mlog-h.on .mlog-sort svg { opacity: 1; }
+
+.mlog-title { font-weight: 600; color: var(--ink); }
+.mlog-flag {
+  margin-left: 7px; padding: 1px 7px; border-radius: var(--r-pill);
+  font-size: 13px; font-weight: 700; background: var(--danger-soft); color: var(--danger-ink);
+}
+.mlog-mono { font-family: var(--mono); font-size: 14.5px; color: var(--ink-2); letter-spacing: .01em; }
+.mlog-num { font-variant-numeric: tabular-nums; }
+.tbl.mlog .tag { font-size: 13px; padding: 1px 8px; }
+
+/* The column picker. Sixty-nine checkboxes in a list is a scroll nobody finishes, so they
+   are laid out in their groups as a grid of togglable pills. */
+.mlog-column-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); gap: 6px; }
+.mlog-column {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface);
+  color: var(--ink-2); font-family: var(--sans); font-size: 15.5px; cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.mlog-column:hover:not(:disabled) { border-color: var(--line-2); color: var(--ink); }
+.mlog-column.on { border-color: var(--indigo-edge); background: var(--indigo-soft); color: var(--indigo-deep); font-weight: 600; }
+.mlog-column:disabled { opacity: .65; cursor: default; }
+.mlog-tick {
+  width: 16px; height: 16px; flex: none; border-radius: 5px;
+  border: 1px solid var(--line-2); background: var(--surface);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mlog-column.on .mlog-tick { background: var(--indigo); border-color: var(--indigo); color: var(--on-accent); }
+
+/* A count carried on a button rather than a nav row — same shape, neutral by default. */
+.btn .badge-count {
+  font-family: var(--mono); font-size: 14px; font-weight: 600;
+  background: var(--surface-2); color: var(--ink-3); padding: 1px 7px; border-radius: var(--r-pill);
+}
+
+/* A spinner for the buttons that are waiting on a file being built. */
+.spin { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* An inherited value, marked in the cell rather than in a column of its own. Quiet enough
+   that a column of them does not read as a column of warnings, loud enough that nobody
+   mistakes the release's answer for one somebody gave about this file. */
+.mlog-inherited {
+  margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill);
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+  background: var(--surface-2); color: var(--ink-3);
+}

@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import { Link } from 'react-router';
 import {
   Search, ShieldCheck, Pencil, UploadCloud, Share2, History, Trash2,
-  Command, RotateCcw, Users, Globe, PenLine, UserCheck, Eye, Link2,
+  Command, RotateCcw, Users, Globe, PenLine, UserCheck, Eye, Link2, Table2,
 } from 'lucide-react';
 import { AvailabilityBadge, Brandmark, useToast } from '../../components/ui';
 import { STATUS_COPY } from '../../lib/assetTypes';
@@ -24,6 +24,11 @@ const CONCEPTS = [
     icon: Search,
     title: 'Search returns files, not folders',
     body: 'One box covers every filename, song, artist and tag. A search for “punjabi reels tagged viral” gives you those exact clips, each one showing which song and artist it came from. Filters on the left narrow it further, and the number beside each filter tells you how many files would remain.',
+  },
+  {
+    icon: Table2,
+    title: 'The master log is the register of everything',
+    body: 'Search is for finding one file. The master log is for seeing all of them at once — one row per file, sixty-nine possible columns, and every one of them filterable and sortable. Language is asked for on audio and video at upload; artwork and paperwork inherit theirs from the release they belong to. Pick the columns you need (there are named presets for a delivery sheet, a storage audit and a chain of custody), narrow it however you like, and export exactly what is on screen to Excel or CSV. The workbook carries roll-ups by artist, type and folder, and a final sheet recording precisely which filters produced it.',
   },
   {
     icon: ShieldCheck,

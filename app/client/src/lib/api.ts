@@ -133,6 +133,68 @@ export async function stepUp(password: string): Promise<boolean> {
 /** Restores a session from the refresh cookie. Called once, at start-up. */
 export const resume = refresh;
 
+/**
+ * Where the browser is sent to start a Google sign-in.
+ *
+ * A plain navigation rather than a fetch: the whole flow is redirects, and it has to be
+ * the top-level window that travels to Google and comes back, otherwise the callback
+ * cannot set the refresh cookie the session is built on.
+ */
+export const googleSignInUrl = (email?: string) =>
+  `${BASE}/auth/google${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+
+/**
+ * Fetches a file the API generates — a spreadsheet export — and hands it to the browser
+ * to save.
+ *
+ * Why this exists rather than an <a href>. Every API route is authorised by a bearer
+ * header held in memory, and a link element sends no headers at all: the download would
+ * arrive as a 401 rendered into a new tab. So the bytes are fetched with the same auth
+ * and refresh handling as any other call, and only then turned into a save.
+ */
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+  // A POST is offered for one reason: exporting a hand-picked selection. Six hundred
+  // chosen rows is twenty-two kilobytes of ids, and a URL that long is refused by proxies
+  // long before it reaches the server — so the ids travel in a body instead.
+  opts: { method?: string; body?: unknown } = {},
+): Promise<void> {
+  let res = await send(path, opts);
+  if (res.status === 401) {
+    if (await refresh()) res = await send(path, opts);
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    let payload: Record<string, unknown> = {};
+    try { payload = text ? JSON.parse(text) : {}; } catch { /* not a problem document */ }
+    throw new ApiError(
+      res.status,
+      String(payload.title || 'Export failed'),
+      String(payload.detail || 'The server would not produce the file.'),
+      payload,
+    );
+  }
+
+  // Content-Disposition is what the server actually named it; the fallback only covers a
+  // proxy that strips the header.
+  const disposition = res.headers.get('content-disposition') || '';
+  const named = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
+    ?? /filename="([^"]+)"/i.exec(disposition)?.[1];
+  const filename = named ? decodeURIComponent(named) : fallbackName;
+
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked on the next tick — Safari has not started reading the blob when click()
+  // returns, and revoking synchronously gives it an empty file.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export const qs = (params: Record<string, unknown>) => {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

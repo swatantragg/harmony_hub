@@ -48,6 +48,7 @@ import { sharesRouter, publicShareRouter } from './routes/shares.js';
 import { adminRouter, notificationsRouter } from './routes/admin.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dedupeRouter } from './routes/dedupe.js';
+import { masterLogRouter } from './routes/masterlog.js';
 import { filesRouter } from './routes/files.js';
 
 const app = express();
@@ -215,6 +216,20 @@ app.use('/api/auth/password', authLimiter, accountLimiter);
 app.use('/api/auth/step-up', authLimiter, accountLimiter);
 app.use('/api/auth/refresh', authLimiter);
 
+// The Google sign-in redirect pair. It needs a budget of its own rather than authLimiter's:
+// both ends of the flow answer 302 whether they succeeded or refused, and authLimiter
+// skips successful responses — so every attempt would be free. Counted per address only,
+// because until Google has answered there is no account named in the request to count
+// against; that is the whole point of the flow.
+app.use('/api/auth/google', rateLimit({
+  windowMs: env.RATE_LIMIT_AUTH_WINDOW_SEC * 1000,
+  max: env.RATE_LIMIT_AUTH_IP_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `google:${req.ip}`,
+  message: tooMany('Too many sign-in attempts from this address. Wait a few minutes and try again.'),
+}));
+
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
 app.use('/api/dashboard', dashboardRouter);
@@ -234,6 +249,8 @@ app.use('/api/folders', foldersRouter);
 app.use('/api/shares', sharesRouter);
 app.use('/api/s', publicShareRouter);
 app.use('/api/dedupe', dedupeRouter);
+// The library's register of record. Read-only, and one row per catalogued file.
+app.use('/api/master-log', masterLogRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationsRouter);
 

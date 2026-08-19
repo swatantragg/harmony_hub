@@ -91,6 +91,29 @@ const Env = z.object({
   GOOGLE_CLIENT_SECRET: blankIsUnset(z.string().optional()),
   GOOGLE_REFRESH_TOKEN: blankIsUnset(z.string().optional()),
 
+  // ── Sign in with Google (§12.1) ───────────────────────────────────────────
+  //
+  // Separate from everything above it, and worth being clear about why: the settings
+  // above are how *this server* reaches *one* Drive to store files in. These are how a
+  // *person* proves who they are at the sign-in screen. They happen to be able to share
+  // one OAuth client — and by default they do, because a second one is a second thing to
+  // configure for no benefit — but they are two different jobs and either can be turned
+  // off without the other.
+  //
+  // Nothing here creates accounts. An address Google vouches for still has to already
+  // have an account in the library, created by an administrator, or the sign-in is
+  // refused. Google decides "this really is user01@gmail.com"; GCloud decides whether
+  // user01@gmail.com may come in.
+  GOOGLE_SIGNIN_ENABLED: bool(true),
+  GOOGLE_SIGNIN_CLIENT_ID: blankIsUnset(z.string().optional()),
+  GOOGLE_SIGNIN_CLIENT_SECRET: blankIsUnset(z.string().optional()),
+  // Must match an "Authorized redirect URI" on the OAuth client exactly. Defaults to
+  // this deployment's own callback, which is right unless something sits in front.
+  GOOGLE_SIGNIN_REDIRECT_URI: blankIsUnset(z.string().url().optional()),
+  // Restrict sign-in to one Google Workspace domain, e.g. `label.com`. Blank allows any
+  // address that already holds an account, which is the normal case for gmail.com users.
+  GOOGLE_SIGNIN_HOSTED_DOMAIN: blankIsUnset(z.string().optional()),
+
   // Either paste the two fields, or point at the downloaded JSON key file.
   GOOGLE_SERVICE_ACCOUNT_EMAIL: blankIsUnset(z.string().optional()),
   GOOGLE_PRIVATE_KEY: blankIsUnset(z.string().optional()),
@@ -378,6 +401,23 @@ export const GOOGLE_CONFIGURED =
   GOOGLE.mode === 'oauth'
     ? Boolean(GOOGLE.clientId && GOOGLE.clientSecret && GOOGLE.refreshToken)
     : Boolean(GOOGLE.serviceAccountEmail && GOOGLE.privateKey);
+
+// ── Sign in with Google, resolved ────────────────────────────────────────────
+// Falls back to the Drive OAuth client, so a deployment that has already been through
+// `npm run drive:auth` gets this for free — the only thing left to do is add the callback
+// below to that client's authorised redirect URIs in the Google Cloud console.
+export const GOOGLE_SIGNIN = {
+  enabled: env.GOOGLE_SIGNIN_ENABLED,
+  clientId: env.GOOGLE_SIGNIN_CLIENT_ID || env.GOOGLE_CLIENT_ID,
+  clientSecret: env.GOOGLE_SIGNIN_CLIENT_SECRET || env.GOOGLE_CLIENT_SECRET,
+  redirectUri: env.GOOGLE_SIGNIN_REDIRECT_URI || `${ORIGIN}/api/auth/google/callback`,
+  hostedDomain: env.GOOGLE_SIGNIN_HOSTED_DOMAIN ?? null,
+};
+
+// Whether the button may be shown at all. Reported to the sign-in screen by
+// GET /api/auth/providers, so a browser never offers a route the server cannot complete.
+export const GOOGLE_SIGNIN_CONFIGURED =
+  GOOGLE_SIGNIN.enabled && Boolean(GOOGLE_SIGNIN.clientId && GOOGLE_SIGNIN.clientSecret);
 
 export const DRIVE_ID = env.DRIVE_ID ?? null;
 export const DRIVE_ROOT_FOLDER_ID = env.DRIVE_ROOT_FOLDER_ID ?? null;

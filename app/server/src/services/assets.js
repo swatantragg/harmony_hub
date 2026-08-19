@@ -3,9 +3,37 @@
 import { db, assetContext, folderOf } from '../db.js';
 import { staleness } from './storage.js';
 
+/**
+ * Where a file's language comes from, and why there are two places to look.
+ *
+ * Language started as a property of the *song*, which is right for the common case: the
+ * six files that make up one release are all in the same language, and recording it once
+ * on the release is the only way they stay in step. But most of the library is not
+ * attached to a song — a loose reel, a BTS clip, an artist photo, a lyrics PDF filed in a
+ * folder — and for those there was nowhere to put a language at all. They came out blank
+ * everywhere, and a language filter silently excluded them.
+ *
+ * So a file may now carry a language of its own, asked for at upload and editable
+ * afterwards, and it wins when it is set. That order is deliberate: the file-level value
+ * only exists because somebody typed it about *this file*, which is a stronger statement
+ * than the release's default — an English-subtitled cut of a Hindi single is exactly the
+ * case that needs it. The release remains the fallback, so nothing that worked before
+ * changes.
+ *
+ * Nothing is guessed. A file with no language on it and no song behind it reports no
+ * language, rather than inheriting a plausible-looking default that no one chose.
+ */
+export const resolveLanguage = (asset, song) => ({
+  language: asset?.language || song?.language || null,
+  // A register that shows a value without saying where it came from invites the reader to
+  // assume somebody chose it. This says which of the two answered.
+  languageSource: asset?.language ? 'file' : song?.language ? 'release' : null,
+});
+
 export function shape({ asset, song, artist, folder }) {
   const { stale, ageHours } = staleness(asset);
   const f = folder ?? folderOf(asset);
+  const { language, languageSource } = resolveLanguage(asset, song);
   return {
     ...asset,
     // Two catalogue entries can legitimately share one Drive file after de-duplication
@@ -21,7 +49,8 @@ export function shape({ asset, song, artist, folder }) {
     folderId: f?._id ?? null,
     folderName: f?.name ?? null,
     folderTags: f?.tags ?? [],
-    language: song?.language ?? null,
+    language,
+    languageSource,
     mood: song?.mood ?? null,
     releaseDate: song?.releaseDate ?? null,
     releaseYear: song?.releaseDate ? new Date(song.releaseDate).getFullYear() : null,

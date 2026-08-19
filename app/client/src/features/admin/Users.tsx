@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { UserPlus, KeyRound } from 'lucide-react';
+import { UserPlus, KeyRound, LogIn } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Modal, Skeleton, useToast } from '../../components/ui';
 import { date, initials } from '../../lib/format';
@@ -10,6 +10,8 @@ interface UserRow {
   _id: string; name: string; email: string; role: Role;
   status: string; lastLoginAt: string | null; createdAt: string; permissions: string[];
   mustChangePassword: boolean;
+  /** Set once this person has signed in with Google. It links itself on first use. */
+  google: { email: string; linkedAt: string } | null;
 }
 
 interface UsersResponse {
@@ -66,6 +68,11 @@ export function Users() {
                   <KeyRound size={12} /> has not set their own password yet
                 </span>
               )}
+              {u.google && (
+                <span className="row-sub row-tight" style={{ marginTop: 3 }}>
+                  <LogIn size={12} /> signs in with Google as {u.google.email}
+                </span>
+              )}
 
               <div className="person-controls">
                 <select
@@ -116,7 +123,7 @@ function AddUserDialog({
       toast({
         kind: 'ok',
         title: 'Account created',
-        body: `Give ${email} this starting password over a private channel. It works once — they will be asked to choose their own before they can use anything.`,
+        body: `Give ${email} this starting password over a private channel — or tell them to press “Continue with Google” with that same address, which works straight away. Either way they choose a password of their own before using anything.`,
       });
       onClose();
     },

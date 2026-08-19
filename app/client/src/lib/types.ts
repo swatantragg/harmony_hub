@@ -24,6 +24,18 @@ export interface User {
   createdByName?: string | null;
   /** The minimum the server will actually enforce. Read it; do not repeat it. */
   minPasswordLength?: number;
+  /** Set once this account has signed in with Google at least once. */
+  google?: { linkedAt: string; email: string; lastSignInAt: string | null } | null;
+  /** Whether this deployment has Google sign-in configured at all. */
+  googleSignInAvailable?: boolean;
+  /** A live Google sign-in stands in for the handover password on the first change. */
+  canSetPasswordWithoutCurrent?: boolean;
+}
+
+/** GET /api/auth/providers — which sign-in routes the server will actually complete. */
+export interface AuthProviders {
+  password: boolean;
+  google: { enabled: boolean; hostedDomain: string | null };
 }
 
 // Where a file physically is: the id that addresses it, the checksums Google computed on
@@ -100,7 +112,13 @@ export interface Asset {
   folderTags: string[];
   artistId: string | null;
   artistName: string | null;
+  /**
+   * This file's own language when it has one, otherwise its release's. Null means nobody
+   * has stated one — never a guess.
+   */
   language: string | null;
+  /** Which of the two answered: the file itself, or the release behind it. */
+  languageSource: 'file' | 'release' | null;
   mood: string | null;
   releaseDate: string | null;
   releaseYear: number | null;
@@ -234,6 +252,9 @@ export interface Folder {
   updatedAt: string;
   assetCount: number;
   totalBytes: number;
+  /** This folder and everything filed below it — what a share link on it covers. */
+  totalAssetCount: number;
+  totalBytesDeep: number;
   byFamily: Record<string, number>;
   byStatus: Record<string, number>;
   needsAttention: number;
@@ -521,4 +542,77 @@ export interface Dashboard {
   canUpload: boolean;
   canSeeStorage: boolean;
   activity: ActivityEntry[];
+}
+
+// ── Master log (§10.6) ──────────────────────────────────────────────────────
+//
+// The library's register of record: one row per catalogued file, every field the
+// catalogue holds. The column registry lives on the server and travels with the response
+// — two lists of sixty columns drift within a release, and the failure mode is a
+// spreadsheet whose header names the wrong data.
+
+export interface MasterLogColumn {
+  key: string;
+  header: string;
+  group: string;
+  width?: number;
+  /** Stays a real number, so it sorts numerically here and sums in Excel. */
+  num?: boolean;
+  /** Cannot be switched off — a register with no title column is not a register. */
+  always?: boolean;
+}
+
+/** A named answer to a question people actually arrive with. */
+export interface MasterLogPreset { id: string; label: string; hint: string; columns: string[] }
+
+/**
+ * A row arrives display-ready: a size is already "1.4 GB", a boolean already "Yes". The
+ * underscore-prefixed fields are what the table needs and the spreadsheet does not — the
+ * raw status for its badge, the ids for its links.
+ */
+export interface MasterLogRow {
+  _id: string;
+  _status: Availability;
+  _family: Family;
+  _songId: string | null;
+  _artistId: string | null;
+  _folderId: string | null;
+  _driveLink: string;
+  _tags: string[];
+  _deleted: boolean;
+  [column: string]: string | number | boolean | string[] | null;
+}
+
+export interface MasterLogSummary {
+  files: number;
+  bytes: number;
+  bytesText: string;
+  artists: number;
+  songs: number;
+  folders: number;
+  available: number;
+  needsAttention: number;
+  unchecked: number;
+  shared: number;
+  inBin: number;
+  byStatus: Record<string, number>;
+}
+
+export interface MasterLogResponse {
+  data: MasterLogRow[];
+  total: number;
+  /** Everything the register could show under the current lifecycle, before filters. */
+  libraryTotal: number;
+  page: number;
+  limit: number;
+  sort: string;
+  dir: 'asc' | 'desc';
+  filtered: boolean;
+  columns: MasterLogColumn[];
+  groups: string[];
+  defaultColumns: string[];
+  presets: MasterLogPreset[];
+  summary: MasterLogSummary;
+  facets: Record<string, FacetValue[]>;
+  earliest: string | null;
 }

@@ -154,6 +154,22 @@ export const ACTION_COPY: Record<string, string> = {
   TAG_PROMOTE: 'promoted tag',
   USER_CREATE: 'created user',
   USER_UPDATE: 'updated user',
+  MASTER_LOG_EXPORT: 'exported the master log',
   AUTH_LOGIN: 'signed in',
   AUTH_LOGOUT: 'signed out',
 };
+
+// Which families a language can be *stated on*, as opposed to inherited. Mirrored from
+// the server's catalogue.js, and enforced there too.
+//
+// A language is a property of something spoken or sung, so the field is offered on audio
+// and video and on nothing else. A cover, a banner or a credits sheet has no language of
+// its own, and pressing somebody to answer for one produces a guess.
+//
+// This governs the field, not the value: an image attached to a Hindi release still
+// reports Hindi in the master log, because that is inherited from the release rather than
+// claimed about the file — which is what makes "every asset for the Hindi catalogue" a
+// filter that returns the artwork too.
+export const LANGUAGE_FAMILIES: Family[] = ['Audio', 'Video'];
+export const carriesLanguage = (family: string | null | undefined) =>
+  LANGUAGE_FAMILIES.includes(family as Family);

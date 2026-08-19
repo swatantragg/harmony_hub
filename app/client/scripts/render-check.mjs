@@ -49,6 +49,7 @@ const health = {
 };
 
 const FIXTURES = {
+  '/auth/providers': { password: true, google: { enabled: true, hostedDomain: null } },
   '/me': { _id: 'u1', name: 'Test Admin', email: 't@x.co', role: 'Admin', status: 'active', lastLoginAt: null, mustChangePassword: false, permissions: ['asset:read', 'admin:storage', 'admin:users', 'asset:upload', 'share:create'] },
   '/dashboard': {
     greetingName: 'Test', role: 'Admin', health, quota: null,
@@ -97,6 +98,48 @@ const FIXTURES = {
     permissionMatrix: { Admin: ['asset:read', 'admin:users'], User: ['asset:read'] },
     minPasswordLength: 8,
   },
+  // The master log answers with its own column registry, so the fixture has to carry one —
+  // the page renders nothing at all without it, which is exactly the regression worth catching.
+  '/master-log': (() => {
+    const columns = [
+      { key: 'rowNo', header: '#', group: 'Identity', width: 6, num: true, always: true },
+      { key: 'title', header: 'Title', group: 'Identity', width: 42, always: true },
+      { key: 'artist', header: 'Artist', group: 'Identity', width: 24 },
+      { key: 'status', header: 'Status', group: 'State', width: 15, always: true },
+      { key: 'size', header: 'Size', group: 'Storage', width: 12 },
+      { key: 'tags', header: 'Tags', group: 'Release', width: 32 },
+      { key: 'sha256', header: 'SHA-256', group: 'Integrity', width: 66 },
+      { key: 'createdAt', header: 'Added to library', group: 'Custody', width: 22 },
+      { key: 'driveLink', header: 'Drive link', group: 'Storage', width: 46 },
+    ];
+    const row = (i) => ({
+      _id: `a${i}`, _status: 'AVAILABLE', _family: 'Audio', _songId: 's1', _artistId: 'artist_1',
+      _folderId: 'fo1', _driveLink: 'https://drive.google.com/x', _tags: ['Master'], _deleted: false,
+      rowNo: i, title: `track_${i}.wav`, artist: 'Raju Singh', status: 'Available', size: '4.8 MB',
+      tags: 'Master', sha256: 'a'.repeat(64), createdAt: new Date().toISOString(),
+      driveLink: 'https://drive.google.com/x',
+    });
+    return {
+      data: [1, 2, 3].map(row), total: 3, libraryTotal: 45, page: 1, limit: 50,
+      sort: 'createdAt', dir: 'desc', filtered: false,
+      columns, groups: ['Identity', 'State', 'Storage', 'Release', 'Integrity', 'Custody'],
+      defaultColumns: columns.map((c) => c.key),
+      presets: [{ id: 'default', label: 'Standard register', hint: 'The usual columns', columns: columns.map((c) => c.key) }],
+      summary: {
+        files: 3, bytes: 15_000_000, bytesText: '14.3 MB', artists: 1, songs: 1, folders: 1,
+        available: 3, needsAttention: 0, unchecked: 0, shared: 1, inBin: 0, byStatus: { AVAILABLE: 3 },
+      },
+      facets: {
+        status: [{ value: 'AVAILABLE', count: 3 }], family: [{ value: 'Audio', count: 3 }],
+        type: [{ value: 'Master Audio', count: 3 }], artist: [{ value: 'Raju Singh', count: 3 }],
+        folder: [{ value: 'Masters', count: 3 }], uploadedBy: [{ value: 'Tester', count: 3 }],
+        tags: [{ value: 'Master', count: 3 }], language: [{ value: 'Hindi', count: 3 }],
+        version: [{ value: 'V1', count: 3 }], placement: [{ value: 'Song asset', count: 3 }],
+        year: [{ value: '2026', count: 3 }],
+      },
+      earliest: new Date().toISOString(),
+    };
+  })(),
   '/notifications': { data: [], unread: 0 },
   '/admin/activity': {
     data: [{ _id: 'e1', userId: 'u1', userName: 'Tester', userRole: 'Admin', action: 'ASSET_UPLOAD', entity: 'asset', entityId: 'a1', label: 'track_1.wav', before: null, after: null, meta: null, ip: '10.0.0.1', timestamp: new Date().toISOString() }],
@@ -167,6 +210,7 @@ try {
   const { StorageHealth } = await server.ssrLoadModule('/src/features/admin/StorageHealth.tsx');
   const { Users } = await server.ssrLoadModule('/src/features/admin/Users.tsx');
   const { ActivityLog } = await server.ssrLoadModule('/src/features/admin/ActivityLog.tsx');
+  const { MasterLog } = await server.ssrLoadModule('/src/features/masterlog/MasterLog.tsx');
   const { ShareManager } = await server.ssrLoadModule('/src/features/shares/ShareManager.tsx');
   const { FolderList } = await server.ssrLoadModule('/src/features/folders/Folders.tsx');
   const { Dedupe } = await server.ssrLoadModule('/src/features/dedupe/Dedupe.tsx');
@@ -202,6 +246,10 @@ try {
     { name: 'People', Page: Users, path: '/', at: '/', expect: /Admin/ },
     { name: 'Set password', Page: SetPassword, path: '/', at: '/', expect: /Choose your password/ },
     { name: 'Activity log', Page: ActivityLog, path: '/', at: '/', expect: /Activity log/ },
+    { name: 'Master log', Page: MasterLog, path: '/', at: '/', expect: /Master log/ },
+    // The same screen with filters on the URL, which is the half that renders the
+    // "export these N" button rather than "export the register".
+    { name: 'Master log (filtered)', Page: MasterLog, path: '/', at: '/?status=MISSING&family=Audio', expect: /Spreadsheet view/i },
     { name: 'Share links', Page: ShareManager, path: '/', at: '/', expect: /Share links/ },
     { name: 'Folders', Page: FolderList, path: '/', at: '/', expect: /Folders/ },
     { name: 'Duplicates', Page: Dedupe, path: '/', at: '/', expect: /Duplicates/ },

@@ -19,6 +19,17 @@
 const NAME = 'gcloud.rt';
 const PATH = '/api/auth';
 
+// The nonce half of the Google sign-in state (§12.1). SameSite=Lax rather than Strict,
+// and that is the whole reason it is a separate cookie: the browser comes back to the
+// callback from accounts.google.com, which is a cross-site top-level navigation, and a
+// Strict cookie is deliberately not sent on one of those. Lax is sent on exactly this
+// case — a top-level GET — and nothing else, which is the property wanted here.
+//
+// It carries no authority of its own. It is a random value that has to match the one
+// inside the signed state parameter, which is what ties a completed sign-in to the
+// browser that started it.
+const STATE_NAME = 'gcloud.gsi';
+
 export function parseCookies(header) {
   const out = {};
   for (const part of String(header || '').split(';')) {
@@ -56,6 +67,30 @@ export function clearRefreshCookie(res, { secure }) {
     'Max-Age=0',
     'HttpOnly',
     'SameSite=Strict',
+    secure ? 'Secure' : null,
+  ].filter(Boolean).join('; '));
+}
+
+export function setSignInStateCookie(res, value, { maxAgeSec, secure }) {
+  append(res, [
+    `${STATE_NAME}=${encodeURIComponent(value)}`,
+    `Path=${PATH}`,
+    `Max-Age=${Math.floor(maxAgeSec)}`,
+    'HttpOnly',
+    'SameSite=Lax',
+    secure ? 'Secure' : null,
+  ].filter(Boolean).join('; '));
+}
+
+export const readSignInStateCookie = (req) => parseCookies(req.headers?.cookie)[STATE_NAME] ?? null;
+
+export function clearSignInStateCookie(res, { secure }) {
+  append(res, [
+    `${STATE_NAME}=`,
+    `Path=${PATH}`,
+    'Max-Age=0',
+    'HttpOnly',
+    'SameSite=Lax',
     secure ? 'Secure' : null,
   ].filter(Boolean).join('; '));
 }

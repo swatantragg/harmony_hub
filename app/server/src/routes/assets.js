@@ -5,7 +5,7 @@ import { context, shape, validateName } from '../services/assets.js';
 import { alert, record, notify } from '../services/audit.js';
 import * as storage from '../services/storage.js';
 import { APP_ORIGIN, CHUNK_SIZE, ROOTS, TRASH_DAYS, TTL, VERIFY_BATCH_MAX } from '../config.js';
-import { VERSION_LABELS } from '../catalogue.js';
+import { VERSION_LABELS, carriesLanguage } from '../catalogue.js';
 import { allTypes, resolveFamily } from '../services/vocabulary.js';
 import { properties } from '../storage/drive.js';
 import { uuid } from '../util/crypto.js';
@@ -372,7 +372,7 @@ assetsRouter.post('/:id/preview', requires('asset:download'), async (req, res) =
 });
 
 // ── Metadata update (§10.7) ─────────────────────────────────────────────────
-const EDITABLE = ['displayName', 'description', 'type', 'tags', 'version'];
+const EDITABLE = ['displayName', 'description', 'type', 'tags', 'version', 'language'];
 
 assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   const ctx = context(req.params.id);
@@ -387,6 +387,9 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     type: (v) => str(v, { max: 80, field: 'type' }),
     version: (v) => str(v, { max: 40, field: 'version' }),
     tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
+    // Free text, bounded — the same rule the song's own language follows. A library that
+    // refuses an unlisted language is a library somebody works around.
+    language: (v) => str(v, { max: 60, field: 'language', allowEmpty: true }),
   });
   if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
 
@@ -407,6 +410,14 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     after[field] = check.value[field];
   }
   if (after.type) ctx.asset.family = resolveFamily(after.type);
+  // Re-typing a file out of audio or video takes its language with it. Leaving the value
+  // behind would strand it: no screen offers the field for those families, so nobody could
+  // see it, change it or work out why the register still claimed one.
+  if (!carriesLanguage(ctx.asset.family) && ctx.asset.language) {
+    before.language = ctx.asset.language;
+    ctx.asset.language = '';
+    after.language = '';
+  }
   ctx.asset.updatedAt = new Date().toISOString();
   persist();
 

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import {
   Search, Home, Users, Disc3, UploadCloud, Share2, ShieldCheck,
-  ScrollText, UserCog, Music4, FileAudio, CornerDownLeft, HelpCircle, Folder, Tag, Copy,
+  ScrollText, UserCog, Music4, FileAudio, CornerDownLeft, HelpCircle, Folder, Tag, Copy, Table2,
 } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import { useDebounced, AvailabilityBadge } from './ui';
@@ -25,6 +25,7 @@ const DESTINATIONS = [
   { to: '/', label: 'Search the library', hint: 'Every asset, filtered by type, family, tag or availability', icon: Search, perm: null },
   { to: '/artists', label: 'Artists', hint: 'Profiles, discography and image galleries', icon: Users, perm: null },
   { to: '/songs', label: 'Songs', hint: 'Releases and the assets attached to each', icon: Disc3, perm: null },
+  { to: '/master-log', label: 'Master log', hint: 'Every catalogued file as one spreadsheet — filter it, choose the columns, export it', icon: Table2, perm: null },
   { to: '/folders', label: 'Folders', hint: 'Grouped files — launch kits, shoots, paperwork', icon: Folder, perm: null },
   { to: '/upload', label: 'Upload assets', hint: 'Drop files, tag them, watch each part land in storage', icon: UploadCloud, perm: 'asset:upload' },
   { to: '/shares', label: 'Share links', hint: 'Active external links, expiry and download counts', icon: Share2, perm: 'share:create' },

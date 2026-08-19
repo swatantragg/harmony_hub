@@ -26,6 +26,7 @@ import { PublicShare } from './features/share/PublicShare';
 import { StorageHealth } from './features/admin/StorageHealth';
 import { Dedupe } from './features/dedupe/Dedupe';
 import { ActivityLog } from './features/admin/ActivityLog';
+import { MasterLog } from './features/masterlog/MasterLog';
 import { Users } from './features/admin/Users';
 import { Help } from './features/help/Help';
 
@@ -98,6 +99,7 @@ function App() {
         <Route path="songs/:id" element={<SongDetailPage />} />
         <Route path="folders" element={<FolderList />} />
         <Route path="folders/:id" element={<FolderDetail />} />
+        <Route path="master-log" element={<MasterLog />} />
         <Route path="dedupe" element={<Dedupe />} />
         <Route path="help" element={<Help />} />
         <Route path="profile" element={<Profile />} />
