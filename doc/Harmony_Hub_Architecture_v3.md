@@ -508,6 +508,7 @@ src/
 | **Asset drawer** | Full metadata, Drive binding (file id, path, revision, checksums), version timeline, availability history, audit entries |
 | **Upload manager** | Dropzone, per-file metadata form with required tag step, live progress, pause/resume with authoritative byte count |
 | **Rename dialog** | Live validation, extension guard, before/after download name, and the Drive name it will be kept in step with |
+| **Master log** | The register of record — one row per file, 69 selectable columns in 9 groups, 5 presets, every column sortable, every filter in the URL, row selection across pages, `.xlsx` / `.csv` export at three scopes |
 | **Duplicates** | Four tiers separated by certainty; link / version / trash / ignore; empty-the-bin action |
 | **Admin — storage health** | Quota panel segmented by consumer, then drift: missing, trashed, untracked, mismatched, moved, renamed |
 | **Share manager** | Active links, expiry countdown, download counts, one-click revoke |
@@ -1171,6 +1172,9 @@ REST over HTTPS. All `/api` routes require a valid JWT except `/api/auth/*`, `/a
 | `GET` | `/api/tags` | any | Controlled and custom tag list |
 | `POST` | `/api/tags` | Editor+ | Create a custom tag |
 | `PATCH` | `/api/tags/{id}/promote` | Admin | Promote a custom tag to controlled |
+| **`GET`** | **`/api/master-log`** | **any** | **The register of record: rows, column registry, facets, roll-up — §10.6** |
+| **`GET`/`POST`** | **`/api/master-log/export.xlsx`** | **any** | **Six-sheet workbook: register, summary, three roll-ups, provenance** |
+| **`GET`/`POST`** | **`/api/master-log/export.csv`** | **any** | **RFC 4180, BOM-prefixed, the chosen columns only** |
 | **`GET`** | **`/api/dedupe/scan`** | **any** | **Four-tier duplicate report — §10.12** |
 | **`GET`** | **`/api/dedupe/compare`** | **any** | **Pairwise verdict with the signals behind it** |
 | **`POST`** | **`/api/dedupe/resolve`** | **Editor+** | **link · version · trash · ignore** |
