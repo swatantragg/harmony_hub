@@ -159,7 +159,13 @@ function FolderRow({ folder, onOpen }: { folder: Folder; onOpen: () => void }) {
   return (
     <>
       <div className="row-item" role="button" tabIndex={0} onClick={onOpen}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+        // Only when the row itself has focus. The action menu's trigger lives inside this
+        // row, and Enter on a focused button raises a keydown that bubbles here too — so
+        // reaching the menu by keyboard opened the folder instead of the menu.
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); }
+        }}
       >
         <span className="row-icon info"><FolderIcon size={20} /></span>
         <span className="row-main">
@@ -276,10 +282,14 @@ export function FolderList() {
   );
 }
 
+// What the tab strip on a folder page can show: everything, the folders inside it, or one
+// kind of file.
+type FolderTab = 'all' | 'folders' | Family;
+
 export function FolderDetail() {
   const { id } = useParams();
   const [openAsset, setOpenAsset] = useState<string | null>(null);
-  const [familyTab, setFamilyTab] = useState<'all' | Family>('all');
+  const [tab, setTab] = useState<FolderTab>('all');
   const navigate = useNavigate();
   const can = useSession((s) => s.can);
 
@@ -298,14 +308,31 @@ export function FolderDetail() {
   // rather than whatever order the API happened to return, so the list reads the same way
   // every time it is opened.
   const visibleAssets = useMemo(() => {
-    if (!data) return [];
-    if (familyTab !== 'all') return data.assetsByFamily?.[familyTab] ?? [];
+    if (!data || tab === 'folders') return [];
+    if (tab !== 'all') return data.assetsByFamily?.[tab] ?? [];
     return FAMILY_ORDER.flatMap((f) => data.assetsByFamily?.[f] ?? []);
-  }, [data, familyTab]);
+  }, [data, tab]);
 
   if (isLoading || !data) {
     return <div className="page stack-3"><Skeleton h={32} w="34%" /><Skeleton h={96} /><RowSkeletons n={4} /></div>;
   }
+
+  const subfolders = data.subfolders ?? [];
+
+  // One tab per kind of thing this folder actually holds, each carrying its count, so an
+  // empty tab is never offered. Folders sit ahead of the family splits for the same reason
+  // a directory listing puts them first: they are where you go next, not what you read.
+  const tabs: { id: FolderTab; label: string; count: number }[] = [
+    ...(data.assetCount > 0 ? [{ id: 'all' as FolderTab, label: 'All', count: data.assetCount }] : []),
+    ...(subfolders.length > 0 ? [{ id: 'folders' as FolderTab, label: 'Folders', count: subfolders.length }] : []),
+    ...FAMILY_ORDER
+      .filter((f) => data.assetsByFamily?.[f]?.length)
+      .map((f) => ({ id: f as FolderTab, label: FAMILY_LABEL[f], count: data.assetsByFamily![f].length })),
+  ];
+
+  // A folder holding nothing but subfolders has no "All" tab to land on, so the choice
+  // falls to the first tab that exists rather than to a selection that is not offered.
+  const active = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id;
 
   return (
     <div className="page stack-5">
@@ -383,17 +410,6 @@ export function FolderDetail() {
         </div>
       </div>
 
-      {data.subfolders && data.subfolders.length > 0 && (
-        <section>
-          <h2 className="t-h2" style={{ marginBottom: 13 }}>Folders inside this one</h2>
-          <div className="panel rows">
-            {data.subfolders.map((sub) => (
-              <FolderRow key={sub._id} folder={sub} onOpen={() => navigate(`/folders/${sub._id}`)} />
-            ))}
-          </div>
-        </section>
-      )}
-
       <div className="note indigo">
         <Info size={15} />
         <div>
@@ -414,38 +430,40 @@ export function FolderDetail() {
         </div>
       )}
 
-      {data.assetCount === 0 ? (
+      {tabs.length === 0 ? (
         <EmptyState
           icon={<UploadCloud size={26} />}
           title="This folder is empty"
-          body="Add files to it from here, or open any file and move it in from its details panel."
+          body="Add files to it from here, make a folder inside it, or open any file and move it in from its details panel."
           action={can('asset:upload') ? <Link className="btn btn-spark" to={`/upload?folderId=${data._id}`}>Add the first file</Link> : undefined}
         />
       ) : (
         <section className="stack-3">
-          {/* One tab per kind of file, rather than four stacked sections the reader has to
-              scroll past. Only the kinds this folder actually holds get a tab, and each
-              carries its count, so an empty tab is never offered. */}
           <div className="tabs" style={{ overflowX: 'auto' }}>
-            {[{ id: 'all' as const, label: 'All', count: data.assetCount }]
-              .concat(
-                FAMILY_ORDER
-                  .filter((f) => data.assetsByFamily?.[f]?.length)
-                  .map((f) => ({ id: f as never, label: FAMILY_LABEL[f], count: data.assetsByFamily![f].length })),
-              )
-              .map((t) => (
-                <button
-                  key={t.id}
-                  className={`tab ${familyTab === t.id ? 'on' : ''}`}
-                  onClick={() => setFamilyTab(t.id)}
-                >
-                  {t.label}
-                  <span className="badge-count" style={{ marginLeft: 7 }}>{t.count}</span>
-                </button>
-              ))}
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                className={`tab ${active === t.id ? 'on' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+                <span className="badge-count" style={{ marginLeft: 7 }}>{t.count}</span>
+              </button>
+            ))}
           </div>
 
-          <AssetList assets={visibleAssets} selectedId={openAsset} onOpen={(a) => setOpenAsset(a.assetId)} />
+          {active === 'folders' ? (
+            /* The same row as the folder list uses, so a subfolder met here offers exactly
+               what it offers anywhere else — share, move, edit, delete, and a folder of its
+               own inside it. */
+            <div className="panel rows">
+              {subfolders.map((sub) => (
+                <FolderRow key={sub._id} folder={sub} onOpen={() => navigate(`/folders/${sub._id}`)} />
+              ))}
+            </div>
+          ) : (
+            <AssetList assets={visibleAssets} selectedId={openAsset} onOpen={(a) => setOpenAsset(a.assetId)} />
+          )}
         </section>
       )}
 

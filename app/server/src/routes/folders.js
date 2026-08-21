@@ -241,8 +241,23 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   let renamedInDrive = null;
   let movedInDrive = null;
 
+  // Drive first, catalogue second, and the catalogue is only written if Drive agreed.
+  //
+  // These two used to be applied regardless: a rename or a re-parent Drive had refused was
+  // still written here and answered 200, so the app showed the folder in its new place
+  // while the Drive still had it in the old one — the exact drift this whole file exists
+  // to prevent, and invisible until somebody opened drive.google.com. A refusal is now a
+  // failed request with nothing changed on either side.
   if (check.value.name && check.value.name !== folder.name && folder.driveFolderId) {
-    renamedInDrive = await storage.renameFolder(folder.driveFolderId, check.value.name).then(() => true).catch(() => false);
+    renamedInDrive = await storage.renameFolder(folder.driveFolderId, check.value.name)
+      .then(() => true)
+      .catch((err) => err);
+    if (renamedInDrive !== true) {
+      return problem(
+        res, 502, 'Bad Gateway',
+        `Google Drive would not rename the folder, so nothing was changed: ${renamedInDrive?.message ?? 'no detail'}`,
+      );
+    }
   }
 
   // Re-parenting a folder. Refused when the destination sits inside the folder being
@@ -262,7 +277,21 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
           fromParentId: currentParent?.driveFolderId || ROOTS.assets,
         })
         .then(() => true)
-        .catch(() => false);
+        .catch((err) => err);
+      if (movedInDrive !== true) {
+        // The rename above, if there was one, already went through. It is a name change on
+        // the same folder in the same place, so leaving it applied keeps the two sides in
+        // step; only the move is abandoned.
+        if (renamedInDrive === true) {
+          folder.name = check.value.name;
+          folder.updatedAt = new Date().toISOString();
+          persist();
+        }
+        return problem(
+          res, 502, 'Bad Gateway',
+          `Google Drive would not move the folder, so it has not been moved: ${movedInDrive?.message ?? 'no detail'}`,
+        );
+      }
     }
   }
 

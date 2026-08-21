@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
   Download, Pencil, RefreshCw, Share2, Trash2, X, ShieldCheck, Archive,
-  History, Info, ScrollText, Loader2, ExternalLink, Undo2, Folder as FolderIcon,
+  History, Info, ScrollText, Loader2, ExternalLink, Undo2, Folder as FolderIcon, FolderInput,
 } from 'lucide-react';
 import {
   AvailabilityBadge, ConfirmDialog, CopyButton, Drawer, Skeleton, TagChip, useToast,
@@ -16,6 +16,7 @@ import { useSession } from '../../app/session';
 import { RenameDialog } from './RenameDialog';
 import { AssetPreview } from './AssetPreview';
 import { ShareDialog } from '../shares/ShareDialog';
+import { MoveDialog } from '../folders/MoveDialog';
 import { EditMetadataDialog } from './EditMetadataDialog';
 
 type Tab = 'overview' | 'storage' | 'versions' | 'activity';
@@ -25,6 +26,7 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [purging, setPurging] = useState(false);
   const qc = useQueryClient();
@@ -410,6 +412,14 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
                 <Share2 size={14} /> Share
               </button>
             )}
+            {/* The folder screens send people here to file a loose file — "open any file and
+                move it in from its details panel" — so the verb has to actually be here.
+                It was only ever on the row menu, which is not where that sentence points. */}
+            {can('asset:edit') && (
+              <button className="btn btn-secondary" onClick={() => setMoving(true)}>
+                <FolderInput size={14} /> Move
+              </button>
+            )}
             {asset.songId ? (
               <Link className="btn btn-ghost" to={`/songs/${asset.songId}`} onClick={onClose}>
                 <ExternalLink size={14} /> Open song
@@ -434,6 +444,17 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
       {renaming && <RenameDialog asset={asset} onClose={() => setRenaming(false)} />}
       {editing && <EditMetadataDialog asset={asset} onClose={() => setEditing(false)} />}
       {sharing && <ShareDialog asset={asset} onClose={() => setSharing(false)} />}
+      {moving && (
+        <MoveDialog
+          target={{
+            kind: 'asset',
+            id: asset.assetId,
+            name: asset.displayName,
+            currentParentId: asset.folderId ?? null,
+          }}
+          onClose={() => setMoving(false)}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           title="Move to the recycle bin?"

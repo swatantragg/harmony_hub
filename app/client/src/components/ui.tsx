@@ -144,6 +144,28 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
   );
 }
 
+/* ── Overlay plumbing ──────────────────────────────────────────────────────
+   Every overlay locks the page behind it, and overlays stack: a Share dialog opens over
+   the file drawer, a New-folder dialog over the Move dialog. Each one setting and
+   clearing `body.overflow` on its own means the inner one's cleanup unlocks the page
+   while the outer one is still up — the page scrolls away underneath an open dialog.
+   So the lock is counted, and only the last overlay to close releases it. */
+let scrollLocks = 0;
+
+function useOverlay(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    scrollLocks += 1;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      scrollLocks = Math.max(0, scrollLocks - 1);
+      if (scrollLocks === 0) document.body.style.overflow = '';
+    };
+  }, [onClose]);
+}
+
 /* ── Modal ─────────────────────────────────────────────────────────────── */
 export function Modal({
   title, subtitle, onClose, children, footer, width = 'default',
@@ -151,12 +173,7 @@ export function Modal({
   title: string; subtitle?: ReactNode; onClose: () => void; children: ReactNode;
   footer?: ReactNode; width?: 'narrow' | 'default' | 'wide';
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
-  }, [onClose]);
+  useOverlay(onClose);
 
   return createPortal(
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -181,12 +198,7 @@ export function Modal({
    every other overlay. The panel nests inside the scrim so one flex container does the
    centring; clicking the scrim itself — and only the scrim — closes it. */
 export function Drawer({ onClose, children }: { onClose: () => void; children: ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
-  }, [onClose]);
+  useOverlay(onClose);
   return createPortal(
     <div className="drawer-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="drawer" role="dialog" aria-modal aria-label="Asset details">{children}</aside>

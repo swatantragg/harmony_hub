@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
 import { useFolderOptions } from '../../lib/vocabulary';
 import { Modal, useToast } from '../../components/ui';
 import { TagPicker } from '../upload/TagPicker';
@@ -90,9 +90,12 @@ export function NewFolderDialog({
       });
       onCreated(folder);
     },
+    // A duplicate name is the one refusal the reader can answer by insisting, so only that
+    // one turns the button into "Create it anyway". Offering it for a 503 from Drive or a
+    // rejected field just meant pressing it a second time and getting the same refusal.
     onError: (err: Error) => {
       setConflict(err.message);
-      setAllowDuplicate(true);
+      setAllowDuplicate(err instanceof ApiError && err.status === 409);
     },
   });
 
@@ -105,7 +108,7 @@ export function NewFolderDialog({
         <>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
-            <FolderPlus size={14} /> {conflict ? 'Create it anyway' : 'Create folder'}
+            <FolderPlus size={14} /> {allowDuplicateName ? 'Create it anyway' : 'Create folder'}
           </button>
         </>
       }
