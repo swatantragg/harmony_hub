@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "smoke:ui": "node scripts/render-check.mjs",
     "icons": "node scripts/gen-icons.mjs",
-    "fonts:fetch": "node scripts/fetch-fonts.mjs"
+    "fonts:fetch": "node scripts/fetch-fonts.mjs",
+    "smoke:actions": "node scripts/action-check.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",

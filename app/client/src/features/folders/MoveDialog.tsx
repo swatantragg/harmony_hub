@@ -54,10 +54,23 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
         return api(`/folders/${target.id}`, { method: 'PATCH', body: { parentId: destination } });
       }
       // The asset endpoint takes the destination in the path and 'none' for the root.
-      return api(`/folders/${destination ?? 'none'}/assets`, {
-        method: 'POST',
-        body: { assetIds: [target.id] },
-      });
+      //
+      // It answers 200 with a per-file tally rather than a failure status, because it also
+      // serves multi-file moves where some can succeed. A single file is not that case: if
+      // Drive refused it, this dialog has to say so instead of closing with "Moved to X"
+      // over a file that did not go anywhere.
+      const out = await api<{ ok: boolean; moved: number; failed: { displayName: string }[] }>(
+        `/folders/${destination ?? 'none'}/assets`,
+        { method: 'POST', body: { assetIds: [target.id] } },
+      );
+      if (!out.ok || out.moved === 0) {
+        throw new Error(
+          out.failed?.length
+            ? 'Google Drive would not re-parent the file, so nothing was changed. Try again in a moment.'
+            : 'The file is no longer in the catalogue, so there was nothing to move.',
+        );
+      }
+      return out;
     },
     onSuccess: () => {
       qc.invalidateQueries();

@@ -58,6 +58,10 @@ export function ShareManager() {
       qc.invalidateQueries();
       toast({ kind: 'ok', title: 'Link revoked', body: 'It stopped working immediately, everywhere.' });
     },
+    // Without this a failed revoke closed the dialog and said nothing, which reads exactly
+    // like a successful one — the worst possible outcome for the one action people take
+    // when a link has gone somewhere it should not.
+    onError: (e: Error) => toast({ kind: 'danger', title: 'The link was not revoked', body: e.message }),
   });
 
   // Withdraw one addressee. No confirmation dialog: it affects exactly one person, it is
