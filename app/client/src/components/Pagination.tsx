@@ -6,6 +6,7 @@
 // choose how many rows to load, and say plainly which slice of the whole you are looking at.
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Select } from './Select';
 
 /** 0 means "every row" — a real choice on a library this size, and named as such. */
 export const PAGE_SIZES = [50, 100, 200, 250, 0] as const;
@@ -65,15 +66,13 @@ export function Pagination({
             ? `No ${plural}`
             : <>Showing <b>{first.toLocaleString()}–{last.toLocaleString()}</b> of {total.toLocaleString()} {total === 1 ? noun : plural}</>}
         </span>
-        <select
-          className="select"
+        <Select
           style={{ width: 'auto' }}
-          value={pageSize}
-          onChange={(e) => onPageSize(Number(e.target.value))}
-          aria-label={`How many ${plural} per page`}
-        >
-          {PAGE_SIZES.map((n) => <option key={n} value={n}>{sizeLabel(n)}</option>)}
-        </select>
+          value={String(pageSize)}
+          onChange={(v) => onPageSize(Number(v))}
+          options={PAGE_SIZES.map((n) => ({ value: String(n), label: sizeLabel(n) }))}
+          ariaLabel={`How many ${plural} per page`}
+        />
       </div>
 
       {pages > 1 && (

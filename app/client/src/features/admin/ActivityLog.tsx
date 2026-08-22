@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2, ScrollText, Search, Sheet, X } from 'lucide-react';
 import { api, downloadFile, qs } from '../../lib/api';
 import { EmptyState, Skeleton, useDebounced, useToast } from '../../components/ui';
+import { Select, pairs } from '../../components/Select';
+import { DateField } from '../../components/DateField';
 import { Pagination } from '../../components/Pagination';
 import { ACTION_COPY } from '../../lib/assetTypes';
 import { date, relative } from '../../lib/format';
@@ -124,13 +126,23 @@ export function ActivityLog() {
                 aria-label="Filter activity"
               />
             </div>
-            <select className="select" style={{ width: 'auto' }} value={action} onChange={(e) => narrow(setAction)(e.target.value)} aria-label="Filter by action">
-              <option value="">Every action</option>
-              {data?.actions.map((a) => <option key={a} value={a}>{ACTION_COPY[a] ?? a}</option>)}
-            </select>
-            <select className="select" style={{ width: 'auto' }} value={sort} onChange={(e) => narrow(setSort)(e.target.value)} aria-label="Sort entries">
-              {SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            <Select
+              style={{ width: 'auto' }}
+              value={action}
+              onChange={narrow(setAction)}
+              options={[
+                { value: '', label: 'Every action' },
+                ...(data?.actions ?? []).map((a) => ({ value: a, label: ACTION_COPY[a] ?? a })),
+              ]}
+              ariaLabel="Filter by action"
+            />
+            <Select
+              style={{ width: 'auto' }}
+              value={sort}
+              onChange={narrow(setSort)}
+              options={pairs(SORTS)}
+              ariaLabel="Sort entries"
+            />
           </div>
 
           {/* A date range, because "what happened on the day the master went missing?" is
@@ -138,26 +150,22 @@ export function ActivityLog() {
           <div className="toolbar">
             <label className="row-tight">
               <span className="t-small">From</span>
-              <input
-                className="input"
-                type="date"
+              <DateField
                 style={{ width: 'auto' }}
                 value={from}
                 max={to || undefined}
-                onChange={(e) => narrow(setFrom)(e.target.value)}
-                aria-label="Show entries from this date"
+                onChange={narrow(setFrom)}
+                ariaLabel="Show entries from this date"
               />
             </label>
             <label className="row-tight">
               <span className="t-small">To</span>
-              <input
-                className="input"
-                type="date"
+              <DateField
                 style={{ width: 'auto' }}
                 value={to}
                 min={from || undefined}
-                onChange={(e) => narrow(setTo)(e.target.value)}
-                aria-label="Show entries up to this date"
+                onChange={narrow(setTo)}
+                ariaLabel="Show entries up to this date"
               />
             </label>
             {filtered && (

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { CopyButton, EmptyState, Skeleton, useToast, useDebounced, ConfirmDialog } from '../../components/ui';
+import { Select, pairs } from '../../components/Select';
 import { countdown, date, pluralise, relative } from '../../lib/format';
 import type { Share } from '../../lib/types';
 import { useMemo, useState } from 'react';
@@ -179,12 +180,20 @@ export function ShareManager() {
                 aria-label="Filter share links"
               />
             </div>
-            <select className="select" style={{ width: 'auto' }} value={sort} onChange={(e) => setSort(e.target.value as ShareSort)} aria-label="Sort links">
-              {SHARE_SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <select className="select" style={{ width: 'auto' }} value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} aria-label="Filter by state">
-              {STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            <Select
+              style={{ width: 'auto' }}
+              value={sort}
+              onChange={(v) => setSort(v as ShareSort)}
+              options={pairs(SHARE_SORTS)}
+              ariaLabel="Sort links"
+            />
+            <Select
+              style={{ width: 'auto' }}
+              value={stateFilter}
+              onChange={setStateFilter}
+              options={pairs(STATES)}
+              ariaLabel="Filter by state"
+            />
             <span className="t-small">{rows.length} of {data!.data.length}</span>
           </div>
         </div>

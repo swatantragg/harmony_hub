@@ -16,6 +16,7 @@ import { useAssetTypes } from '../../lib/vocabulary';
 import { carriesLanguage, familyOf } from '../../lib/assetTypes';
 import { bytes } from '../../lib/format';
 import { EmptyState, useToast } from '../../components/ui';
+import { Select } from '../../components/Select';
 import { TagPicker } from './TagPicker';
 import { TypePicker } from './TypePicker';
 import { LanguagePicker } from '../../components/LanguagePicker';
@@ -230,10 +231,15 @@ export function UploadCenter() {
                   <TypePicker value="" onChange={(assetType) => applyToAll({ assetType })} label="Set the type for all" />
                   <div className="field grow" style={{ minWidth: 190 }}>
                     <label className="label">Attach all to a song</label>
-                    <select className="select" defaultValue="" onChange={(e) => applyToAll({ songId: e.target.value })}>
-                      <option value="">No song</option>
-                      {songs?.data.map((s) => <option key={s._id} value={s._id}>{s.title} — {s.artistName}</option>)}
-                    </select>
+                    <Select
+                      value=""
+                      onChange={(songId) => applyToAll({ songId })}
+                      ariaLabel="Song for all"
+                      options={[
+                        { value: '', label: 'No song' },
+                        ...(songs?.data ?? []).map((s) => ({ value: s._id, label: s.title, hint: s.artistName })),
+                      ]}
+                    />
                     <div className="hint">Optional — leave as “No song” for files that are not tied to a release.</div>
                   </div>
                   <FolderPicker value="" onChange={(folderId) => applyToAll({ folderId })} label="Put all in a folder" />
@@ -377,10 +383,15 @@ function UploadRow({
 
               <div className="field grow" style={{ minWidth: 190 }}>
                 <label className="label">Which song?</label>
-                <select className="select" value={item.songId} onChange={(e) => onChange({ songId: e.target.value })}>
-                  <option value="">Not tied to a song</option>
-                  {songs.map((s) => <option key={s._id} value={s._id}>{s.title} — {s.artistName}</option>)}
-                </select>
+                <Select
+                  value={item.songId}
+                  onChange={(songId) => onChange({ songId })}
+                  ariaLabel="Song"
+                  options={[
+                    { value: '', label: 'Not tied to a song' },
+                    ...songs.map((s) => ({ value: s._id, label: s.title, hint: s.artistName })),
+                  ]}
+                />
                 <div className="hint">
                   Optional. Contracts, brand assets and press kits usually belong to no single release.
                 </div>
@@ -390,9 +401,12 @@ function UploadRow({
 
               <div className="field" style={{ flex: '1 1 150px', minWidth: 150 }}>
                 <label className="label">Version</label>
-                <select className="select" value={item.version} onChange={(e) => onChange({ version: e.target.value })}>
-                  {VERSION_LABELS.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
+                <Select
+                  value={item.version}
+                  onChange={(version) => onChange({ version })}
+                  ariaLabel="Version"
+                  options={VERSION_LABELS.map((v) => ({ value: v, label: v }))}
+                />
               </div>
 
               {/* Audio and video only — a cover or a credits sheet has no language of

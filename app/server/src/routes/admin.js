@@ -654,9 +654,32 @@ const publicUser = (u) => ({
 
 const admins = () => db.users.filter((u) => normaliseRole(u.role) === 'Admin' && u.status === 'active');
 
+// What an account is attached to, for the confirmation shown before it is destroyed.
+// Tallied once for the whole list rather than per person: a pass over the library per user
+// is O(people × assets), which is a great deal of work for a page that shows five rows.
+function attachments() {
+  const uploads = new Map();
+  for (const { asset } of allAssets({ includeDeleted: true })) {
+    if (!asset.uploadedBy) continue;
+    uploads.set(asset.uploadedBy, (uploads.get(asset.uploadedBy) ?? 0) + 1);
+  }
+  const shares = new Map();
+  const now = Date.now();
+  for (const s of db.shares) {
+    if (!s.createdBy || s.revokedAt || Date.parse(s.expiresAt) < now) continue;
+    shares.set(s.createdBy, (shares.get(s.createdBy) ?? 0) + 1);
+  }
+  return { uploads, shares };
+}
+
 adminRouter.get('/users', requires('admin:users'), (_req, res) => {
+  const { uploads, shares } = attachments();
   res.json({
-    data: db.users.map(publicUser),
+    data: db.users.map((u) => ({
+      ...publicUser(u),
+      uploadCount: uploads.get(u._id) ?? 0,
+      activeShareCount: shares.get(u._id) ?? 0,
+    })),
     roles: ROLES,
     permissionMatrix: PERMISSIONS,
     minPasswordLength: MIN_PASSWORD_LENGTH,
@@ -803,6 +826,63 @@ adminRouter.post('/users/:id/unlock', requires('admin:users'), (req, res) => {
   persist();
   record(req, { action: 'USER_UNLOCK', entity: 'user', entityId: user._id, label: `Unlocked ${user.name}` });
   res.json(publicUser(user));
+});
+
+// Destroy an account outright, as opposed to suspending it.
+//
+// Suspending is the reversible half, and it is what offboarding usually wants: the person
+// cannot sign in from this moment, and their name stays on everything they uploaded. This
+// is the other half — the record goes, and nothing brings it back.
+//
+// What it deliberately leaves alone: their uploads, the folders they made, and the share
+// links they issued. Somebody leaving is not a reason to delete a master, and a link a
+// partner is waiting on should be withdrawn deliberately rather than as a side effect of
+// tidying up the People page. Their name stops resolving on those rows — they read
+// "Unknown" afterwards — which is why the count is returned on the list and stated in the
+// dialog before this is pressed.
+//
+// Behind the same password re-entry as purging a file, because it is the same kind of act:
+// a live session on a borrowed laptop is not evidence of who is doing it.
+adminRouter.delete('/users/:id', requires('admin:users'), requireStepUp('Deleting an account'), async (req, res) => {
+  const index = db.users.findIndex((u) => u._id === req.params.id);
+  if (index === -1) return problem(res, 404, 'Not Found', 'No user with that id.');
+  const user = db.users[index];
+
+  // Signing yourself out of existence mid-request leaves the job half done and, if you
+  // were the only administrator, no way back in to finish it.
+  if (user._id === req.user.sub) {
+    return problem(
+      res, 409, 'Conflict',
+      'You cannot delete the account you are signed in with. Another administrator has to do it.',
+    );
+  }
+  // The same floor the role and status changes hold: a library with no administrator has
+  // no way to appoint one.
+  if (normaliseRole(user.role) === 'Admin' && admins().length <= 1) {
+    return problem(
+      res, 409, 'Conflict',
+      'This is the only administrator. Give somebody else the Admin role first — otherwise no account could add one back.',
+    );
+  }
+
+  // Sessions first, while the record still exists: revocation looks the account up by id,
+  // and every check that would otherwise close those tokens is about to have nothing to
+  // find.
+  await invalidateSessions(user, 'account-deleted');
+
+  const removed = { name: user.name, email: user.email, role: normaliseRole(user.role), status: user.status };
+  db.users.splice(index, 1);
+  alert(req, {
+    action: 'USER_DELETE', entity: 'user', entityId: user._id,
+    label: `Deleted the account for ${removed.name} (${removed.email})`,
+    before: removed,
+    meta: { sessionsRevoked: true },
+  });
+  // Both halves in one write, before answering: the account cannot come back with the next
+  // process that loads the catalogue, and the record of who removed it cannot be the half
+  // that is lost. `alert` has already queued the flush; this only brings it forward.
+  await flushNow().catch(() => null);
+  res.json({ ok: true, _id: user._id, name: removed.name });
 });
 
 // ── Notifications (shared by every role) ────────────────────────────────────

@@ -29,6 +29,8 @@ import { api, downloadFile, qs } from '../../lib/api';
 import {
   AvailabilityBadge, EmptyState, Modal, Skeleton, TagChip, useDebounced, useToast,
 } from '../../components/ui';
+import { Select } from '../../components/Select';
+import { DateField } from '../../components/DateField';
 import { Pagination, ALL_ROWS } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { date, midTruncate } from '../../lib/format';
@@ -167,15 +169,20 @@ function Facet({
   return (
     <label className="mlog-filter">
       <span className="eyebrow">{label}</span>
-      <select className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
-        <option value="">{allLabel}</option>
-        {/* A chosen value that no longer counts anything still has to appear, or the
-            dropdown silently resets itself and the table stops matching the URL. */}
-        {!options.some((o) => o.value === value) && value && <option value={value}>{value}</option>}
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.value} ({o.count.toLocaleString()})</option>
-        ))}
-      </select>
+      <Select
+        value={value}
+        onChange={onChange}
+        ariaLabel={label}
+        options={[
+          { value: '', label: allLabel },
+          // A chosen value that no longer counts anything still has to appear, or the
+          // dropdown silently resets itself and the table stops matching the URL.
+          ...(!options.some((o) => o.value === value) && value ? [{ value, label: value }] : []),
+          // The count sits in its own column rather than inside the label, so the names
+          // line up down the list and the figures line up against them.
+          ...options.map((o) => ({ value: o.value, label: o.value, meta: o.count.toLocaleString() })),
+        ]}
+      />
     </label>
   );
 }
@@ -624,12 +631,17 @@ export function MasterLog() {
 
               <label className="mlog-filter">
                 <span className="eyebrow">Sharing</span>
-                <select className="select" value={get('shared')} onChange={(e) => narrow('shared', e.target.value)} aria-label="Filter by sharing">
-                  <option value="">Shared or not</option>
-                  <option value="active">Behind a live link</option>
-                  <option value="yes">Shared at some point</option>
-                  <option value="no">Never shared</option>
-                </select>
+                <Select
+                  value={get('shared')}
+                  onChange={(v) => narrow('shared', v)}
+                  ariaLabel="Filter by sharing"
+                  options={[
+                    { value: '', label: 'Shared or not' },
+                    { value: 'active', label: 'Behind a live link' },
+                    { value: 'yes', label: 'Shared at some point' },
+                    { value: 'no', label: 'Never shared' },
+                  ]}
+                />
               </label>
 
               {/* Deleted rows are still catalogue records and still matter to an audit, so
@@ -637,20 +649,25 @@ export function MasterLog() {
                   because "how many files do we hold" must not count the recycle bin. */}
               <label className="mlog-filter">
                 <span className="eyebrow">Deleted files</span>
-                <select className="select" value={get('lifecycle') || 'live'} onChange={(e) => narrow('lifecycle', e.target.value === 'live' ? '' : e.target.value)} aria-label="Include deleted files">
-                  <option value="live">Excluded</option>
-                  <option value="all">Included</option>
-                  <option value="deleted">Only the recycle bin</option>
-                </select>
+                <Select
+                  value={get('lifecycle') || 'live'}
+                  onChange={(v) => narrow('lifecycle', v === 'live' ? '' : v)}
+                  ariaLabel="Include deleted files"
+                  options={[
+                    { value: 'live', label: 'Excluded' },
+                    { value: 'all', label: 'Included' },
+                    { value: 'deleted', label: 'Only the recycle bin' },
+                  ]}
+                />
               </label>
 
               <label className="mlog-filter">
                 <span className="eyebrow">Added from</span>
-                <input className="input" type="date" value={get('from')} max={get('to') || undefined} onChange={(e) => narrow('from', e.target.value)} aria-label="Added from" />
+                <DateField value={get('from')} max={get('to') || undefined} onChange={(v) => narrow('from', v)} ariaLabel="Added from" placeholder="Any date" />
               </label>
               <label className="mlog-filter">
                 <span className="eyebrow">Added to</span>
-                <input className="input" type="date" value={get('to')} min={get('from') || undefined} onChange={(e) => narrow('to', e.target.value)} aria-label="Added up to" />
+                <DateField value={get('to')} min={get('from') || undefined} onChange={(v) => narrow('to', v)} ariaLabel="Added up to" placeholder="Any date" />
               </label>
 
               <label className="mlog-filter" style={{ flex: '1 1 100%' }}>

@@ -18,6 +18,7 @@ import { AssetList } from '../assets/AssetCard';
 import {
   AvailabilityBadge, CardSkeletons, EmptyState, HelpTip, Modal, useToast,
 } from '../../components/ui';
+import { Select, pairs } from '../../components/Select';
 import { pluralise } from '../../lib/format';
 import type { Asset, Availability, FacetValue, SearchResponse } from '../../lib/types';
 
@@ -308,15 +309,13 @@ export function SearchToolbar({
           Verify these {data?.data.length ?? 0}
         </button>
 
-        <select
-          className="select"
-          style={{ width: 'auto', paddingRight: 30 }}
+        <Select
+          style={{ width: 'auto' }}
           value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          aria-label="Sort results"
-        >
-          {SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+          onChange={setSort}
+          options={pairs(SORTS)}
+          ariaLabel="Sort results"
+        />
 
         <button
           className={activeCount > 0 ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}

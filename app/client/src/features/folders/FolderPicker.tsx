@@ -10,6 +10,7 @@ import { FolderPlus } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useFolderOptions } from '../../lib/vocabulary';
 import { Modal, useToast } from '../../components/ui';
+import { Select } from '../../components/Select';
 import { TagPicker } from '../upload/TagPicker';
 import type { Folder } from '../../lib/types';
 
@@ -25,24 +26,26 @@ export function FolderPicker({
     <>
       <div className="field grow" style={{ minWidth: 190 }}>
         <label className="label">{label}</label>
-        <select
-          className="select"
+        <Select
           value={value}
-          onChange={(e) => {
-            if (e.target.value === NEW) { setCreating(true); return; }
-            onChange(e.target.value);
+          onChange={(v) => {
+            if (v === NEW) { setCreating(true); return; }
+            onChange(v);
           }}
-        >
-          <option value="">No folder</option>
-          {(folders ?? []).map((f) => (
-            <option key={f._id} value={f._id}>
-              {/* Indented by depth, because Drive folders nest and a flat list of names
-                  hides which "Masters" is which. */}
-              {'\u00A0\u00A0'.repeat(f.depth ?? 0)}{f.name} ({f.assetCount})
-            </option>
-          ))}
-          <option value={NEW}>＋ New folder…</option>
-        </select>
+          options={[
+            { value: '', label: 'No folder' },
+            // Drive folders nest, so a flat list of names hides which "Masters" is which.
+            // The full path answers that properly, where the old indent could only hint.
+            ...(folders ?? []).map((f) => ({
+              value: f._id,
+              label: f.name,
+              hint: (f.depth ?? 0) > 0 ? f.path : undefined,
+              meta: f.assetCount,
+            })),
+            { value: NEW, label: '＋ New folder…' },
+          ]}
+          ariaLabel={label}
+        />
         <div className="hint">{hint ?? 'Optional. A real folder in Google Drive — files move into it without any bytes being copied.'}</div>
       </div>
 

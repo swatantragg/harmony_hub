@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAssetTypes } from '../../lib/vocabulary';
 import { Info } from 'lucide-react';
 import { Modal, useToast } from '../../components/ui';
+import { Select } from '../../components/Select';
 import { TagPicker } from '../upload/TagPicker';
 import { TypePicker } from '../upload/TypePicker';
 import { FolderPicker } from '../folders/FolderPicker';
@@ -73,9 +74,12 @@ export function EditMetadataDialog({ asset, onClose }: { asset: Asset; onClose: 
           {/* 150px beside the type picker, full width once it has wrapped below it. */}
           <div className="field" style={{ flex: '1 1 150px', minWidth: 150 }}>
             <label className="label">Version label</label>
-            <select className="select" value={version} onChange={(e) => setVersion(e.target.value)}>
-              {VERSION_LABELS.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
+            <Select
+              value={version}
+              onChange={setVersion}
+              options={VERSION_LABELS.map((v) => ({ value: v, label: v }))}
+              ariaLabel="Version"
+            />
           </div>
         </div>
 

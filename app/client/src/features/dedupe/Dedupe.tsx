@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { api, auth, qs, stepUp } from '../../lib/api';
 import { EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
+import { Select } from '../../components/Select';
 import { bytes, date, pluralise, relative } from '../../lib/format';
 import { useSession } from '../../app/session';
 import { AssetDrawer } from '../assets/AssetDrawer';
@@ -222,10 +223,16 @@ export function Dedupe() {
             <button key={v} className={level === v ? 'on' : ''} onClick={() => setLevel(v)} aria-pressed={level === v}>{label}</button>
           ))}
         </div>
-        <select className="select" style={{ maxWidth: 190 }} value={family} onChange={(e) => setFamily(e.target.value)} aria-label="Filter by kind of file">
-          <option value="">Every kind of file</option>
-          {['Video', 'Audio', 'Image', 'Document'].map((f) => <option key={f} value={f}>{f} only</option>)}
-        </select>
+        <Select
+          style={{ maxWidth: 190 }}
+          value={family}
+          onChange={setFamily}
+          options={[
+            { value: '', label: 'Every kind of file' },
+            ...['Video', 'Audio', 'Image', 'Document'].map((f) => ({ value: f, label: `${f} only` })),
+          ]}
+          ariaLabel="Filter by kind of file"
+        />
       </div>
 
       {/* Summary tiles */}

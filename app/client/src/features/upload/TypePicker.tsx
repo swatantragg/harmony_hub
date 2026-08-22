@@ -10,6 +10,7 @@ import { api } from '../../lib/api';
 import { ApiError } from '../../lib/api';
 import { useAssetTypes, groupTypes } from '../../lib/vocabulary';
 import { useToast } from '../../components/ui';
+import { Select } from '../../components/Select';
 import type { AssetTypeDef, Family } from '../../lib/types';
 
 const ADD = '__add__';
@@ -34,24 +35,25 @@ export function TypePicker({
     <>
       <div className="field grow" style={{ minWidth: 190 }}>
         <label className="label">{label}</label>
-        <select
-          className="select"
+        <Select
           value={value}
-          onChange={(e) => {
-            if (e.target.value === ADD) { setAdding(true); return; }
-            onChange(e.target.value);
+          placeholder="Choose a type…"
+          onChange={(v) => {
+            if (v === ADD) { setAdding(true); return; }
+            onChange(v);
           }}
-        >
-          <option value="">Choose a type…</option>
-          {groupTypes(types).map(([family, list]) => (
-            <optgroup key={family} label={family}>
-              {list.map((t) => (
-                <option key={t.type} value={t.type}>{t.type}{t.custom ? ' — added by your team' : ''}</option>
-              ))}
-            </optgroup>
-          ))}
-          <option value={ADD}>＋ Add a new type…</option>
-        </select>
+          ariaLabel={label}
+          options={[
+            ...groupTypes(types).flatMap(([family, list]) =>
+              list.map((t) => ({
+                value: t.type,
+                label: t.type,
+                group: family,
+                hint: t.custom ? 'added by your team' : undefined,
+              }))),
+            { value: ADD, label: '＋ Add a new type…' },
+          ]}
+        />
         <div className="hint">
           {selected
             ? `Filed under ${selected.family}. Drives the icon, the filters it appears under, and its storage tier.`

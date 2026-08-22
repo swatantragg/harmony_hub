@@ -296,6 +296,112 @@
 .textarea { resize: vertical; min-height: 74px; line-height: 1.55; }
 .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8C9E' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 32px; }
 
+/* ── Select ────────────────────────────────────────────────────────────────
+   The trigger is a button wearing `.select`, so a closed dropdown is identical to the
+   native one it replaced and no layout moved when they were swapped. The list below is
+   ours — a native select's popup is painted by the operating system and no stylesheet
+   reaches inside it, which on the dark theme meant a grey OS list with square corners
+   over a product made of rounded panels. */
+.select-trigger {
+  display: flex; align-items: center; gap: 8px;
+  text-align: left; cursor: pointer; line-height: 1.45; min-width: 0;
+}
+.select-trigger .select-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-trigger.placeholder .select-value { color: var(--ink-3); }
+.select-trigger:hover:not(:disabled) { border-color: var(--line-2); }
+/* Open reads the same as focused. They are the same state to the reader. */
+.select-trigger[aria-expanded="true"] { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
+.select-trigger:disabled { opacity: .55; cursor: not-allowed; }
+
+.select-menu {
+  position: fixed; z-index: 220; padding: 6px;
+  /* Long lists — every artist, every action, every folder — scroll inside the panel
+     rather than running off the fold. */
+  max-height: min(360px, 60vh); overflow-y: auto; overscroll-behavior: contain;
+  box-shadow: var(--shadow-lg); animation: rise var(--t-fast);
+}
+.select-option {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 10px; border: none; background: transparent; border-radius: var(--r-sm);
+  font-family: var(--sans); font-size: 16.5px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; text-align: left;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.select-option-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.select-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-option-hint { font-size: 14.5px; color: var(--ink-3); font-weight: 400; }
+.select-option-meta { flex: none; font-size: 14.5px; color: var(--ink-3); font-family: var(--mono); }
+/* The keyboard cursor and the mouse hover are one thing, so the two never disagree about
+   which row Enter would take. */
+.select-option.active:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+.select-option.on { color: var(--indigo-deep); font-weight: 600; }
+.select-option.on.active { background: var(--indigo-soft); }
+.select-option:disabled { opacity: .45; cursor: not-allowed; }
+/* Held in the layout rather than added on selection, so the label does not shift by 15px
+   when a row becomes the chosen one. */
+.select-tick { flex: none; opacity: 0; color: var(--indigo); }
+.select-option.on .select-tick { opacity: 1; }
+
+.select-group {
+  padding: 9px 10px 5px; font-size: 13.5px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3);
+}
+.select-group:not(:first-child) { margin-top: 3px; border-top: 1px solid var(--line); padding-top: 11px; }
+.select-empty { padding: 12px 10px; font-size: 16px; color: var(--ink-3); }
+
+/* ── Date field and calendar ───────────────────────────────────────────────
+   Same reasoning as the select: `<input type="date">` has its picker drawn by the browser,
+   which paints a different widget per engine and reads none of these tokens. The trigger
+   keeps `.input`, so a closed date field still matches every other control on the row. */
+.date-trigger {
+  display: flex; align-items: center; gap: 8px;
+  text-align: left; cursor: pointer; line-height: 1.45; min-width: 0;
+}
+.date-trigger .date-icon { flex: none; color: var(--ink-3); }
+.date-trigger .date-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-trigger.placeholder .date-value { color: var(--ink-3); }
+.date-trigger[aria-expanded="true"] { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
+.date-clear {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 19px; height: 19px; border-radius: 50%; color: var(--ink-3);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.date-clear:hover { background: var(--surface-2); color: var(--ink); }
+
+.calendar { position: fixed; z-index: 220; padding: 10px; width: 292px; box-shadow: var(--shadow-lg); animation: rise var(--t-fast); }
+.calendar-head { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
+.calendar-title {
+  flex: 1 1 auto; text-align: center; font-size: 16.5px; font-weight: 600; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.calendar-weekday {
+  display: flex; align-items: center; justify-content: center; height: 26px;
+  font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3);
+}
+.calendar-day {
+  display: flex; align-items: center; justify-content: center;
+  height: 34px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; font-family: var(--sans); font-size: 16px; font-weight: 500;
+  color: var(--ink-2); cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.calendar-day:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+/* Days from the neighbouring months are kept rather than blanked: a grid with holes in it
+   is harder to read than one that is quietly continuous. */
+.calendar-day.outside { color: var(--ink-3); opacity: .55; }
+.calendar-day:disabled { opacity: .3; cursor: not-allowed; }
+/* Today is an outline, the chosen day is a fill — so a chosen today reads as both. */
+.calendar-day.today { border-color: var(--line-2); font-weight: 700; color: var(--ink); }
+.calendar-day.cursor:not(.on) { border-color: var(--indigo); }
+.calendar-day.on {
+  background: var(--indigo); border-color: var(--indigo); color: #fff; font-weight: 700; opacity: 1;
+}
+.calendar-foot {
+  display: flex; justify-content: space-between; gap: 8px;
+  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line);
+}
+
 /* ── Label / figure rows ───────────────────────────────────────────────────
    A name on the left, its figure on the right. `.spread` alone is not enough: it lets
    both sides shrink, so a long folder name squeezes the figure until "365 KB" breaks
@@ -581,6 +687,7 @@
 .row-menu-trigger { flex: none; opacity: .55; transition: opacity var(--t-fast); }
 .row-item:hover .row-menu-trigger,
 .tbl tr:hover .row-menu-trigger,
+.person-row:hover .row-menu-trigger,
 .row-menu-trigger:hover,
 .row-menu-trigger[aria-expanded="true"] { opacity: 1; }
 @media (pointer: coarse) { .row-menu-trigger { opacity: 1; } }
@@ -591,6 +698,8 @@
 .person-row {
   display: flex; align-items: flex-start; gap: 13px;
   padding: 14px 16px; border-top: 1px solid var(--line);
+  /* The action menu pins to this corner on a narrow screen, as it does on a file row. */
+  position: relative;
 }
 .person-row:first-child { border-top: none; }
 .person-row .row-icon { margin-top: 2px; }
@@ -609,7 +718,9 @@
      own — it defaulted ahead of the icon — and once ordered last it was pushed onto a
      line of its own by a full-width title. Pinned to the corner it is always in the same
      place, which is what a per-row menu has to be. */
-  .row-item .row-menu-trigger { position: absolute; top: 8px; right: 8px; }
+  .row-item .row-menu-trigger,
+  .person-row .row-menu-trigger { position: absolute; top: 8px; right: 8px; }
+  .person-row .row-main { padding-right: 40px; }
   .row-meta {
     order: 3; flex: 1 1 100%; margin-left: 55px;
     flex-direction: row; align-items: center; justify-content: flex-start;

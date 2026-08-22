@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AvailabilityBadge, EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
+import { Select } from '../../components/Select';
 import { AssetList } from '../assets/AssetCard';
 import { Pagination } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
@@ -544,10 +545,15 @@ function RemedyDialog({ finding, onClose }: { finding: Finding; onClose: () => v
             {o.needsSong && chosen === o.action && (
               <div className="field" style={{ marginTop: 12 }}>
                 <label className="label">Attach it to which song?</label>
-                <select className="select" value={songId} onChange={(e) => setSongId(e.target.value)}>
-                  <option value="">No song — file it loose</option>
-                  {songs?.data.map((s) => <option key={s._id} value={s._id}>{s.title} — {s.artistName}</option>)}
-                </select>
+                <Select
+                  value={songId}
+                  onChange={setSongId}
+                  options={[
+                    { value: '', label: 'No song — file it loose' },
+                    ...(songs?.data ?? []).map((s) => ({ value: s._id, label: s.title, hint: s.artistName })),
+                  ]}
+                  ariaLabel="Which song does it belong to"
+                />
               </div>
             )}
           </label>

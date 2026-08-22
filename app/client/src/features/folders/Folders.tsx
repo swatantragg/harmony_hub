@@ -10,6 +10,7 @@ import {
   ConfirmDialog, EmptyState, Modal, RowSkeletons, Skeleton, TagChip, useDebounced, useToast,
 } from '../../components/ui';
 import { RowMenu } from '../../components/RowMenu';
+import { Select, pairs } from '../../components/Select';
 import type { RowAction } from '../../components/RowMenu';
 import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
@@ -250,9 +251,13 @@ export function FolderList() {
           <Search size={17} color="var(--ink-3)" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by name, description or tag" aria-label="Filter folders" />
         </div>
-        <select className="select" style={{ width: 'auto' }} value={sort} onChange={(e) => setSort(e.target.value as FolderSort)} aria-label="Sort folders">
-          {FOLDER_SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        <Select
+          style={{ width: 'auto' }}
+          value={sort}
+          onChange={(v) => setSort(v as FolderSort)}
+          options={pairs(FOLDER_SORTS)}
+          ariaLabel="Sort folders"
+        />
         {!isLoading && <span className="t-small">{pluralise(folders.length, 'folder')}</span>}
       </div>
 

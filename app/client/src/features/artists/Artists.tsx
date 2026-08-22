@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { CardSkeletons, EmptyState, RowSkeletons, Skeleton, useDebounced } from '../../components/ui';
+import { Select, pairs } from '../../components/Select';
 import { Pagination } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, date, pluralise } from '../../lib/format';
@@ -55,9 +56,13 @@ export function ArtistList() {
             <Users size={17} color="var(--ink-3)" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by name or genre" aria-label="Filter artists" />
           </div>
-          <select className="select" style={{ width: 'auto' }} value={sort} onChange={(e) => setSort(e.target.value as ArtistSort)} aria-label="Sort artists">
-            {ARTIST_SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          <Select
+            style={{ width: 'auto' }}
+            value={sort}
+            onChange={(v) => setSort(v as ArtistSort)}
+            options={pairs(ARTIST_SORTS)}
+            ariaLabel="Sort artists"
+          />
           {!isLoading && <span className="t-small">{pluralise(artists.length, 'artist')}</span>}
         </div>
       </div>
@@ -368,15 +373,13 @@ export function ArtistDetail() {
         <section>
           {(data.folders?.length ?? 0) > 0 && (
             <div className="toolbar" style={{ marginBottom: 14 }}>
-              <select
-                className="select"
+              <Select
                 style={{ width: 'auto' }}
                 value={folderSort}
-                onChange={(e) => setFolderSort(e.target.value as FolderSort)}
-                aria-label="Sort folders"
-              >
-                {FOLDER_SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+                onChange={(v) => setFolderSort(v as FolderSort)}
+                options={pairs(FOLDER_SORTS)}
+                ariaLabel="Sort folders"
+              />
               <span className="t-small">{pluralise(data.folders!.length, 'folder')}</span>
             </div>
           )}
