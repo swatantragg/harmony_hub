@@ -1,25 +1,3 @@
-// End-to-end smoke test against a running API and a real Google Drive.
-//
-//   npm run smoke
-//
-// It walks the mandatory capabilities and the paths that depend on them, using the same
-// HTTP calls the browser makes — including PUTting the upload chunks straight to Google's
-// resumable session URI from this process, exactly as the browser would.
-//
-//   1  sign in
-//   2  open a resumable upload session          → Store    (§10.1)
-//   3  PUT the bytes straight to Google
-//   4  complete, and confirm by reading it back
-//   5  verify availability                      → Verify   (§10.5)
-//   6  sign a download and fetch the bytes      → Retrieve (§10.2)
-//   7  rename, and confirm the Drive file id did not move and the download name did
-//   8  Range request, so <video> seeking is proven
-//   9  move it between folders, and confirm Drive followed
-//  10  a chunked multi-chunk upload, reassembled byte-for-byte
-//  11  resume: abandon a chunk mid-upload and pick it up from Google's own byte count
-//  12  a share link, opened with no credentials at all
-//  13  de-duplication finds a deliberate copy by checksum
-//  14  reconcile, then purge and confirm it is gone
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -31,8 +9,6 @@ for (const file of [path.resolve(here, '../.env'), path.resolve(here, '../server
 }
 
 const API = (process.env.SMOKE_API || process.env.PUBLIC_ORIGIN || 'http://localhost:8100') + '/api';
-// The founding administrator — the one account created with a password of its own and no
-// forced change, so it is the only one that can sign straight in and exercise the API.
 const EMAIL = process.env.SMOKE_EMAIL || process.env.ADMIN_EMAIL || 'swatantra.goongoonalo@gmail.com';
 const PASSWORD = process.env.SMOKE_PASSWORD || process.env.ADMIN_PASSWORD || '12345678';
 
@@ -62,15 +38,12 @@ async function call(pathname, { method = 'GET', body, auth = true } = {}) {
   return payload;
 }
 
-// Sends a whole buffer to a Drive resumable session, in chunks, the way the browser does.
-// `stopAfter` exists so the resume test can walk away halfway through.
 async function sendChunks(sessionUri, buf, chunkSize, { stopAfter = Infinity, from = 0 } = {}) {
   let offset = from;
   let sent = 0;
   while (offset < buf.length) {
     if (sent >= stopAfter) return { finished: false, offset };
     const end = Math.min(offset + chunkSize, buf.length);
-    // eslint-disable-next-line no-await-in-loop
     const res = await fetch(sessionUri, {
       method: 'PUT',
       headers: { 'content-range': `bytes ${offset}-${end - 1}/${buf.length}` },
@@ -89,7 +62,6 @@ async function sendChunks(sessionUri, buf, chunkSize, { stopAfter = Infinity, fr
   return { finished: false, offset };
 }
 
-// A small, real WAV so the file is something a browser would genuinely play.
 function makeWav(seconds = 2, sampleRate = 8000) {
   const n = seconds * sampleRate;
   const header = Buffer.alloc(44);
@@ -120,7 +92,6 @@ async function main() {
     + `${health.storage.sharedDrive ? ' · shared drive' : ' · my drive'}`);
   console.log(`  mongo:   ${health.mongo.db} (${health.mongo.connected ? 'connected' : 'DOWN'})\n`);
 
-  // 1 — sign in
   const auth = await call('/auth/login', { method: 'POST', auth: false, body: { email: EMAIL, password: PASSWORD } });
   token = auth.accessToken;
   ok('sign in', `as ${auth.user.name} (${auth.user.role})`);
@@ -132,7 +103,6 @@ async function main() {
   let duplicateId;
 
   try {
-    // 2 — open a resumable session
     const init = await call('/uploads/initiate', {
       method: 'POST',
       body: {
@@ -149,12 +119,10 @@ async function main() {
     if (!init.uploadUrl?.startsWith('https://')) throw new Error('initiate returned no Google session URI');
     ok('open a resumable upload session', `chunk size ${(init.chunkSize / 1048576).toFixed(0)} MB`);
 
-    // 3 — PUT straight to Google, exactly as the browser does
     const sent = await sendChunks(init.uploadUrl, body, init.chunkSize);
     if (!sent.finished) throw new Error('the upload did not complete');
     ok('PUT bytes straight to Google Drive', `${body.length} bytes, none touched the API`);
 
-    // 4 — complete
     const asset = await call('/uploads/complete', {
       method: 'POST',
       body: {
@@ -173,25 +141,20 @@ async function main() {
     }
     ok('complete + read-back verification', `${asset.drive.sizeBytes} bytes · file ${asset.drive.fileId}`);
 
-    // Google computing the checksum itself is what makes de-duplication exact rather than
-    // advisory, so it is worth failing the smoke test if it ever stops arriving.
     if (asset.drive.sha256 && asset.drive.sha256 !== sha256(body)) {
       throw new Error(`Drive's sha256 ${asset.drive.sha256} does not match ours ${sha256(body)}`);
     }
     ok('Google returns a checksum', asset.drive.sha256 ? `sha256 ${asset.drive.sha256.slice(0, 16)}…` : `md5 ${asset.drive.md5}`);
 
-    // 5 — verify availability
     const verified = await call(`/assets/${assetId}/verify`, { method: 'POST' });
     if (verified.status !== 'AVAILABLE') throw new Error(`expected AVAILABLE, got ${verified.status}: ${verified.detail}`);
     ok('verify availability (live files.get)', verified.status);
 
-    // 6 — download
     const dl = await call(`/assets/${assetId}/download`, { method: 'POST' });
     const fetched = Buffer.from(await (await fetch(dl.url)).arrayBuffer());
     if (!fetched.equals(body)) throw new Error('downloaded bytes differ from what was uploaded');
     ok('signed download returns the exact bytes', `${fetched.length} bytes`);
 
-    // 7 — rename: the Drive file id must not move, the download name must change
     const fileIdBefore = asset.drive.fileId;
     const newName = `renamed_${filename}`;
     const renamed = await call(`/assets/${assetId}/rename`, { method: 'PATCH', body: { displayName: newName } });
@@ -204,13 +167,11 @@ async function main() {
     if (!disp.includes(newName)) throw new Error(`Content-Disposition does not carry the new name: ${disp}`);
     ok('rename', 'same file id, renamed in Drive, downloads as the new name');
 
-    // 8 — Range request, the thing that makes <video> and <audio> seek
     const pv = await call(`/assets/${assetId}/preview`, { method: 'POST' });
     const ranged = await fetch(pv.url, { headers: { Range: 'bytes=0-1023' } });
     if (ranged.status !== 206) throw new Error(`expected 206 Partial Content, got ${ranged.status}`);
     ok('HTTP Range request', `206 · ${ranged.headers.get('content-range')}`);
 
-    // 9 — folders are real, and moving between them re-parents in Drive
     const folder = await call('/folders', {
       method: 'POST',
       body: { name: `Smoke folder ${Date.now()}`, description: 'Created by the smoke test.', tags: ['Demo'] },
@@ -223,8 +184,6 @@ async function main() {
     }
     ok('folders are real Drive folders', 'created in Drive, and the file re-parented into it');
 
-    // 10 — a genuinely multi-chunk upload. One chunk proves nothing about the ordering,
-    // the 308 handshake or the assembled file.
     const big = Buffer.alloc(20 * 1024 * 1024);
     for (let i = 0; i < big.length; i += 4096) big.writeUInt32LE(i, i);
     const bigName = `smoke_chunked_${Date.now()}.bin`;
@@ -249,8 +208,6 @@ async function main() {
     if (!bigBack.equals(big)) throw new Error('the reassembled file does not match what was uploaded');
     ok('chunked upload reassembles byte-for-byte', `${chunks} chunks · ${(big.length / 1048576).toFixed(0)} MB`);
 
-    // 11 — resume. The property that makes this protocol worth its sequential nature:
-    // Google is asked how much it holds, and the upload continues from exactly there.
     const resumeName = `smoke_resume_${Date.now()}.bin`;
     const resumeInit = await call('/uploads/initiate', {
       method: 'POST',
@@ -278,7 +235,6 @@ async function main() {
     ok('resume from Google\'s own byte count', `interrupted at ${(state.received / 1048576).toFixed(0)} MB, finished clean`);
     duplicateId = resumed.assetId;
 
-    // 12 — share link, opened with no credentials at all
     const share = await call('/shares', {
       method: 'POST',
       body: { assetId, audience: 'PUBLIC', expiresIn: '1h', canDownload: true, maxDownloads: 3, note: 'smoke test' },
@@ -296,8 +252,6 @@ async function main() {
     if (revoked.status !== 410) throw new Error(`a revoked link should answer 410, got ${revoked.status}`);
     ok('revocation takes effect immediately', '410 Gone');
 
-    // 13 — de-duplication. The 20 MB file was uploaded twice above, with different names
-    // and into different places, so the exact tier must find them and must be certain.
     const dupes = await call('/dedupe/scan?level=exact');
     const group = dupes.groups.find((g) =>
       g.members.some((m) => m.assetId === bigInit.assetId) && g.members.some((m) => m.assetId === duplicateId));
@@ -315,7 +269,6 @@ async function main() {
     await call(`/assets/${duplicateId}/purge`, { method: 'DELETE', body: { confirm: resumeName } });
     duplicateId = null;
 
-    // 14 — an aborted session leaves nothing behind
     const aborted = await call('/uploads/initiate', {
       method: 'POST',
       body: { filename: 'abandoned.bin', sizeBytes: 20 * 1024 * 1024, contentType: 'application/octet-stream', assetType: 'Audio Snippet' },
@@ -323,13 +276,11 @@ async function main() {
     await call('/uploads/abort', { method: 'POST', body: { uploadUrl: aborted.uploadUrl } });
     ok('abort discards an abandoned upload session', 'nothing staged, nothing billed');
 
-    // 15 — quota, the number every upload depends on
     const quota = await call('/admin/storage/quota');
     ok('Drive quota', quota.unlimited
       ? 'unlimited (pooled Shared Drive)'
       : `${gb(quota.available)} free of ${gb(quota.limit)} · library holds ${gb(quota.libraryBytes)}`);
 
-    // 16 — reconciliation sees the current state of the Drive
     const run = await call('/admin/storage/reconcile', { method: 'POST' });
     ok('reconciliation', `${run.objectsScanned} Drive files · ${run.assetsScanned} catalogued · ${run.durationMs} ms`);
     const expected = { MISSING_IN_DRIVE: 1, UNTRACKED_IN_DRIVE: 1, TRASHED_IN_DRIVE: 1 };

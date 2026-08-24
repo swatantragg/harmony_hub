@@ -1,9 +1,3 @@
-// The three things an installed app has to say for itself, docked at the bottom of the
-// screen where a phone's thumb already is.
-//
-// Only one is ever shown at a time, in the order they matter: losing the network changes
-// what the reader can trust on screen right now; a pending update matters next; an install
-// offer is the least urgent thing in the product and behaves like it.
 import { Download, RefreshCw, WifiOff, X } from 'lucide-react';
 import { usePwa } from '../app/pwa';
 
@@ -42,8 +36,6 @@ export function PwaDock() {
     );
   }
 
-  // Nothing to offer once it is already installed, and nothing to offer on a browser that
-  // never fired the prompt event — Safari among them, which installs from the share sheet.
   if (!installable || standalone) return null;
 
   return (

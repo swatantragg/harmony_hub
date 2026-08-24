@@ -1,5 +1,3 @@
-// Formatting helpers. Every size, date and duration in the product goes through here,
-// so a byte count never renders two different ways on two different screens.
 
 export function bytes(n: number | null | undefined): string {
   if (n == null) return '—';
@@ -57,8 +55,6 @@ export function duration(sec: number | null | undefined): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// Never truncate a hash silently — the middle is elided and the full value stays in the
-// title attribute, per the brand book's typography rules.
 export function midTruncate(value: string, head = 16, tail = 10): string {
   if (!value || value.length <= head + tail + 1) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;

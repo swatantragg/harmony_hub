@@ -1,10 +1,3 @@
-// The page a recipient sees. No navigation, no clutter — the file or the folder, who sent
-// it, how long the link lasts, and the preview before any decision to download.
-//
-// Three link types resolve here through one URL. An "Open to all" link needs no account.
-// An "Editor" or "Specific allocation" link is refused with 401 until the visitor signs
-// in, and every gate — expiry, revocation, download cap, recipient list, and whether the
-// object is still really in storage — is decided by the server on each request.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import {
@@ -33,7 +26,6 @@ interface SharedFile {
   artistName: string | null;
   availability: string;
   previewUrl: string | null;
-  /** Set when the file came out of a folder inside the shared one. */
   subfolder?: string | null;
 }
 
@@ -113,8 +105,6 @@ export function PublicShare() {
     }
   };
 
-  // One signed URL per file — Google Drive offers no zip-a-folder API, and this does not
-  // pretend otherwise. Each file comes straight from storage.
   const downloadAll = async () => {
     setBusy('all');
     try {
@@ -191,7 +181,6 @@ export function PublicShare() {
   );
 }
 
-/* ── Shared header strip ─────────────────────────────────────────────────── */
 
 function ShareMeta({ data }: { data: Resolved }) {
   const Icon = AUDIENCE_ICON[data.share.audience] ?? Globe;
@@ -212,7 +201,6 @@ function ShareMeta({ data }: { data: Resolved }) {
   );
 }
 
-/* ── One file ────────────────────────────────────────────────────────────── */
 
 function AssetShare({ data, busy, onDownload }: { data: Resolved; busy: string | null; onDownload: () => void }) {
   const asset = data.asset!;
@@ -277,7 +265,6 @@ function AssetShare({ data, busy, onDownload }: { data: Resolved; busy: string |
   );
 }
 
-/* ── A whole folder ──────────────────────────────────────────────────────── */
 
 function FolderShare({
   data, open, setOpen, busy, onDownload, onDownloadAll,
@@ -337,9 +324,6 @@ function FolderShare({
                     {f.displayName}
                   </span>
                   <span className="t-small" style={{ display: 'block', fontSize: 13.5 }}>
-                    {/* A folder link covers the tree, so a file one level down says where
-                        it came from — otherwise two masters with the same name in two
-                        subfolders are indistinguishable in this list. */}
                     {f.subfolder ? `${f.subfolder} · ` : ''}
                     {KIND_LABEL[previewKind(f.mimeType, f.displayName)]} · {bytes(f.sizeBytes)}
                     {f.availability !== 'AVAILABLE' ? ` · ${f.availability.toLowerCase()}` : ''}

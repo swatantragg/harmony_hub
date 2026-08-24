@@ -1,4 +1,3 @@
-// Admin surface: storage health and drift remediation (§10.11), quota, audit, users.
 import express from 'express';
 import { db, persist, flushNow, allAssets } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
@@ -23,23 +22,15 @@ import { safeFilename, workbook } from '../util/xlsx.js';
 export const adminRouter = express.Router();
 adminRouter.use(authenticate);
 
-// The detailed health picture that used to sit on the unauthenticated /healthz: which
-// Drive, which folder ids, which account, which database. Every one of those is a useful
-// thing to know before attacking the deployment, and none of them is something a load
-// balancer needs — so the liveness probe answers {ok} and this answers the rest.
 adminRouter.get('/health', requires('admin:storage'), async (_req, res) => {
   const mongo = connectionInfo();
   const space = await storage.quota().catch(() => null);
-  // Whether the scanner is actually answering, not only whether it is switched on. A
-  // configured-but-unreachable scanner is the state worth surfacing: with the fail-closed
-  // default it stops every upload, and with fail-open it silently stops protecting.
   const scanner = antivirus.enabled()
     ? { enabled: true, ...(await antivirus.ping()), version: await antivirus.version() }
     : { enabled: false };
   const drive = storage.driveStatus();
   res.json({
     ok: mongo.readyState === 1 && GOOGLE_CONFIGURED && drive.ok,
-    // Why file operations are failing, in the one place somebody looks when they are.
     drive,
     scanner,
     env: ENV,
@@ -58,9 +49,6 @@ adminRouter.get('/health', requires('admin:storage'), async (_req, res) => {
   });
 });
 
-// ── Quota (§6.4) ────────────────────────────────────────────────────────────
-// The single most operationally useful number in the product: everything stops working
-// when this reaches zero. Drive answers it in one request.
 adminRouter.get('/storage/quota', requires('admin:storage'), async (_req, res) => {
   try {
     const quota = await storage.quota();
@@ -68,7 +56,6 @@ adminRouter.get('/storage/quota', requires('admin:storage'), async (_req, res) =
     const libraryBytes = rows.reduce((n, { asset }) => n + (asset.drive?.sizeBytes ?? 0), 0);
     res.json({
       ...quota,
-      // What GCloud itself is responsible for, versus what else is in the Drive.
       libraryBytes,
       libraryFileCount: rows.length,
       otherDriveBytes: Math.max(0, quota.usageInDrive - libraryBytes),
@@ -82,7 +69,6 @@ adminRouter.get('/storage/quota', requires('admin:storage'), async (_req, res) =
   }
 });
 
-// ── Storage health ──────────────────────────────────────────────────────────
 adminRouter.get('/storage/health', requires('admin:storage'), async (_req, res) => {
   const summary = healthSummary();
   const rows = allAssets();
@@ -109,8 +95,6 @@ adminRouter.get('/storage/health', requires('admin:storage'), async (_req, res) 
     byFolder[name].bytes += asset.drive?.sizeBytes || 0;
   }
 
-  // Never fail the whole page because Google is briefly unreachable — the catalogue half
-  // of this screen is still worth seeing.
   const quota = await storage.quota().catch(() => null);
 
   res.json({
@@ -142,9 +126,6 @@ adminRouter.get('/storage/runs', requires('admin:storage'), (_req, res) => {
   res.json({ data: db.reconciliationRuns, total: db.reconciliationRuns.length });
 });
 
-// Remediation. Each action maps to a row in the §10.11 remediation table. Most of the
-// drift a Drive produces is somebody rearranging files by hand rather than anything being
-// broken, so most of these settle a disagreement rather than repair damage.
 const REMEDIATIONS = [
   'accept-storage-truth', 'accept-drive-name', 'restore-catalogue-name', 'follow-drive-folder',
   'move-back', 'untrash', 'mark-lost', 'adopt', 'adopt-folder', 'quarantine', 'delete-orphan', 'accept',
@@ -177,7 +158,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
 
   try {
     switch (action) {
-      // Drive wins (P1) — the catalogue is corrected to match what is actually there.
       case 'accept-storage-truth': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -190,7 +170,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete('Catalogue record updated to match Google Drive.');
       }
 
-      // Somebody renamed the file in Drive. Believe them.
       case 'accept-drive-name': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -202,7 +181,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete(`Catalogue renamed “${before}” → “${drive.name}” to match Drive.`);
       }
 
-      // Or push the catalogue's name back onto the file instead.
       case 'restore-catalogue-name': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -211,8 +189,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete(`Google Drive file renamed back to “${ctx.asset.displayName}”.`);
       }
 
-      // A file dragged into a different Drive folder. Move the catalogue to follow it,
-      // creating the GCloud folder if that Drive folder is new to us.
       case 'follow-drive-folder': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -237,7 +213,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete(folder ? `Filed under “${folder.name}” to match Drive.` : 'Returned to the library root to match Drive.');
       }
 
-      // Or put it back where the catalogue says it belongs.
       case 'move-back': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -250,7 +225,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete(`Moved back into “${folder?.name ?? 'the library root'}” in Drive.`);
       }
 
-      // Pulled out of the Drive bin before Google sweeps it.
       case 'untrash': {
         const ctx = context(finding.assetId);
         if (!ctx) return problem(res, 404, 'Not Found', 'The asset no longer exists.');
@@ -272,16 +246,11 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete('Asset flagged as permanently lost.');
       }
 
-      // Bring a file somebody dropped into the Drive folder into the catalogue, so it
-      // becomes searchable. A song is optional — a loose file is still a library member.
       case 'adopt': {
         const songId = req.body?.songId;
         const song = songId ? db.songs.find((s) => s._id === songId) : null;
         if (songId && !song) return problem(res, 422, 'Unprocessable Entity', 'That song no longer exists.');
         const drive = await storage.stat(fileId);
-        // A file that would never have been allowed in through the front door is not
-        // allowed in through reconciliation either. Adoption is a normal upload as far as
-        // content policy is concerned.
         if (storage.isBlockedType(drive.mimeType) || storage.isBlockedExtension(drive.name)) {
           return problem(
             res, 422, 'Unprocessable Entity',
@@ -289,8 +258,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
           );
         }
         const requestedType = req.body?.assetType || 'Master Audio';
-        // The type decides the family, the icon and the facet. An arbitrary string from a
-        // request body would put a file in a family nothing lists.
         const assetType = allTypes().some((t) => t.type === requestedType) ? requestedType : 'Master Audio';
         const now = new Date().toISOString();
         const assetId = drive.appProperties?.assetId || uuid();
@@ -315,7 +282,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete(song ? `Adopted into “${song.title}”.` : 'Adopted as a loose library file.');
       }
 
-      // Adopt a whole Drive folder, and everything sitting in it.
       case 'adopt-folder': {
         const drive = await storage.stat(fileId);
         if (db.folders.some((f) => f.driveFolderId === fileId && !f.deletedAt)) {
@@ -336,7 +302,6 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
         return complete(`Adopted “${drive.name}”. Run the check again to adopt the files inside it.`);
       }
 
-      // Set aside without deleting anything, pending a decision.
       case 'quarantine': {
         const drive = await storage.move(fileId, { toParentId: ROOTS.quarantine, fromParentId: null });
         return complete(`Moved to the Quarantine folder in Drive (${drive.name}).`);
@@ -360,15 +325,8 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
   }
 });
 
-// ── Activity log ────────────────────────────────────────────────────────────
-//
-// One set of filters, read once and applied by both the screen and the export. Two copies
-// of this would be two definitions of "the entries I am looking at", and an export that
-// quietly disagrees with the table it was taken from is worse than no export.
 function activityQuery(query) {
   const { action, userId, entity, q, from, to } = query;
-  // A date filter on an audit trail is almost always "what happened on the day X went
-  // wrong?", so `to` is inclusive of the whole day rather than of midnight on it.
   const fromMs = from ? Date.parse(`${from}T00:00:00`) : null;
   const toMs = to ? Date.parse(`${to}T23:59:59.999`) : null;
   return {
@@ -398,8 +356,6 @@ const matchesActivity = (f) => (e) => {
 const ACTIVITY_SORTERS = {
   newest: (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
   oldest: (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
-  // Alphabetical by the person, then by time, so one person's entries stay together and
-  // read in order rather than being shuffled within their own block.
   person: (a, b) => a.userName.localeCompare(b.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
   personDesc: (a, b) => b.userName.localeCompare(a.userName) || Date.parse(b.timestamp) - Date.parse(a.timestamp),
   label: (a, b) => String(a.label).localeCompare(String(b.label)),
@@ -426,45 +382,17 @@ adminRouter.get('/activity', requires('admin:activity'), (req, res) => {
     sort,
     hasMore: page * limit < sorted.length,
     actions: [...new Set(db.activityLog.map((e) => e.action))].sort(),
-    // The window the log actually covers, so a date picker can be bounded to it rather
-    // than letting somebody choose a range that cannot contain anything.
     earliest: db.activityLog.length
       ? db.activityLog.reduce((min, e) => (e.timestamp < min ? e.timestamp : min), db.activityLog[0].timestamp)
       : null,
   });
 });
 
-// ── Activity log → Excel ────────────────────────────────────────────────────
-//
-// The same rows the screen is showing, as an .xlsx an auditor can be sent. Every filter on
-// the screen — the search, the action, the date range, the order — is carried on the
-// query string, so what comes out is what was on screen and not "everything, sorted some
-// other way".
-//
-// Two things it does that the screen cannot:
-//
-//   · It reads MongoDB rather than the in-memory tail. The working set holds the most
-//     recent 2,000 entries for display; the collection holds the whole retention window.
-//     "Export everything that happened in March" is exactly the request the screen cannot
-//     answer, and it is the reason this exists.
-//   · It carries the columns a log needs and a table has no room for — the socket
-//     address, the forwarded-for header when it disagreed with it, the user agent, and the
-//     full before/after payloads rather than a truncated preview.
-//
-// The file itself is built in this process with no spreadsheet dependency; see
-// util/xlsx.js for why.
 
-// A ceiling, because an export is one response held whole in memory. Twenty thousand rows
-// is about 6 MB of XML and comfortably more than any real audit question needs; past it
-// the range wants narrowing, and the file says so on its second sheet rather than
-// silently ending.
 const MAX_EXPORT_ROWS = 20_000;
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// The same filters, expressed for MongoDB. `timestamp` is stored as an ISO string, and
-// ISO strings sort lexicographically in timestamp order — which is what makes a range
-// query on it correct and what lets the { timestamp: -1 } index serve it.
 function activityMongoFilter(f) {
   const where = {};
   if (f.action) where.action = f.action;
@@ -482,9 +410,6 @@ function activityMongoFilter(f) {
   return where;
 }
 
-// Objects are written as JSON rather than flattened into columns: `before` and `after`
-// have no fixed shape — they are whatever the action changed — and a column per key would
-// be four hundred columns wide and empty nearly everywhere.
 const asText = (value) => {
   if (value == null) return '';
   if (typeof value === 'string') return value;
@@ -516,8 +441,6 @@ const COLUMNS = [
 ];
 
 const toRow = (e) => {
-  // Split out so the two most common things anybody does to an exported log — filter to a
-  // day, group by hour — are a column each rather than a formula over a timestamp.
   const at = new Date(e.timestamp);
   const valid = !Number.isNaN(at.getTime());
   return {
@@ -545,9 +468,6 @@ adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req,
   const filters = activityQuery(req.query);
   const sort = activitySort(req.query.sort);
 
-  // MongoDB holds the whole retention window; the in-memory array holds the display tail.
-  // The fallback matters — an export is the one thing somebody reaches for when something
-  // has gone wrong, which is exactly when the database might be the thing that is wrong.
   let rows;
   let source = 'archive';
   try {
@@ -573,10 +493,6 @@ adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req,
     : '';
   const filename = safeFilename(`gcloud-activity${range}-${stamp}.xlsx`);
 
-  // The second sheet is the provenance of the first. A spreadsheet of audit rows with no
-  // record of what was filtered out of it is a spreadsheet nobody should rely on — and
-  // "there were no deletions that week" reads very differently once you can see that the
-  // export was narrowed to one person.
   const details = [
     ['Exported at', at.toISOString()],
     ['Exported by', `${req.user.name} (${req.user.role})`],
@@ -608,8 +524,6 @@ adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req,
     },
   ], { createdAt: at });
 
-  // Reading the audit trail is a privileged act and taking a copy of it out of the
-  // building is more so — every export is itself an entry, with what was asked for.
   record(req, {
     action: 'ACTIVITY_EXPORT',
     entity: 'activity',
@@ -627,36 +541,22 @@ adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req,
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
   res.setHeader('Content-Length', String(file.length));
-  // A generated report is never a cached one: the next request is a different moment.
   res.setHeader('Cache-Control', 'no-store');
   res.send(file);
 });
 
-// ── Users ───────────────────────────────────────────────────────────────────
-// Creating an account is the one capability an Admin holds and a User does not, so every
-// route below sits behind `admin:users` and nothing else in the product does.
 const publicUser = (u) => ({
   _id: u._id, name: u.name, email: u.email, role: normaliseRole(u.role),
   status: u.status, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt,
-  // Surfaced so the People table can say "has not set their own password yet" rather
-  // than leaving an administrator to guess whether a handover landed.
   mustChangePassword: Boolean(u.mustChangePassword),
-  // So the People table can show an account the lockout counter has closed, rather than
-  // leaving an administrator to wonder why somebody cannot sign in.
   locked: u.lockedUntil ? Date.parse(u.lockedUntil) > Date.now() : false,
   lockedUntil: u.lockedUntil ?? null,
   permissions: PERMISSIONS[normaliseRole(u.role)],
-  // Whether this person has ever come in through Google. Nothing to configure — the link
-  // forms itself the first time they use it — but an administrator asked "can they use
-  // Google?" deserves an answer other than "try it and see".
   google: u.google ? { email: u.google.email, linkedAt: u.google.linkedAt } : null,
 });
 
 const admins = () => db.users.filter((u) => normaliseRole(u.role) === 'Admin' && u.status === 'active');
 
-// What an account is attached to, for the confirmation shown before it is destroyed.
-// Tallied once for the whole list rather than per person: a pass over the library per user
-// is O(people × assets), which is a great deal of work for a page that shows five rows.
 function attachments() {
   const uploads = new Map();
   for (const { asset } of allAssets({ includeDeleted: true })) {
@@ -711,18 +611,12 @@ adminRouter.post('/users', requires('admin:users'), async (req, res) => {
     passwordHash: await hashPassword(initial),
     role,
     status: 'active',
-    // The starting password is a handover, not a credential: it is good for exactly one
-    // sign-in, and every route stays closed until the person replaces it.
     mustChangePassword: true,
     passwordChangedAt: null,
-    // Session generation, lockout counters. Present from the start so nothing downstream
-    // has to reason about an absent field.
     tokenVersion: 0,
     failedLogins: 0,
     lockedUntil: null,
     createdAt: new Date().toISOString(),
-    // Who let this person in. Shown on their profile, and the only record of it outside
-    // the activity log — which is trimmed, and which a User cannot read.
     createdBy: req.user.sub,
     lastLoginAt: null,
   };
@@ -742,15 +636,11 @@ adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   if (req.body?.role && !nextRole) {
     return problem(res, 422, 'Unprocessable Entity', `Role must be one of: ${ROLES.join(', ')}.`);
   }
-  // An unconstrained status field is how an account ends up in a state nothing checks for.
   const nextStatus = req.body?.status ?? null;
   if (nextStatus && !STATUSES.includes(nextStatus)) {
     return problem(res, 422, 'Unprocessable Entity', `Status must be one of: ${STATUSES.join(', ')}.`);
   }
 
-  // A library with no administrator has no way back: nobody left can create an account or
-  // restore the role. So the last active Admin cannot be demoted or suspended, including
-  // by themselves.
   const losingAdmin =
     normaliseRole(user.role) === 'Admin'
     && ((nextRole && nextRole !== 'Admin') || (nextStatus && nextStatus !== 'active'));
@@ -765,9 +655,6 @@ adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   if (nextRole) user.role = nextRole;
   if (nextStatus) user.status = nextStatus;
 
-  // A demotion or a suspension has to reach the sessions already open, or it is only a
-  // change to what the screen offers: the access token in that browser still carries the
-  // old role until it expires, and the middleware would keep honouring it.
   const changed = before.role !== normaliseRole(user.role) || before.status !== user.status;
   if (changed) {
     await invalidateSessions(user, nextStatus === 'suspended' ? 'account-suspended' : 'role-changed');
@@ -783,9 +670,6 @@ adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   res.json(publicUser(user));
 });
 
-// Hand somebody a new starting password. The account is put back into the handover state,
-// so the value set here is good for exactly one sign-in — an administrator never ends up
-// knowing a password somebody else is still using.
 adminRouter.post('/users/:id/reset-password', requires('admin:users'), requireStepUp('Resetting a password'), async (req, res) => {
   const user = db.users.find((u) => u._id === req.params.id);
   if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
@@ -817,7 +701,6 @@ adminRouter.post('/users/:id/reset-password', requires('admin:users'), requireSt
   res.json(publicUser(user));
 });
 
-// Unlock an account the lockout counter closed, without waiting the window out.
 adminRouter.post('/users/:id/unlock', requires('admin:users'), (req, res) => {
   const user = db.users.find((u) => u._id === req.params.id);
   if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
@@ -828,36 +711,17 @@ adminRouter.post('/users/:id/unlock', requires('admin:users'), (req, res) => {
   res.json(publicUser(user));
 });
 
-// Destroy an account outright, as opposed to suspending it.
-//
-// Suspending is the reversible half, and it is what offboarding usually wants: the person
-// cannot sign in from this moment, and their name stays on everything they uploaded. This
-// is the other half — the record goes, and nothing brings it back.
-//
-// What it deliberately leaves alone: their uploads, the folders they made, and the share
-// links they issued. Somebody leaving is not a reason to delete a master, and a link a
-// partner is waiting on should be withdrawn deliberately rather than as a side effect of
-// tidying up the People page. Their name stops resolving on those rows — they read
-// "Unknown" afterwards — which is why the count is returned on the list and stated in the
-// dialog before this is pressed.
-//
-// Behind the same password re-entry as purging a file, because it is the same kind of act:
-// a live session on a borrowed laptop is not evidence of who is doing it.
 adminRouter.delete('/users/:id', requires('admin:users'), requireStepUp('Deleting an account'), async (req, res) => {
   const index = db.users.findIndex((u) => u._id === req.params.id);
   if (index === -1) return problem(res, 404, 'Not Found', 'No user with that id.');
   const user = db.users[index];
 
-  // Signing yourself out of existence mid-request leaves the job half done and, if you
-  // were the only administrator, no way back in to finish it.
   if (user._id === req.user.sub) {
     return problem(
       res, 409, 'Conflict',
       'You cannot delete the account you are signed in with. Another administrator has to do it.',
     );
   }
-  // The same floor the role and status changes hold: a library with no administrator has
-  // no way to appoint one.
   if (normaliseRole(user.role) === 'Admin' && admins().length <= 1) {
     return problem(
       res, 409, 'Conflict',
@@ -865,9 +729,6 @@ adminRouter.delete('/users/:id', requires('admin:users'), requireStepUp('Deletin
     );
   }
 
-  // Sessions first, while the record still exists: revocation looks the account up by id,
-  // and every check that would otherwise close those tokens is about to have nothing to
-  // find.
   await invalidateSessions(user, 'account-deleted');
 
   const removed = { name: user.name, email: user.email, role: normaliseRole(user.role), status: user.status };
@@ -878,14 +739,10 @@ adminRouter.delete('/users/:id', requires('admin:users'), requireStepUp('Deletin
     before: removed,
     meta: { sessionsRevoked: true },
   });
-  // Both halves in one write, before answering: the account cannot come back with the next
-  // process that loads the catalogue, and the record of who removed it cannot be the half
-  // that is lost. `alert` has already queued the flush; this only brings it forward.
   await flushNow().catch(() => null);
   res.json({ ok: true, _id: user._id, name: removed.name });
 });
 
-// ── Notifications (shared by every role) ────────────────────────────────────
 export const notificationsRouter = express.Router();
 notificationsRouter.use(authenticate);
 
@@ -898,17 +755,12 @@ notificationsRouter.get('/', (req, res) => {
   res.json({ data: rows, unread: rows.filter((n) => !n.read).length });
 });
 
-// Marks the caller's own notifications read — the ones addressed to them, and the
-// broadcast ones they can see. It used to mark every row in the collection, so one person
-// clearing their bell cleared everybody's.
 notificationsRouter.post('/read', (req, res) => {
   const at = new Date().toISOString();
   let marked = 0;
   for (const n of db.notifications) {
     if (n.readAt) continue;
     if (n.userId && n.userId !== req.user.sub) continue;
-    // A broadcast row is read per person, so it is recorded per person rather than being
-    // destroyed for everyone by whoever saw it first.
     if (!n.userId) {
       n.readBy = [...new Set([...(n.readBy || []), req.user.sub])];
       marked += 1;

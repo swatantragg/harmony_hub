@@ -11,8 +11,6 @@ const DURATIONS = [
   ['1h', '1 hour'], ['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'],
 ] as const;
 
-// The three link types. Each one answers a different question — who may open this, and
-// what may they do once it is open — and the server enforces both on every request.
 const AUDIENCES: { value: ShareAudience; label: string; icon: typeof Globe; blurb: string }[] = [
   {
     value: 'PUBLIC',
@@ -86,8 +84,6 @@ export function ShareDialog({
     onError: (e: Error) => toast({ kind: 'danger', title: 'Could not create the link', body: e.message }),
   });
 
-  // Preview before sending. The same signed-URL path the recipient will travel, so what is
-  // checked here is the actual file, not a thumbnail of it.
   const openPreview = async () => {
     setPreviewing(true);
     if (previewUrl || target?.kind !== 'asset') return;
@@ -95,7 +91,6 @@ export function ShareDialog({
       const r = await api<{ url: string }>(`/assets/${target.asset.assetId}/preview`, { method: 'POST' });
       setPreviewUrl(r.url);
     } catch {
-      /* the preview panel states its own failure */
     }
   };
 
@@ -112,8 +107,6 @@ export function ShareDialog({
 
   if (!target) return null;
   const name = target.kind === 'folder' ? target.folder.name : target.asset.displayName;
-  // A folder link resolves to the folder *and everything under it*, so the counts shown
-  // here are the deep ones — the recipient's manifest and this line have to agree.
   const folderFiles = target.kind === 'folder'
     ? target.folder.totalAssetCount ?? target.folder.assetCount
     : 0;
@@ -125,7 +118,6 @@ export function ShareDialog({
     ? `${folderFiles} files · ${bytes(folderBytes)}`
     : name;
 
-  /* ── Preview step ─────────────────────────────────────────────────────── */
   if (previewing && target.kind === 'asset') {
     return (
       <Modal
@@ -151,7 +143,6 @@ export function ShareDialog({
     );
   }
 
-  /* ── Result step ──────────────────────────────────────────────────────── */
   if (created) {
     return (
       <Modal
@@ -170,9 +161,6 @@ export function ShareDialog({
               {created.target === 'FOLDER' ? ` · ${created.fileCount} files` : ''}
             </div>
           </div>
-          {/* A specific-allocation link has no single URL to hand out — every recipient
-              has their own, listed below. Showing one here would be showing a link that
-              deliberately does not work. */}
           {created.audience !== 'RESTRICTED' && (
             <div className="field">
               <label className="label">Share link</label>
@@ -184,9 +172,6 @@ export function ShareDialog({
             </div>
           )}
           {created.audience === 'RESTRICTED' && (
-            // Each addressee gets a different URL. Sending the wrong person's link to
-            // somebody is not just untidy — it is refused at the gate — so they are listed
-            // separately with their own copy button rather than as one link to forward.
             <div className="stack-2">
               <div className="note neutral">
                 <UserCheck size={15} />
@@ -219,7 +204,6 @@ export function ShareDialog({
     );
   }
 
-  /* ── Compose step ─────────────────────────────────────────────────────── */
   return (
     <Modal
       title={target.kind === 'folder' ? 'Share this folder outside GCloud' : 'Share outside GCloud'}

@@ -1,8 +1,3 @@
-// "What kind of file is this?" — the built-in catalogue plus anything the team has
-// added, and a way to add one more without leaving the form.
-//
-// The alternative is worse than an extra dropdown item: when a contract has no matching
-// type, someone files it as "Lyrics", and it becomes unfindable for everyone else.
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Sparkles, AlertTriangle, X } from 'lucide-react';
@@ -94,13 +89,12 @@ function AddTypeDialog({
       onCreated(created);
     },
     onError: async (err: unknown) => {
-      // The server answers a near-duplicate with 409 and the list it matched against.
       if (err instanceof ApiError && err.status === 409) {
         setConflict(err.message);
         try {
           const r = await api<{ suggestions: AssetTypeDef[] }>(`/asset-types/similar?type=${encodeURIComponent(type.trim())}`);
           setSuggestions(r.suggestions);
-        } catch { /* the message alone is enough */ }
+        } catch {}
         return;
       }
       toast({ kind: 'danger', title: 'Could not add the type', body: err instanceof Error ? err.message : '' });

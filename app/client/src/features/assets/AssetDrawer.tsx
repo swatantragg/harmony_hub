@@ -36,7 +36,6 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
   const { data: asset, isLoading } = useQuery({
     queryKey: ['asset', assetId],
     queryFn: () => api<Asset>(`/assets/${assetId}`),
-    // Poll while a restore from the Drive bin is in flight so the badge settles on its own.
     refetchInterval: (q) => ((q.state.data as Asset | undefined)?.availability.status === 'RESTORING' ? 3000 : false),
   });
 
@@ -67,8 +66,6 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
     onError: (e: Error) => toast({ kind: 'danger', title: 'Download blocked', body: e.message }),
   });
 
-  // Pulling a file back out of the Google Drive bin. Instant and free — but on a 30-day
-  // clock, which the copy says plainly.
   const restore = useMutation({
     mutationFn: () => api(`/assets/${assetId}/restore`, { method: 'POST' }),
     onSuccess: () => {
@@ -109,8 +106,6 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
 
   const status = asset.availability.status;
   const copy = STATUS_COPY[status];
-  // Downloading is blocked only when the object is confirmed absent or sitting in archive.
-  // An unverified file downloads normally — the API re-checks storage before signing anyway.
   const canDownload = can('asset:download') && ['AVAILABLE', 'MISMATCH', 'UNVERIFIED'].includes(status);
 
   return (
@@ -162,7 +157,6 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
         </div>
 
         <div className="drawer-body stack-4">
-          {/* The status explanation sits above every tab — it is the first thing to read. */}
           <div className="panel" data-status={status} style={{ borderColor: 'var(--st)', background: 'var(--st-soft)', boxShadow: 'none' }}>
             <div className="panel-body" style={{ padding: 15 }}>
               <div className="spread" style={{ marginBottom: 7 }}>
@@ -385,8 +379,6 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
           )}
         </div>
 
-        {/* Actions. Exactly one primary per state — spark is reserved for the single most
-            important next step, which changes with the file's status. */}
         <div className="drawer-foot">
           <div className="wrap-gap">
             {status === 'TRASHED' && can('asset:restore') ? (
@@ -412,9 +404,6 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
                 <Share2 size={14} /> Share
               </button>
             )}
-            {/* The folder screens send people here to file a loose file — "open any file and
-                move it in from its details panel" — so the verb has to actually be here.
-                It was only ever on the row menu, which is not where that sentence points. */}
             {can('asset:edit') && (
               <button className="btn btn-secondary" onClick={() => setMoving(true)}>
                 <FolderInput size={14} /> Move

@@ -1,14 +1,3 @@
-// Re-download the self-hosted typeface.
-//
-// The product uses one family, and it is served from this origin rather than from Google —
-// see the comment in index.html for why. That means the files are checked in, and this is
-// how they are regenerated when the family, the weights or the subsets change.
-//
-//   npm run --workspace client fonts:fetch
-//
-// It asks Google Fonts for the CSS a modern browser would get (the user agent decides
-// whether that is woff2), downloads every face it names, and rewrites the stylesheet to
-// point at the local copies.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +8,6 @@ const outDir = path.resolve(here, '../public/fonts');
 const FAMILY = 'Poppins';
 const WEIGHTS = [300, 400, 500, 600, 700, 800];
 
-// Asking as Chrome is what gets woff2 rather than the ttf served to unknown clients.
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const url = `https://fonts.googleapis.com/css2?family=${FAMILY}:wght@${WEIGHTS.join(';')}&display=swap`;

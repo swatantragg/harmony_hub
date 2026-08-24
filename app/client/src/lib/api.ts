@@ -1,25 +1,7 @@
-// Typed fetch client. Attaches the access token, unwraps RFC 7807 problem responses
-// into readable Error messages, and keeps every URL in one place.
-//
-// ── Where the session lives, and why it moved ───────────────────────────────
-//
-// The access token used to be kept in localStorage. That is readable by any script that
-// runs on this origin, and this application serves user-uploaded files from this origin —
-// so a single stored HTML or SVG file was a complete session theft. The server no longer
-// serves those inline, but a token in localStorage is a standing invitation for the next
-// such bug, and it survives closing the tab.
-//
-// So the access token lives in a module variable — gone when the tab closes, unreachable
-// from any other script context — and is deliberately short-lived. What keeps a person
-// signed in is a refresh token in an HttpOnly cookie, which script cannot read at all,
-// scoped to /api/auth so it is not attached to any other request. This module refreshes
-// it silently: on start-up, and once on any 401.
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '/api';
 
 let accessToken: string | null = null;
-// A step-up ticket, held the same way: in memory, short-lived, never persisted. It is what
-// lets somebody confirm three deletions after typing their password once.
 let stepUpTicket: string | null = null;
 
 export const auth = {
@@ -33,9 +15,7 @@ export const auth = {
 export class ApiError extends Error {
   status: number;
   title: string;
-  /** Set when the server is asking for the account password before it will proceed. */
   stepUp: boolean;
-  /** Set when a share link is protected by a passcode. */
   passcodeRequired: boolean;
   constructor(status: number, title: string, detail: string, extra: Record<string, unknown> = {}) {
     super(detail || title);
@@ -48,9 +28,6 @@ export class ApiError extends Error {
 
 type Options = { method?: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string> };
 
-// One refresh in flight at a time, however many requests hit a 401 together — otherwise a
-// page with six queries on it rotates the refresh token six times and five of those look
-// like token reuse to the server, which is exactly the alarm it should raise.
 let refreshing: Promise<boolean> | null = null;
 
 async function refresh(): Promise<boolean> {
@@ -68,7 +45,6 @@ async function refresh(): Promise<boolean> {
       } catch {
         return false;
       } finally {
-        // Cleared on the next tick so concurrent callers all observe the same result.
         setTimeout(() => { refreshing = null; }, 0);
       }
     })();
@@ -87,7 +63,6 @@ async function send(path: string, opts: Options): Promise<Response> {
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
-    // The refresh cookie is same-origin and scoped to /api/auth; nothing else needs it.
     credentials: 'same-origin',
   });
 }
@@ -95,8 +70,6 @@ async function send(path: string, opts: Options): Promise<Response> {
 export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   let res = await send(path, opts);
 
-  // An expired access token is the normal case now, not an error: it lasts fifteen
-  // minutes. One silent refresh, one retry, and the reader never sees it.
   if (res.status === 401 && !path.startsWith('/auth')) {
     if (await refresh()) res = await send(path, opts);
   }
@@ -116,10 +89,6 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   return payload as T;
 }
 
-/**
- * Re-authenticates for a destructive action, then remembers the ticket for a few minutes.
- * Returns false when the password was wrong, so a dialog can say so and stay open.
- */
 export async function stepUp(password: string): Promise<boolean> {
   try {
     const out = await api<{ ticket: string }>('/auth/step-up', { method: 'POST', body: { password } });
@@ -129,35 +98,13 @@ export async function stepUp(password: string): Promise<boolean> {
     return false;
   }
 }
-
-/** Restores a session from the refresh cookie. Called once, at start-up. */
 export const resume = refresh;
 
-/**
- * Where the browser is sent to start a Google sign-in.
- *
- * A plain navigation rather than a fetch: the whole flow is redirects, and it has to be
- * the top-level window that travels to Google and comes back, otherwise the callback
- * cannot set the refresh cookie the session is built on.
- */
 export const googleSignInUrl = (email?: string) =>
   `${BASE}/auth/google${email ? `?email=${encodeURIComponent(email)}` : ''}`;
-
-/**
- * Fetches a file the API generates — a spreadsheet export — and hands it to the browser
- * to save.
- *
- * Why this exists rather than an <a href>. Every API route is authorised by a bearer
- * header held in memory, and a link element sends no headers at all: the download would
- * arrive as a 401 rendered into a new tab. So the bytes are fetched with the same auth
- * and refresh handling as any other call, and only then turned into a save.
- */
 export async function downloadFile(
   path: string,
   fallbackName: string,
-  // A POST is offered for one reason: exporting a hand-picked selection. Six hundred
-  // chosen rows is twenty-two kilobytes of ids, and a URL that long is refused by proxies
-  // long before it reaches the server — so the ids travel in a body instead.
   opts: { method?: string; body?: unknown } = {},
 ): Promise<void> {
   let res = await send(path, opts);
@@ -167,7 +114,7 @@ export async function downloadFile(
   if (!res.ok) {
     const text = await res.text();
     let payload: Record<string, unknown> = {};
-    try { payload = text ? JSON.parse(text) : {}; } catch { /* not a problem document */ }
+    try { payload = text ? JSON.parse(text) : {}; } catch {}
     throw new ApiError(
       res.status,
       String(payload.title || 'Export failed'),
@@ -175,14 +122,10 @@ export async function downloadFile(
       payload,
     );
   }
-
-  // Content-Disposition is what the server actually named it; the fallback only covers a
-  // proxy that strips the header.
   const disposition = res.headers.get('content-disposition') || '';
   const named = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
     ?? /filename="([^"]+)"/i.exec(disposition)?.[1];
   const filename = named ? decodeURIComponent(named) : fallbackName;
-
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = url;
@@ -190,11 +133,8 @@ export async function downloadFile(
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Revoked on the next tick — Safari has not started reading the blob when click()
-  // returns, and revoking synchronously gives it an empty file.
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
-
 export const qs = (params: Record<string, unknown>) => {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

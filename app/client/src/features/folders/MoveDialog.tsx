@@ -1,14 +1,3 @@
-// Move a file, or a whole folder, somewhere else.
-//
-// Both are the same question — "which folder should this live in?" — and in Drive both are
-// the same operation: a reparent, which updates an index entry and copies no bytes. So one
-// dialog answers it for both, and the only difference is which endpoint it calls and which
-// destinations it refuses.
-//
-// Every destination is listed, indented by depth, with the library root first — a file
-// that belongs to no folder is a normal state, not an error, so "move it back out" has to
-// be reachable. A folder can also be created here and is selected the moment it exists,
-// because "none of these, I want a new one" is the common case when tidying up.
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, FolderPlus, Home, Loader2, Folder as FolderIcon } from 'lucide-react';
@@ -24,7 +13,6 @@ interface MoveTarget {
   kind: 'asset' | 'folder';
   id: string;
   name: string;
-  /** Where it is now, so the dialog can mark it and refuse a no-op. */
   currentParentId: string | null;
 }
 
@@ -35,9 +23,6 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
   const qc = useQueryClient();
   const toast = useToast();
 
-  // A folder cannot be moved into itself or into anything beneath it — that is a cycle, and
-  // Drive rejects it with a message nobody can act on. The paths from the lookup already
-  // encode ancestry, so the subtree is identifiable without walking parent links.
   const options = useMemo(() => {
     const all = folders ?? [];
     if (target.kind !== 'folder') return all;
@@ -53,12 +38,6 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
       if (target.kind === 'folder') {
         return api(`/folders/${target.id}`, { method: 'PATCH', body: { parentId: destination } });
       }
-      // The asset endpoint takes the destination in the path and 'none' for the root.
-      //
-      // It answers 200 with a per-file tally rather than a failure status, because it also
-      // serves multi-file moves where some can succeed. A single file is not that case: if
-      // Drive refused it, this dialog has to say so instead of closing with "Moved to X"
-      // over a file that did not go anywhere.
       const out = await api<{ ok: boolean; moved: number; failed: { displayName: string }[] }>(
         `/folders/${destination ?? 'none'}/assets`,
         { method: 'POST', body: { assetIds: [target.id] } },
@@ -135,7 +114,6 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
                 type="button"
                 className={`row-item move-option ${selected === f._id ? 'on' : ''}`}
                 onClick={() => setSelected(f._id)}
-                // Depth is what tells two folders called "Masters" apart.
                 style={{ paddingLeft: 16 + (f.depth ?? 0) * 18 }}
               >
                 <span className="row-icon info"><FolderIcon size={18} /></span>
@@ -161,8 +139,6 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
 
       {creating && (
         <NewFolderDialog
-          // A folder made from here lands where the reader is currently pointing, which is
-          // almost always what "new folder" means at this moment.
           parentId={selected === ROOT ? null : selected}
           onClose={() => setCreating(false)}
           onCreated={(f) => { setSelected(f._id); setCreating(false); }}

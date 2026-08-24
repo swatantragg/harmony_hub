@@ -41,15 +41,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   if (loading) return <BootSplash />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
-  // The server closes every route below to an account that has not replaced the password
-  // it was handed. This mirrors that, so the reader lands on the screen that fixes it
-  // rather than on a page that would answer 403 to everything it tried to load.
   if (user.mustChangePassword) return <Navigate to="/set-password" replace />;
   return <>{children}</>;
 }
 
-// The set-a-password screen needs a signed-in account, and needs the pending flag — an
-// account that has already chosen a password has no business here.
 function RequirePendingPassword({ children }: { children: React.ReactNode }) {
   const { user, loading } = useSession();
   if (loading) return <BootSplash />;
@@ -58,7 +53,6 @@ function RequirePendingPassword({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Gate a route on a permission rather than a role, so the check matches the server's.
 function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
   const can = useSession((s) => s.can);
   if (!can(permission)) return <Navigate to="/" replace />;
@@ -89,8 +83,6 @@ function App() {
       <Route path="/s/:token" element={<PublicShare />} />
 
       <Route element={<RequireAuth><Shell /></RequireAuth>}>
-        {/* Home is the search screen. `/search` used to be a second one with a second
-            search bar; every link that pointed at it now points here. */}
         <Route index element={<Dashboard />} />
         <Route path="search" element={<Navigate to="/" replace />} />
         <Route path="artists" element={<ArtistList />} />
@@ -115,11 +107,8 @@ function App() {
   );
 }
 
-// Before the first paint, so a dark-theme reload never flashes light.
 applyStoredThemeEarly();
 
-// Outside React, and outside StrictMode's double-invoke: registering a service worker and
-// attaching window listeners twice is not idempotent.
 initPwa();
 
 createRoot(document.getElementById('root')!).render(
@@ -128,8 +117,6 @@ createRoot(document.getElementById('root')!).render(
       <HashRouter>
         <ToastHost>
           <App />
-          {/* Outside the routes: an offline notice is worth having on the sign-in and
-              public-share screens too, neither of which sits inside the Shell. */}
           <PwaDock />
         </ToastHost>
       </HashRouter>

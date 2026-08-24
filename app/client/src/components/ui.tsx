@@ -9,7 +9,6 @@ import { STATUS_COPY } from '../lib/assetTypes';
 import { auth, stepUp } from '../lib/api';
 import { useTheme } from '../app/theme';
 
-/* ── Brandmark ─────────────────────────────────────────────────────────── */
 export function Tile({ size = 'md', onIndigo = false }: { size?: 'sm' | 'md' | 'lg'; onIndigo?: boolean }) {
   return (
     <div className={`tile ${size === 'md' ? '' : size} ${onIndigo ? 'on-indigo' : ''}`} aria-hidden>
@@ -27,7 +26,6 @@ export function Brandmark({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   );
 }
 
-/* ── Availability badge — §8.4 ─────────────────────────────────────────── */
 export function AvailabilityBadge({
   status, size = 'sm', showHelp = false,
 }: { status: Availability; size?: 'sm' | 'lg'; showHelp?: boolean }) {
@@ -43,7 +41,6 @@ export function AvailabilityBadge({
   );
 }
 
-/* ── Theme toggle ──────────────────────────────────────────────────────── */
 export function ThemeToggle() {
   const { pref, resolved, cycle } = useTheme();
 
@@ -67,13 +64,6 @@ export function ThemeToggle() {
   );
 }
 
-/* ── Password field ────────────────────────────────────────────────────────
-   A password input with a reveal toggle. Worth having everywhere one is typed: the
-   alternative to showing it is people choosing shorter passwords they can type without
-   mistakes, which is a worse trade than the shoulder-surfing risk it avoids.
-
-   The button is `type="button"` — inside a form, the default is submit, and an eye that
-   signs you in is a memorable bug. */
 export function PasswordInput({
   value, onChange, id, autoComplete, placeholder, autoFocus, invalid, required,
 }: {
@@ -113,8 +103,6 @@ export function PasswordInput({
     </div>
   );
 }
-
-/* ── Inline help ───────────────────────────────────────────────────────── */
 export function HelpTip({ text }: { text: string }) {
   return (
     <span className="help" tabIndex={0} role="note" aria-label={text}>
@@ -122,8 +110,6 @@ export function HelpTip({ text }: { text: string }) {
     </span>
   );
 }
-
-/* ── Copy-to-clipboard ─────────────────────────────────────────────────── */
 export function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -143,15 +129,7 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
     </button>
   );
 }
-
-/* ── Overlay plumbing ──────────────────────────────────────────────────────
-   Every overlay locks the page behind it, and overlays stack: a Share dialog opens over
-   the file drawer, a New-folder dialog over the Move dialog. Each one setting and
-   clearing `body.overflow` on its own means the inner one's cleanup unlocks the page
-   while the outer one is still up — the page scrolls away underneath an open dialog.
-   So the lock is counted, and only the last overlay to close releases it. */
 let scrollLocks = 0;
-
 function useOverlay(onClose: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -165,8 +143,6 @@ function useOverlay(onClose: () => void) {
     };
   }, [onClose]);
 }
-
-/* ── Modal ─────────────────────────────────────────────────────────────── */
 export function Modal({
   title, subtitle, onClose, children, footer, width = 'default',
 }: {
@@ -174,7 +150,6 @@ export function Modal({
   footer?: ReactNode; width?: 'narrow' | 'default' | 'wide';
 }) {
   useOverlay(onClose);
-
   return createPortal(
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${width === 'wide' ? 'wide' : width === 'narrow' ? 'narrow' : ''}`} role="dialog" aria-modal aria-label={title}>
@@ -192,11 +167,6 @@ export function Modal({
     document.body,
   );
 }
-
-/* ── Detail panel ──────────────────────────────────────────────────────────
-   Centred over the page rather than anchored to an edge, and the same 80% geometry as
-   every other overlay. The panel nests inside the scrim so one flex container does the
-   centring; clicking the scrim itself — and only the scrim — closes it. */
 export function Drawer({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   useOverlay(onClose);
   return createPortal(
@@ -207,13 +177,10 @@ export function Drawer({ onClose, children }: { onClose: () => void; children: R
   );
 }
 
-/* ── Toasts ────────────────────────────────────────────────────────────── */
 type Toast = { id: number; kind: 'ok' | 'danger' | 'warn' | 'info'; title: string; body?: string };
 type ToastApi = (t: Omit<Toast, 'id'>) => void;
-
 const ToastCtx = createContext<ToastApi>(() => {});
 export const useToast = () => useContext(ToastCtx);
-
 export function ToastHost({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Toast[]>([]);
   const push = useCallback<ToastApi>((t) => {
@@ -245,8 +212,6 @@ export function ToastHost({ children }: { children: ReactNode }) {
     </ToastCtx.Provider>
   );
 }
-
-/* ── Empty state ───────────────────────────────────────────────────────── */
 export function EmptyState({
   icon, title, body, action,
 }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
@@ -260,13 +225,9 @@ export function EmptyState({
   );
 }
 
-/* ── Skeleton ──────────────────────────────────────────────────────────── */
 export const Skeleton = ({ h = 16, w = '100%', style }: { h?: number; w?: number | string; style?: CSSProperties }) => (
   <div className="skel" style={{ height: h, width: w, ...style }} />
 );
-
-// The list equivalent. A skeleton whose shape does not match what replaces it causes a
-// visible jump on load, which reads as the page breaking and re-rendering.
 export function RowSkeletons({ n = 5 }: { n?: number }) {
   return (
     <div className="panel rows">
@@ -282,7 +243,6 @@ export function RowSkeletons({ n = 5 }: { n?: number }) {
     </div>
   );
 }
-
 export function CardSkeletons({ n = 8 }: { n?: number }) {
   return (
     <div className="cards">
@@ -297,8 +257,6 @@ export function CardSkeletons({ n = 8 }: { n?: number }) {
     </div>
   );
 }
-
-/* ── Tag chip ──────────────────────────────────────────────────────────── */
 const CONTROLLED = new Set([
   'Romantic', 'Sad', 'Party', 'Acoustic', 'Viral', 'Festive', 'Devotional',
   'Promo', 'Reel', 'Teaser', 'BTS', 'Master', 'Demo', 'Lyric Video',
@@ -306,8 +264,6 @@ const CONTROLLED = new Set([
 export const TagChip = ({ name }: { name: string }) => (
   <span className={`tag ${CONTROLLED.has(name) ? 'controlled' : ''}`}>{name}</span>
 );
-
-/* ── Family artwork — deterministic waveform, no network request ────────── */
 export function FamilyArt({ family, seed, children }: { family: Family; seed: string; children?: ReactNode }) {
   const bars = useMemo(() => {
     let h = 0;
@@ -318,7 +274,6 @@ export function FamilyArt({ family, seed, children }: { family: Family; seed: st
       return base + (h % (100 - base));
     });
   }, [seed, family]);
-
   return (
     <div className="card-art" data-family={family}>
       <div className="wave">
@@ -328,22 +283,11 @@ export function FamilyArt({ family, seed, children }: { family: Family; seed: st
     </div>
   );
 }
-
-/* ── Confirm dialog with typed confirmation for destructive actions ─────── */
 export function ConfirmDialog({
   title, body, confirmLabel, danger, requireTyped, requirePassword, onConfirm, onClose,
 }: {
   title: string; body: ReactNode; confirmLabel: string; danger?: boolean;
   requireTyped?: string;
-  /**
-   * Re-authentication before an operation that destroys data nothing can bring back.
-   *
-   * A typed confirmation proves the right row was chosen. It proves nothing about who is
-   * choosing it — a borrowed laptop with a live session types just as well. So the
-   * account's own password is asked for, exchanged for a short-lived ticket the API
-   * client attaches automatically, and one entry then covers a few minutes of
-   * confirmations rather than a prompt per file.
-   */
   requirePassword?: boolean;
   onConfirm: () => void; onClose: () => void;
 }) {
@@ -351,12 +295,8 @@ export function ConfirmDialog({
   const [password, setPassword] = useState('');
   const [checking, setChecking] = useState(false);
   const [wrong, setWrong] = useState(false);
-
-  // A ticket obtained a moment ago still counts, so confirming three deletions in a row
-  // asks once.
   const needsPassword = Boolean(requirePassword) && !auth.hasStepUp();
   const ready = (!requireTyped || typed === requireTyped) && (!needsPassword || password.length > 0);
-
   const go = async () => {
     if (needsPassword) {
       setChecking(true);
@@ -367,7 +307,6 @@ export function ConfirmDialog({
     onConfirm();
     onClose();
   };
-
   return (
     <Modal
       title={title}
@@ -422,8 +361,6 @@ export function ConfirmDialog({
     </Modal>
   );
 }
-
-/* ── Click-outside hook, used by menus ─────────────────────────────────── */
 export function useClickOutside<T extends HTMLElement>(onOut: () => void) {
   const ref = useRef<T>(null);
   useEffect(() => {
@@ -435,8 +372,6 @@ export function useClickOutside<T extends HTMLElement>(onOut: () => void) {
   }, [onOut]);
   return ref;
 }
-
-/* ── Debounced value ───────────────────────────────────────────────────── */
 export function useDebounced<T>(value: T, ms = 260): T {
   const [v, setV] = useState(value);
   useEffect(() => {

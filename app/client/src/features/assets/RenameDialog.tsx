@@ -1,10 +1,3 @@
-// Rename — mandatory capability §10.4.
-//
-// Google Drive addresses a file by an immutable id and treats its name as ordinary
-// metadata, so there is exactly one rename here and no fine print. It renames the
-// catalogue and the Drive file together, in one request, moves no bytes, and every share
-// link keeps resolving — so the dialog's job is only to validate the new name and show
-// what will change.
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, Check, Info, Loader2 } from 'lucide-react';
@@ -20,7 +13,6 @@ export function RenameDialog({ asset, onClose }: { asset: Asset; onClose: () => 
   const qc = useQueryClient();
   const toast = useToast();
 
-  // Live preflight against the same validator the server will run.
   useEffect(() => {
     if (debounced === asset.displayName) { setCheck({ ok: true, problems: [] }); return; }
     let alive = true;
@@ -83,7 +75,6 @@ export function RenameDialog({ asset, onClose }: { asset: Asset; onClose: () => 
             onChange={(e) => setValue(e.target.value)}
             autoFocus
             onFocus={(e) => {
-              // Select the stem, not the extension — the common case is editing the name.
               const dot = e.target.value.lastIndexOf('.');
               if (dot > 0) e.target.setSelectionRange(0, dot);
             }}
@@ -103,7 +94,6 @@ export function RenameDialog({ asset, onClose }: { asset: Asset; onClose: () => 
           )}
         </div>
 
-        {/* What actually changes — stated as a before/after so there is no ambiguity. */}
         <div className="panel" style={{ background: 'var(--surface-2)', boxShadow: 'none' }}>
           <div className="panel-body stack-3" style={{ padding: 16 }}>
             <div className="row-tight eyebrow"><Info size={12} /> What changes</div>

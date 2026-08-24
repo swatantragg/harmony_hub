@@ -1,10 +1,3 @@
-// Re-seed the library from the command line.
-//
-//   npm run seed            fills an empty library, refuses to touch one that has data
-//   npm run seed -- --force wipes MongoDB and every file under the Drive's GCloud
-//                           folder
-//
-// The force path is destructive on purpose and says so before it runs.
 import { connect, disconnect } from '../db/mongo.js';
 import { ensureIndexes } from '../db/models.js';
 import { isEmpty, load } from '../db.js';
@@ -41,8 +34,6 @@ async function main() {
     await new Promise((r) => { setTimeout(r, 5000); });
   }
 
-  // seed() clears the library folder itself, so MongoDB and the Drive can never end up
-  // describing two different libraries.
   const stats = await seed();
   console.log('\nSeeded GCloud:', stats);
   const quota = await storage.quota().catch(() => null);

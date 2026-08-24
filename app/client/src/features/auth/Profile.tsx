@@ -1,8 +1,3 @@
-// Your own account: who you are, who let you in, and the one thing you can change here.
-//
-// Deliberately not an editor. Name, email and role are an administrator's to set — a
-// person renaming themselves mid-audit-trail is a worse problem than the convenience is
-// worth — so everything on this page is read-only except the password.
 import { useEffect, useState } from 'react';
 import { KeyRound, LogIn, Loader2, Mail, ShieldCheck, UserCircle2, UserPlus } from 'lucide-react';
 import { PasswordInput, useToast } from '../../components/ui';
@@ -23,8 +18,6 @@ export function Profile() {
 
   if (!user) return null;
 
-  // The server is the authority on this; the form only avoids offering something it
-  // already knows will be refused.
   const MIN_LENGTH = user.minPasswordLength ?? 8;
 
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
@@ -87,9 +80,6 @@ export function Profile() {
               <dt className="row-tight"><UserPlus size={14} /> Added by</dt>
               <dd>
                 {user.createdByName ?? (
-                  // The founding administrator is created by the server on an empty
-                  // database, and seeded accounts predate the field. Saying so is better
-                  // than naming somebody who did not do it.
                   <span className="muted">Created when the library was set up</span>
                 )}
                 {user.createdAt && <span className="t-small"> · {date(user.createdAt)}</span>}
@@ -107,10 +97,6 @@ export function Profile() {
                   : <span className="muted">Still the one you were handed</span>}
               </dd>
             </div>
-            {/* Both ways in, and which of them this account has actually used. Linking
-                happens by itself the first time somebody signs in with Google under this
-                address — there is nothing to switch on, and nothing switches the password
-                off. */}
             <div className="def">
               <dt className="row-tight"><LogIn size={14} /> Ways to sign in</dt>
               <dd>
@@ -187,8 +173,6 @@ export function Profile() {
   );
 }
 
-// Where this account is signed in. The point of the list is recognising a row that should
-// not be there — and the button under it, which ends all of them at once.
 function SessionsPanel() {
   const logoutEverywhere = useSession((s) => s.logoutEverywhere);
   const [rows, setRows] = useState<Session[] | null>(null);

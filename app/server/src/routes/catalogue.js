@@ -1,5 +1,3 @@
-// Artists, songs and tags — the "meaning" half of the responsibility split (§4.1).
-// Note that every rename here touches MongoDB only and never moves a Google Drive file.
 import express from 'express';
 import { db, persist, live } from '../db.js';
 import { authenticate, requires, problem } from '../middleware/auth.js';
@@ -16,10 +14,6 @@ export const tagsRouter = express.Router();
 export const typesRouter = express.Router();
 [artistsRouter, songsRouter, tagsRouter, typesRouter].forEach((r) => r.use(authenticate));
 
-// ── Asset types ─────────────────────────────────────────────────────────────
-// The built-in catalogue covers the 21 types a release actually produces. Anything else
-// a team files — a press kit, a sync licence, a contract — can be added here rather than
-// mislabelled as "Lyrics" because the dropdown had nothing better.
 typesRouter.get('/', (_req, res) => {
   const types = allTypes();
   res.json({
@@ -87,7 +81,6 @@ const artistStats = (artist) => {
   return { songCount: songs.length, assetCount: assets.length, byFamily, totalBytes: bytes };
 };
 
-// ── Artists ─────────────────────────────────────────────────────────────────
 artistsRouter.get('/', (req, res) => {
   const q = String(req.query.q || '').toLowerCase();
   const rows = live(db.artists)
@@ -112,15 +105,9 @@ artistsRouter.get('/:id', (req, res) => {
 
   const assets = artistSongs.flatMap((s) => s.assets.filter((a) => !a.deletedAt));
 
-  // What the artist's page can offer as a tab. These are counts of what genuinely exists,
-  // so a tab is never shown leading to an empty list — and the reader can see, before
-  // clicking, how much is behind each one.
   const byType = {};
   for (const a of assets) byType[a.type] = (byType[a.type] || 0) + 1;
 
-  // The folders this artist's files are actually stored in. A folder here is a real Google
-  // Drive folder, so this answers "where does their work live?" rather than just "what do
-  // they have?" — the two are different questions and people ask both.
   const folderCounts = new Map();
   let looseCount = 0;
   for (const a of assets) {
@@ -140,8 +127,6 @@ artistsRouter.get('/:id', (req, res) => {
           ? db.folders.find((f) => f._id === folder.parentId)?.name ?? null
           : null,
         driveWebViewLink: folder.driveWebViewLink,
-        // Files by this artist in that folder — not the folder's whole contents, which is
-        // a different and here misleading number.
         assetCount: count,
       };
     })
@@ -190,7 +175,6 @@ artistsRouter.post('/', requires('catalogue:edit'), (req, res) => {
   res.status(201).json({ ...artist, ...artistStats(artist) });
 });
 
-// Renaming an artist is a single field update — no Drive file is touched at all (§10.4.3).
 artistsRouter.patch('/:id', requires('catalogue:edit'), (req, res) => {
   const artist = db.artists.find((a) => a._id === req.params.id);
   if (!artist) return problem(res, 404, 'Not Found', 'No artist with that id.');
@@ -212,7 +196,6 @@ artistsRouter.patch('/:id', requires('catalogue:edit'), (req, res) => {
   res.json({ ...artist, ...artistStats(artist) });
 });
 
-// ── Songs ───────────────────────────────────────────────────────────────────
 songsRouter.get('/', (req, res) => {
   const q = String(req.query.q || '').toLowerCase();
   const artistId = req.query.artistId;
@@ -251,8 +234,6 @@ songsRouter.get('/:id', (req, res) => {
 const SONG_FIELDS = {
   title: (v) => str(v, { max: LIMITS.name, field: 'title' }),
   artistId: (v) => str(v, { max: 80, field: 'artistId' }),
-  // Free text rather than an enum: the vocabulary lists are suggestions, and a library
-  // that refuses an unlisted language is a library somebody works around.
   language: (v) => str(v, { max: 60, field: 'language' }),
   mood: (v) => str(v, { max: 60, field: 'mood' }),
   isrc: (v) => str(v, { max: 40, field: 'isrc', allowEmpty: true }),
@@ -272,9 +253,6 @@ songsRouter.post('/', requires('catalogue:edit'), (req, res) => {
   const song = {
     _id: `song_${uuid().slice(0, 8)}`,
     title, artistId, featuring: [],
-    // No default language. 'Hindi' used to be filled in whenever the field was left
-    // alone, which meant the catalogue asserted a language nobody had chosen — and a
-    // register that states an unchosen fact is worse than one that admits it is blank.
     language: language || '', mood: mood || 'Romantic', isrc: isrc || '',
     releaseDate: releaseDate || new Date().toISOString(), tags: tags || [], description: '',
     assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), deletedAt: null,
@@ -313,7 +291,6 @@ songsRouter.patch('/:id', requires('catalogue:edit'), (req, res) => {
   res.json(song);
 });
 
-// ── Tags ────────────────────────────────────────────────────────────────────
 tagsRouter.get('/', (_req, res) => {
   res.json({
     controlled: CONTROLLED_TAGS,
@@ -323,8 +300,6 @@ tagsRouter.get('/', (_req, res) => {
   });
 });
 
-// Preflight for the tag field. Returns near-duplicates so the person typing can reuse an
-// existing tag instead of quietly forking the vocabulary.
 tagsRouter.get('/similar', (req, res) => {
   const { exact, suggestions } = similarTags(req.query.name);
   res.json({ exact, suggestions });
@@ -339,11 +314,8 @@ tagsRouter.post('/', requires('asset:upload'), (req, res) => {
 
   const { exact, suggestions } = similarTags(name);
 
-  // An exact match once case and punctuation are ignored is never a new tag — hand back
-  // the one that already exists so both spellings resolve to a single searchable value.
   if (exact) return res.json({ ...exact, reused: true });
 
-  // Close matches are surfaced, not enforced: the caller confirms with `force`.
   if (suggestions.length > 0 && !req.body?.force) {
     return res.status(409).type('application/problem+json').json({
       type: 'https://gcloud.internal/problems/similar-tag-exists',

@@ -1,10 +1,5 @@
-// TRASHED is a file somebody moved to the Google Drive bin. Recoverable — but Drive empties
-// itself after 30 days, so it is the one state with a deadline attached.
 export type Availability = 'AVAILABLE' | 'UNVERIFIED' | 'TRASHED' | 'RESTORING' | 'MISSING' | 'MISMATCH';
 export type Family = 'Audio' | 'Video' | 'Image' | 'Document';
-// Two roles. The line is drawn at what cannot be undone: a User does the day's work and
-// everything it does is recoverable; an Admin additionally holds permanent deletion, the
-// account roster and the activity log.
 export type Role = 'Admin' | 'User';
 
 export interface User {
@@ -14,42 +9,31 @@ export interface User {
   role: Role;
   status: string;
   lastLoginAt: string | null;
-  /** Still holding the password an administrator handed over. Gates the whole app. */
   mustChangePassword: boolean;
   permissions: string[];
   createdAt?: string | null;
   passwordChangedAt?: string | null;
-  /** Null on the founding administrator, and on any account seeded before this was kept. */
   createdBy?: string | null;
   createdByName?: string | null;
-  /** The minimum the server will actually enforce. Read it; do not repeat it. */
   minPasswordLength?: number;
-  /** Set once this account has signed in with Google at least once. */
   google?: { linkedAt: string; email: string; lastSignInAt: string | null } | null;
-  /** Whether this deployment has Google sign-in configured at all. */
   googleSignInAvailable?: boolean;
-  /** A live Google sign-in stands in for the handover password on the first change. */
   canSetPasswordWithoutCurrent?: boolean;
 }
 
-/** GET /api/auth/providers — which sign-in routes the server will actually complete. */
 export interface AuthProviders {
   password: boolean;
   google: { enabled: boolean; hostedDomain: string | null };
 }
 
-// Where a file physically is: the id that addresses it, the checksums Google computed on
-// arrival, the current revision, and the media metadata Drive extracted for free.
 export interface DriveBinding {
   fileId: string;
   name: string;
   parentId: string | null;
   driveId: string | null;
-  /** Human-readable "Folder/File.ext", for display only — Drive addresses by id. */
   path: string | null;
   revisionId: string | null;
   sizeBytes: number;
-  /** Computed by Google on arrival, which is what makes exact de-duplication free. */
   md5: string | null;
   sha256: string | null;
   sha1: string | null;
@@ -57,7 +41,6 @@ export interface DriveBinding {
   webViewLink: string | null;
   thumbnailLink: string | null;
   trashed: boolean;
-  /** Google Docs/Sheets/Slides: no bytes of their own, must be exported to download. */
   googleNative: boolean;
   createdAt: string | null;
   modifiedAt: string | null;
@@ -100,7 +83,6 @@ export interface Asset {
   renamedAt: string | null;
   deletedAt: string | null;
   permanentlyLost?: boolean;
-  /** Set when this entry shares a Drive file with another after de-duplication linking. */
   isLinkedCopy?: boolean;
   linkedTo?: string | null;
   driveWebViewLink?: string | null;
@@ -112,12 +94,7 @@ export interface Asset {
   folderTags: string[];
   artistId: string | null;
   artistName: string | null;
-  /**
-   * This file's own language when it has one, otherwise its release's. Null means nobody
-   * has stated one — never a guess.
-   */
   language: string | null;
-  /** Which of the two answered: the file itself, or the release behind it. */
   languageSource: 'file' | 'release' | null;
   mood: string | null;
   releaseDate: string | null;
@@ -128,7 +105,6 @@ export interface Asset {
   activity?: ActivityEntry[];
   shares?: Share[];
 }
-
 export interface VersionRow {
   assetId: string;
   version: string;
@@ -137,7 +113,6 @@ export interface VersionRow {
   createdAt: string;
   sizeBytes: number;
 }
-
 export interface ActivityEntry {
   _id: string;
   userId: string | null;
@@ -153,16 +128,11 @@ export interface ActivityEntry {
   ip: string;
   timestamp: string;
 }
-
-// Who a link is for. PUBLIC needs no account; the other two resolve only for a signed-in
-// GCloud user, and RESTRICTED additionally checks the account's email against the list.
 export type ShareAudience = 'PUBLIC' | 'EDITOR' | 'RESTRICTED';
 export type ShareTarget = 'ASSET' | 'FOLDER';
-
 export interface ShareRecipient {
   _id: string;
   email: string;
-  /** This recipient's own link. Not the same URL anybody else was sent. */
   url: string;
   createdAt: string;
   revokedAt: string | null;
@@ -171,7 +141,6 @@ export interface ShareRecipient {
   accessCount: number;
   downloadCount: number;
 }
-
 export interface Share {
   _id: string;
   target: ShareTarget;
@@ -180,18 +149,11 @@ export interface Share {
   assetId: string | null;
   assetName: string;
   fileCount: number;
-  /** The family of the shared file — null for a folder link. Drives the category tabs. */
   family: Family | null;
   assetType: string | null;
   audience: ShareAudience;
   audienceLabel: string;
   allowedEmails: string[];
-  /**
-   * One row per addressee on a specific-allocation link, each with a URL of its own.
-   * Revoking one leaves the others working — which is the point: a link that has to be
-   * withdrawn from everybody because one person forwarded their mail punishes the wrong
-   * four people.
-   */
   recipients?: ShareRecipient[];
   hasPasscode?: boolean;
   canEdit: boolean;
@@ -211,9 +173,7 @@ export interface Share {
   exhausted: boolean;
   remainingMs: number;
 }
-
 export interface FacetValue { value: string; count: number }
-
 export interface AssetTypeDef {
   type: string;
   family: Family;
@@ -231,13 +191,11 @@ export interface TagSuggestion {
   reason: 'near-identical' | 'similar' | 'contains';
   confidence: number;
 }
-
 export interface Folder {
   _id: string;
   name: string;
   description: string;
   tags: string[];
-  /** The real Google Drive folder behind this one. */
   driveFolderId: string | null;
   driveWebViewLink: string | null;
   parentId: string | null;
@@ -252,7 +210,6 @@ export interface Folder {
   updatedAt: string;
   assetCount: number;
   totalBytes: number;
-  /** This folder and everything filed below it — what a share link on it covers. */
   totalAssetCount: number;
   totalBytesDeep: number;
   byFamily: Record<string, number>;
@@ -263,9 +220,7 @@ export interface Folder {
   breadcrumb?: { _id: string; name: string }[];
   subfolders?: Folder[];
 }
-
 export interface FolderOption { _id: string; name: string; path: string; depth: number; assetCount: number }
-
 export interface FolderTreeNode {
   _id: string;
   name: string;
@@ -284,7 +239,6 @@ export interface SearchResponse {
   hasMore: boolean;
   verifiedLive: boolean;
 }
-
 export interface Artist {
   _id: string;
   name: string;
@@ -302,14 +256,10 @@ export interface Artist {
   byFamily: Record<string, number>;
   songs?: SongRow[];
   gallery?: Asset[];
-  /** Real Drive folders this artist's files sit in, with their share of the contents. */
   folders?: ArtistFolder[];
-  /** Asset type → how many this artist has. Drives which sub-tabs the page offers. */
   byType?: Record<string, number>;
-  /** Files of theirs not filed in any folder. */
   looseCount?: number;
 }
-
 export interface ArtistFolder {
   _id: string;
   name: string;
@@ -319,7 +269,6 @@ export interface ArtistFolder {
   driveWebViewLink: string | null;
   assetCount: number;
 }
-
 export interface SongRow {
   _id: string;
   title: string;
@@ -334,7 +283,6 @@ export interface SongRow {
   coverAssetId: string | null;
   needsAttention?: number;
 }
-
 export interface SongDetail extends SongRow {
   description: string;
   featuring: string[];
@@ -344,7 +292,6 @@ export interface SongDetail extends SongRow {
   recycleBin: Asset[];
   artistGenre: string | null;
 }
-
 export type FindingKind =
   | 'MISSING_IN_DRIVE'
   | 'TRASHED_IN_DRIVE'
@@ -354,13 +301,11 @@ export type FindingKind =
   | 'CHECKSUM_MISMATCH'
   | 'PARENT_DRIFT'
   | 'NAME_DRIFT';
-
 export interface Finding {
   _id: string;
   kind: FindingKind;
   severity: string;
   fileId: string;
-  /** Alias of fileId, kept so saved runs from earlier versions still render. */
   key: string;
   assetId: string | null;
   displayName: string;
@@ -378,7 +323,6 @@ export interface Finding {
   resolvedAt: string | null;
   resolution?: { action: string; note: string; by: string };
 }
-
 export interface ReconRun {
   _id: string;
   trigger: string;
@@ -395,16 +339,12 @@ export interface ReconRun {
   quota: Quota | null;
   ok: boolean;
 }
-
-/** What Google Drive says about space. The number that decides whether uploads work. */
 export interface Quota {
   limit: number | null;
   unlimited: boolean;
   usage: number;
   usageInDrive: number;
-  /** Trashed files still count until Drive sweeps them, which surprises everyone. */
   usageInTrash: number;
-  /** Gmail and Photos share the same allowance on a consumer account. */
   usageElsewhere: number;
   available: number | null;
   percentUsed: number;
@@ -420,7 +360,6 @@ export interface Quota {
   sharedDrive?: boolean;
   rootFolderId?: string | null;
 }
-
 export interface StorageHealth {
   totalAssets: number;
   totalBytes: number;
@@ -444,11 +383,7 @@ export interface StorageHealth {
   };
   lastRunFull: ReconRun | null;
 }
-
-// ── De-duplication (§10.12) ────────────────────────────────────────────────
-
 export type DuplicateKind = 'IDENTICAL' | 'PERCEPTUAL' | 'SAME_MEDIA' | 'SAME_NAME';
-
 export interface DuplicateMember {
   assetId: string;
   displayName: string;
@@ -473,11 +408,9 @@ export interface DuplicateMember {
   version: string;
   isLinkedCopy: boolean;
 }
-
 export interface DuplicateGroup {
   _id: string;
   kind: DuplicateKind;
-  /** 1 for byte-identical, lower for the speculative tiers. Drives the UI's language. */
   confidence: number;
   reason: string;
   count: number;
@@ -488,7 +421,6 @@ export interface DuplicateGroup {
   members: DuplicateMember[];
   fingerprint?: string;
 }
-
 export interface DuplicateReport {
   scannedAt: string;
   durationMs: number;
@@ -506,7 +438,6 @@ export interface DuplicateReport {
   perceptualEnabled: boolean;
   thresholds: Record<string, number>;
 }
-
 export interface DuplicateComparison {
   a: Asset;
   b: Asset;
@@ -522,7 +453,6 @@ export interface DuplicateComparison {
   };
   explanation: string;
 }
-
 export interface Dashboard {
   greetingName: string;
   role: Role;
@@ -533,7 +463,6 @@ export interface Dashboard {
     artists: number; songs: number; assets: number;
     staleVerification: number; activeShares: number; openFindings: number;
     folders: number; unfiled: number; duplicateGroups: number;
-    /** Files catalogued but missing from or mismatched against storage. The true total. */
     needsReview: number;
   };
   recent: Asset[];
@@ -543,33 +472,16 @@ export interface Dashboard {
   canSeeStorage: boolean;
   activity: ActivityEntry[];
 }
-
-// ── Master log (§10.6) ──────────────────────────────────────────────────────
-//
-// The library's register of record: one row per catalogued file, every field the
-// catalogue holds. The column registry lives on the server and travels with the response
-// — two lists of sixty columns drift within a release, and the failure mode is a
-// spreadsheet whose header names the wrong data.
-
 export interface MasterLogColumn {
   key: string;
   header: string;
   group: string;
   width?: number;
-  /** Stays a real number, so it sorts numerically here and sums in Excel. */
   num?: boolean;
-  /** Cannot be switched off — a register with no title column is not a register. */
+
   always?: boolean;
 }
-
-/** A named answer to a question people actually arrive with. */
 export interface MasterLogPreset { id: string; label: string; hint: string; columns: string[] }
-
-/**
- * A row arrives display-ready: a size is already "1.4 GB", a boolean already "Yes". The
- * underscore-prefixed fields are what the table needs and the spreadsheet does not — the
- * raw status for its badge, the ids for its links.
- */
 export interface MasterLogRow {
   _id: string;
   _status: Availability;
@@ -582,7 +494,6 @@ export interface MasterLogRow {
   _deleted: boolean;
   [column: string]: string | number | boolean | string[] | null;
 }
-
 export interface MasterLogSummary {
   files: number;
   bytes: number;
@@ -597,11 +508,9 @@ export interface MasterLogSummary {
   inBin: number;
   byStatus: Record<string, number>;
 }
-
 export interface MasterLogResponse {
   data: MasterLogRow[];
   total: number;
-  /** Everything the register could show under the current lifecycle, before filters. */
   libraryTotal: number;
   page: number;
   limit: number;

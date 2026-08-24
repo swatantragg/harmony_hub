@@ -1,12 +1,3 @@
-// De-duplication API (§10.12). The engine in services/dedupe.js proposes; this route is
-// where a human disposes.
-//
-// Nothing here deletes anything without being told to, and the destructive resolution is
-// not the default one. The interesting resolution is `link`: two catalogue records are
-// pointed at a single Drive file, so the video keeps appearing in both folders — because
-// it genuinely belongs in both — while only one copy of the bytes exists. That is usually
-// what somebody wants when they find the same reel in "Delivery" and in "Archive", and it
-// is possible because two catalogue rows can name one Drive file id.
 import express from 'express';
 import { db, persist, assetContext } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
@@ -21,9 +12,6 @@ import { uuid } from '../util/crypto.js';
 export const dedupeRouter = express.Router();
 dedupeRouter.use(authenticate);
 
-// Scanning is pure computation over the in-memory catalogue — no Drive calls at all,
-// because the checksums are already on every record. A 50,000-file library scans in well
-// under a second, which is why this is a live endpoint and not a nightly job.
 dedupeRouter.get('/scan', requires('asset:read'), (req, res) => {
   const level = ['exact', 'near', 'all'].includes(req.query.level) ? req.query.level : 'all';
   const family = ['Audio', 'Video', 'Image', 'Document'].includes(req.query.family) ? req.query.family : null;
@@ -38,15 +26,11 @@ dedupeRouter.get('/groups/:groupId', requires('asset:read'), (req, res) => {
   res.json(group);
 });
 
-// "Are these two the same?" for an arbitrary pair — used by the compare view, and by the
-// upload screen when it wants to explain *why* it thinks a new file is a duplicate.
 dedupeRouter.get('/compare', requires('asset:read'), async (req, res) => {
   const a = assetContext(String(req.query.a || ''));
   const b = assetContext(String(req.query.b || ''));
   if (!a || !b) return problem(res, 404, 'Not Found', 'Both asset ids must exist.');
 
-  // Verified live, because "is this a duplicate" is exactly the question where a stale
-  // checksum gives the wrong answer.
   await storage.verifyAssets([a.asset, b.asset]).catch(() => null);
   persist();
 
@@ -77,7 +61,6 @@ dedupeRouter.get('/compare', requires('asset:read'), async (req, res) => {
   });
 });
 
-// ── Resolution ──────────────────────────────────────────────────────────────
 
 const ACTIONS = ['link', 'trash', 'version', 'ignore'];
 
@@ -115,7 +98,6 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
   const keeper = group.members.find((m) => m.assetId === (keepId || group.suggestedKeepId));
   if (!keeper) return problem(res, 422, 'Unprocessable Entity', 'The file you chose to keep is not in this group.');
 
-  // A subset may be named; otherwise everything except the keeper is acted on.
   const selected = Array.isArray(assetIds) && assetIds.length
     ? group.members.filter((m) => assetIds.includes(m.assetId) && m.assetId !== keeper.assetId)
     : group.members.filter((m) => m.assetId !== keeper.assetId);
@@ -125,14 +107,6 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
   const keeperCtx = assetContext(keeper.assetId);
   if (!keeperCtx) return problem(res, 404, 'Not Found', 'The file to keep no longer exists.');
 
-  // ── link ──────────────────────────────────────────────────────────────────
-  // Point the duplicates at the keeper's Drive file and trash their own. The catalogue
-  // entries survive, so the video still appears in every folder it was filed under and
-  // every existing share link keeps resolving — only the redundant bytes go.
-  //
-  // Refused across differing content on purpose: linking two files that merely *look*
-  // alike would silently replace one edit with another, and no amount of confidence in a
-  // name-similarity score justifies that.
   if (action === 'link') {
     if (group.kind !== 'IDENTICAL') {
       return problem(res, 409, 'Conflict',
@@ -148,12 +122,10 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
       ctx.asset.drive = {
         ...ctx.asset.drive,
         fileId: keeper.fileId,
-        // The path still describes where this *entry* lives, not where the file sits.
         path: `${ctx.folder?.name ? `${ctx.folder.name}/` : ''}${ctx.asset.displayName}`,
       };
       ctx.asset.updatedAt = new Date().toISOString();
       if (ownFileId && ownFileId !== keeper.fileId) {
-        // eslint-disable-next-line no-await-in-loop
         const ok = await storage.trash(ownFileId).then(() => true).catch(() => false);
         (ok ? linked : failed).push(member.displayName);
       } else {
@@ -178,9 +150,6 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
     });
   }
 
-  // ── version ───────────────────────────────────────────────────────────────
-  // Not a duplicate at all — a set of takes. Folds them into one version group so the
-  // drawer shows them as a history rather than as clutter. Deletes nothing.
   if (action === 'version') {
     const groupIdForVersions = keeperCtx.asset.versionGroupId;
     const ordered = [...selected].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
@@ -206,21 +175,15 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
     });
   }
 
-  // ── trash ─────────────────────────────────────────────────────────────────
-  // The destructive one, and still not permanent: the catalogue entry is soft-deleted and
-  // the Drive file goes to the bin, recoverable from either side until Google sweeps it.
   const trashed = [];
   const failed = [];
   for (const member of selected) {
     const ctx = assetContext(member.assetId);
     if (!ctx) continue;
-    // Never trash a file another entry is linked to — that would take the keeper's bytes
-    // with it.
     const sharedWithKeeper = ctx.asset.drive?.fileId === keeper.fileId;
     ctx.asset.deletedAt = new Date().toISOString();
     ctx.asset.updatedAt = ctx.asset.deletedAt;
     if (!sharedWithKeeper && ctx.asset.drive?.fileId) {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await storage.trash(ctx.asset.drive.fileId).then(() => true).catch(() => false);
       if (ok) ctx.asset.drive.trashed = true;
       (ok ? trashed : failed).push(member.displayName);
@@ -268,18 +231,11 @@ dedupeRouter.delete('/ignored/:id', requires('asset:delete'), (req, res) => {
   res.json({ ok: true, restored: before - db.dedupeIgnores.length });
 });
 
-// Emptying the Drive trash is the only way to actually get the space back before Google's
-// own 30-day sweep. Admin-only, irreversible, and it takes everything in the bin — not
-// only what GCloud put there — so it says so.
 dedupeRouter.post(
   '/empty-trash',
   requires('asset:purge'),
   requireStepUp('Emptying the Google Drive trash'),
   async (req, res) => {
-  // Off unless a deployment deliberately turned it on. The blast radius is the connected
-  // Google account's entire trash — every file it holds, whether this application ever
-  // touched it or not — and there is no API to scope it to our own folder. A capability
-  // that broad should not be one config-free click away.
   if (!ALLOW_EMPTY_DRIVE_TRASH) {
     return problem(
       res, 409, 'Conflict',
@@ -313,9 +269,6 @@ dedupeRouter.post(
   },
 );
 
-// Kicks off perceptual hashing for the files that have none. Reads bytes back out of
-// Drive and needs ffmpeg, so it is a background job with a progress endpoint rather than
-// something that blocks a request.
 let hashing = null;
 
 dedupeRouter.post('/perceptual/build', requires('admin:storage'), async (req, res) => {

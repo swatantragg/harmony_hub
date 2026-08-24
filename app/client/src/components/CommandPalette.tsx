@@ -1,5 +1,3 @@
-// ⌘K / Ctrl-K — one keystroke to anything. A new user learns the whole navigation model
-// from this list, which is why every destination carries a plain-language description.
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';

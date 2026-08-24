@@ -16,12 +16,6 @@ assetsRouter.use(authenticate);
 
 const notFound = (res) => problem(res, 404, 'Not Found', 'No asset with that id exists in the catalogue.');
 
-// ── Bulk existence probe (§10.5.3) — declared before /:id so it is not shadowed ──
-// The ceiling is deliberately far below VERIFY_BATCH_MAX for an interactive caller: each
-// id is a live files.get, Drive enforces roughly 1,000 requests per 100 seconds per user
-// for the whole application, and one caller looping this at the old limit of 500 could
-// exhaust that budget for everybody in a few seconds. Reconciliation, which is a
-// background job with its own pacing, still uses the larger number.
 const INTERACTIVE_VERIFY_MAX = Math.min(50, VERIFY_BATCH_MAX);
 
 assetsRouter.post('/verify-batch', async (req, res) => {
@@ -30,8 +24,6 @@ assetsRouter.post('/verify-batch', async (req, res) => {
   const results = [];
 
   const found = ids.map((id) => ({ id, ctx: context(id) }));
-  // files.get fans out under a concurrency cap rather than one call at a time — Drive
-  // enforces a per-user request ceiling, so the fan-out is bounded to stay under it.
   await storage.verifyAssets(found.filter((f) => f.ctx).map((f) => f.ctx.asset));
 
   for (const { id, ctx } of found) {
@@ -74,7 +66,6 @@ assetsRouter.get('/:id', (req, res) => {
   res.json({ ...shape(ctx), versions, activity, shares });
 });
 
-// ── Live availability check (§10.5.1) ───────────────────────────────────────
 assetsRouter.post('/:id/verify', async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -105,11 +96,6 @@ assetsRouter.post('/:id/verify', async (req, res) => {
   res.json({ assetId: ctx.asset.assetId, ...availability, drive: head });
 });
 
-// ── Rename (§10.4) ──────────────────────────────────────────────────────────
-//
-// A Drive file is addressed by an immutable id, and its name is ordinary mutable metadata.
-// So there is one rename: it renames the catalogue and the file in Drive together, in one
-// request, moving no bytes, and every existing share link keeps resolving.
 assetsRouter.patch('/:id/rename', requires('asset:rename'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -129,9 +115,6 @@ assetsRouter.patch('/:id/rename', requires('asset:rename'), async (req, res) => 
     const drive = await storage.rename(ctx.asset.drive.fileId, check.value);
     ctx.asset.drive = { ...ctx.asset.drive, ...drive };
   } catch (err) {
-    // The catalogue is still renamed: the download name comes from Content-Disposition on
-    // the signed link, which this server controls. Drive being briefly out of step is a
-    // cosmetic problem, and the next reconciliation resolves it.
     renamedInDrive = false;
     if (storage.isNotFound(err)) {
       return problem(res, 410, 'Gone', 'Google Drive no longer has this file, so it cannot be renamed.');
@@ -154,7 +137,6 @@ assetsRouter.patch('/:id/rename', requires('asset:rename'), async (req, res) => 
   res.json({ ...shape(ctx), renamedInDrive });
 });
 
-// Rename preflight — powers the live validation in the dialog.
 assetsRouter.post('/:id/rename/check', (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -166,9 +148,6 @@ assetsRouter.post('/:id/rename/check', (req, res) => {
   res.json({ ...check, downloadAs: check.value, fileId: ctx.asset.drive?.fileId ?? null });
 });
 
-// ── Move between folders (§10.4.2) ──────────────────────────────────────────
-// A parent swap, nothing more. Drive reparents a file by updating its index entry, so a
-// 40 GB master moves between folders in the same time as a text file.
 assetsRouter.post('/:id/move', requires('asset:edit'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -210,10 +189,6 @@ assetsRouter.post('/:id/move', requires('asset:edit'), async (req, res) => {
   res.json({ ...shape({ ...ctx, folder }), moved: true });
 });
 
-// ── Replace the contents in place (§10.4.3) ─────────────────────────────────
-// "Make changes to a file that is already here." Drive keeps revisions per file id, so a
-// new master can be written over the old one without the asset id, the share links or the
-// folder placement changing — and the previous bytes stay recoverable as a revision.
 assetsRouter.post('/:id/replace', requires('asset:edit'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -226,12 +201,8 @@ assetsRouter.post('/:id/replace', requires('asset:edit'), async (req, res) => {
       mimeType: contentType || ctx.asset.mimeType,
       sizeBytes: Number(sizeBytes || 0),
       appProperties: properties({ replacedBy: req.user.sub, replacedAt: new Date().toISOString() }),
-      // The configured origin, never the request's Origin header — that header is written
-      // by the caller, and Google mirrors it into the session's CORS policy.
       origin: APP_ORIGIN,
     });
-    // Registered so /uploads/resume and /uploads/abort will speak to it. An unregistered
-    // session URI is refused outright, which is what closes the request-forgery hole.
     storage.registerUploadSession(session.sessionUri, {
       userId: req.user.sub, assetId: ctx.asset.assetId, fileId: ctx.asset.drive.fileId,
       sizeBytes: Number(sizeBytes || 0),
@@ -248,8 +219,6 @@ assetsRouter.post('/:id/replace', requires('asset:edit'), async (req, res) => {
   }
 });
 
-// Called once the replacement bytes are in. Re-reads the file so the catalogue records
-// what Drive actually holds, and pins the superseded revision so it cannot be swept.
 assetsRouter.post('/:id/replace/complete', requires('asset:edit'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -269,8 +238,6 @@ assetsRouter.post('/:id/replace/complete', requires('asset:edit'), async (req, r
   };
   persist();
 
-  // Drive prunes revisions after 30 days or 100 versions, whichever comes first. A master
-  // that was just overwritten is exactly the one nobody wants swept.
   if (previous) await storage.pinRevision(ctx.asset.drive.fileId, previous).catch(() => null);
 
   record(req, {
@@ -306,12 +273,9 @@ assetsRouter.get('/:id/revisions', async (req, res) => {
   }
 });
 
-// ── Retrieval (§10.2, §10.3) ────────────────────────────────────────────────
 assetsRouter.post('/:id/download', requires('asset:download'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
-  // A live files.get before every download is what stops a user ever receiving a link to
-  // a file that has gone (§10.2 step 5).
   const { availability } = await storage.verifyAsset(ctx.asset);
   if (availability.status === 'MISSING') {
     return problem(res, 410, 'Gone', 'Google Drive has no file behind this record. Download is blocked.');
@@ -327,9 +291,6 @@ assetsRouter.post('/:id/download', requires('asset:download'), async (req, res) 
     expiresIn: TTL.download,
     purpose: 'download',
     assetId: ctx.asset.assetId,
-    // Binds the ticket to this person and this session generation, so suspending the
-    // account or resetting its sessions kills the link rather than leaving it live for
-    // the rest of its window.
     user: req.user,
   });
   persist();
@@ -340,9 +301,6 @@ assetsRouter.post('/:id/download', requires('asset:download'), async (req, res) 
   res.json({ url, expiresIn: TTL.download, downloadAs, webViewLink: ctx.asset.drive.webViewLink ?? null });
 });
 
-// A preview ticket is a full-byte, Range-capable grant to the file — the only thing
-// separating it from a download is the Content-Disposition. It therefore needs the same
-// permission a download needs; leaving it ungated meant `asset:download` decided nothing.
 assetsRouter.post('/:id/preview', requires('asset:download'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -360,35 +318,24 @@ assetsRouter.post('/:id/preview', requires('asset:download'), async (req, res) =
     url,
     expiresIn: TTL.preview,
     contentType: ctx.asset.mimeType,
-    // Whether the browser will actually render it here, or download it instead. Decided
-    // by the same policy the byte path applies, so the UI can say so up front rather
-    // than opening a viewer that turns into a download.
     inlineSupported: storage.isInlineSafe(ctx.asset.mimeType),
-    // Drive renders its own preview for anything it understands, including formats no
-    // browser will play. Offered alongside rather than instead of the inline preview.
     webViewLink: ctx.asset.drive?.webViewLink ?? null,
     googleNative: Boolean(ctx.asset.drive?.googleNative),
   });
 });
 
-// ── Metadata update (§10.7) ─────────────────────────────────────────────────
 const EDITABLE = ['displayName', 'description', 'type', 'tags', 'version', 'language'];
 
 assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
 
-  // Every editable field is coerced and bounded before it is written. Without this a
-  // description is however many megabytes fit in the body cap, a tag list is unbounded,
-  // and a field the code expects to be text can arrive as an object.
   const check = fields(req.body || {}, {
     displayName: (v) => str(v, { max: LIMITS.name, field: 'displayName' }),
     description: (v) => str(v, { max: LIMITS.description, field: 'description', allowEmpty: true }),
     type: (v) => str(v, { max: 80, field: 'type' }),
     version: (v) => str(v, { max: 40, field: 'version' }),
     tags: (v) => list(v, { max: LIMITS.tags, itemMax: LIMITS.tag, field: 'tags' }),
-    // Free text, bounded — the same rule the song's own language follows. A library that
-    // refuses an unlisted language is a library somebody works around.
     language: (v) => str(v, { max: 60, field: 'language', allowEmpty: true }),
   });
   if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
@@ -410,9 +357,6 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     after[field] = check.value[field];
   }
   if (after.type) ctx.asset.family = resolveFamily(after.type);
-  // Re-typing a file out of audio or video takes its language with it. Leaving the value
-  // behind would strand it: no screen offers the field for those families, so nobody could
-  // see it, change it or work out why the register still claimed one.
   if (!carriesLanguage(ctx.asset.family) && ctx.asset.language) {
     before.language = ctx.asset.language;
     ctx.asset.language = '';
@@ -421,8 +365,6 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   ctx.asset.updatedAt = new Date().toISOString();
   persist();
 
-  // Tags and types live on the Drive file as appProperties too, which is what makes a
-  // Drive-side search for `appProperties has {key='tags' ...}` find the same things.
   const synced = await storage.syncMetadata(ctx.asset, {
     song: ctx.song, artist: ctx.artist, folder: ctx.folder,
     renameFile: Boolean(after.displayName),
@@ -436,9 +378,6 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   res.json(shape(ctx));
 });
 
-// ── Restore from the Drive trash (§10.9) ────────────────────────────────────
-// Recovering a file somebody binned. Instant and free — but on a clock, because Drive
-// empties the trash on its own schedule and the file is unrecoverable afterwards.
 assetsRouter.post('/:id/restore', requires('asset:restore'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -468,9 +407,6 @@ assetsRouter.post('/:id/restore', requires('asset:restore'), async (req, res) =>
   }
 });
 
-// ── Delete ladder (§10.8) ───────────────────────────────────────────────────
-// Two rungs. A soft delete hides the file in GCloud and puts the Drive file in the
-// trash — recoverable from either side. A purge deletes it outright, revisions included.
 assetsRouter.delete('/:id', requires('asset:delete'), async (req, res) => {
   const ctx = context(req.params.id);
   if (!ctx) return notFound(res);
@@ -482,8 +418,6 @@ assetsRouter.delete('/:id', requires('asset:delete'), async (req, res) => {
     ctx.asset.drive.trashed = true;
     trashed = true;
   } catch {
-    // Already gone from Drive, or briefly unreachable. The catalogue state stands either
-    // way; reconciliation will report the disagreement if there is one.
   }
   persist();
   record(req, {
@@ -508,20 +442,12 @@ assetsRouter.post('/:id/undelete', requires('asset:delete'), async (req, res) =>
   return res.json({ ok: true, untrashedInDrive: restored });
 });
 
-// Permanent purge — the file and every revision of it.
-//
-// Three gates, because this is the one operation in the product with nothing behind it:
-// no trash, no revision, no backup. The Admin role, the account's own password re-entered
-// (so a borrowed session cannot do it), and the display name typed back (so the wrong row
-// cannot do it).
 assetsRouter.delete('/:id/purge', requires('asset:purge'), requireStepUp('Purging a file'), async (req, res) => {
   const found = context(req.params.id);
   if (!found) return notFound(res);
   if (req.body?.confirm !== found.asset.displayName) {
     return problem(res, 428, 'Precondition Required', 'Type the asset name exactly to confirm a permanent purge.');
   }
-  // Drive's files.delete skips the trash and takes every revision with it, so this one
-  // call is genuinely the end of the file.
   let revisionsDestroyed = 0;
   try {
     ({ revisionsDestroyed } = await storage.destroy(found.asset.drive.fileId));

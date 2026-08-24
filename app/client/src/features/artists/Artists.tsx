@@ -90,11 +90,7 @@ export function ArtistList() {
   );
 }
 
-/* ── Artist detail ─────────────────────────────────────────────────────────── */
 
-// What a tab does to the search underneath it. `pin` is merged into the query and cannot
-// be cleared by the reader — switching tabs is how you change it — and `hides` keeps the
-// facet the tab has already decided out of the filter dialog.
 interface AssetTab {
   id: string;
   label: string;
@@ -104,16 +100,12 @@ interface AssetTab {
   hides?: string[];
 }
 
-// The BTS material is spread across three asset types, and "show me the behind-the-scenes"
-// is a question people ask as one thing rather than three.
 const BTS_TYPES = ['Reel - BTS/MV', 'BTS - Unedited Footage', 'BTS of Song'];
 
 const FAMILY_TABS = [
   ['Audio', 'Audio'], ['Video', 'Videos'], ['Image', 'Images'], ['Document', 'Documents'],
 ] as const;
 
-// Folders are not assets, so they do not go through the asset search — they get their own
-// orders, including the one only a folder has: how much of this artist's work is in it.
 const FOLDER_SORTS = [
   ['files', 'Most files first'],
   ['filesAsc', 'Fewest files first'],
@@ -136,8 +128,6 @@ export function ArtistDetail() {
     queryFn: () => api<Artist>(`/artists/${id}`),
   });
 
-  // Only the tabs this artist can actually fill. A tab leading to an empty list is a
-  // promise the page cannot keep, so each one is built from a count that is already known.
   const tabs = useMemo<AssetTab[]>(() => {
     if (!data) return [];
     const byFamily = data.byFamily ?? {};
@@ -197,8 +187,6 @@ export function ArtistDetail() {
     return rows.sort(by[folderSort] ?? by.files);
   }, [data?.folders, folderSort]);
 
-  // The URL carries the query here too, so a search inside an artist is a link like any
-  // other search in the product.
   useEffect(() => {
     const next = new URLSearchParams(params);
     if (debounced.trim()) next.set('q', debounced.trim());
@@ -256,8 +244,6 @@ export function ArtistDetail() {
               </div>
             </div>
 
-            {/* Three counts across, and they stay three across — a phone that cannot give
-                them 92px each shrinks the columns rather than forcing the page wide. */}
             <div className="tiles as-list" style={{ minWidth: 'min(250px, 100%)', alignSelf: 'flex-start' }}>
               <div className="stat plain">
                 <div className="stat-k">Releases</div>
@@ -278,7 +264,6 @@ export function ArtistDetail() {
         </div>
       </div>
 
-      {/* ── Sub-tabs: pick what kind of thing to look at ─────────────────── */}
       <div className="tabs" style={{ overflowX: 'auto' }}>
         {tabs.map((t) => (
           <button
@@ -292,10 +277,6 @@ export function ArtistDetail() {
         ))}
       </div>
 
-      {/* ── Search within this artist ────────────────────────────────────── */}
-      {/* Whatever tab is showing, the query and the filters run inside this artist and
-          cannot escape it: `artistId` is pinned into the search rather than selected, so
-          "clear filters" narrows back to the artist and never to the whole library. */}
       {tab?.kind === 'assets' && (
         <div className="stack-3">
           <div className="searchbar" style={{ maxWidth: 520 }}>
@@ -316,8 +297,6 @@ export function ArtistDetail() {
             onOpenFilters={() => setFiltersOpen(true)}
           />
 
-          {/* Clicking a row opens the same drawer the grid always opened — preview,
-              details, and editing for anyone who may. Only the arrangement changed. */}
           <SearchResults
             search={search}
             openAsset={openAsset}
@@ -337,7 +316,6 @@ export function ArtistDetail() {
         </div>
       )}
 
-      {/* ── Releases ─────────────────────────────────────────────────────── */}
       {tab?.kind === 'songs' && (
         <section>
           {data.songs?.length === 0 ? (
@@ -365,10 +343,6 @@ export function ArtistDetail() {
         </section>
       )}
 
-      {/* ── Folders ──────────────────────────────────────────────────────── */}
-      {/* Where this artist's work is actually stored. Each of these is a real Google Drive
-          folder, and the count is their files in it — not the folder's whole contents,
-          which would be a different and here misleading number. */}
       {tab?.kind === 'folders' && (
         <section>
           {(data.folders?.length ?? 0) > 0 && (

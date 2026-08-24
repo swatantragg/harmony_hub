@@ -1,14 +1,3 @@
-// Sign in. One column, one surface, no split panel and no pitch — the name, two fields
-// and a button.
-//
-// The one-click role buttons that used to sit under the form are gone. They existed to
-// demonstrate four roles that no longer exist, and they published working credentials on
-// an unauthenticated page, which is not a thing a real sign-in screen does.
-//
-// Two ways in, and they reach the same account. A password is what an administrator hands
-// over; Google is what most people already have open in the next tab. Neither replaces
-// the other — an account created for user01@gmail.com answers to both from the moment it
-// exists, and using one never switches the other off.
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { ArrowRight, Loader2 } from 'lucide-react';
@@ -19,9 +8,6 @@ import { useSession } from '../../app/session';
 import { BUILD_TAG } from '../../lib/version';
 import type { AuthProviders } from '../../lib/types';
 
-// Google's mark, inline. The sign-in page loads nothing from another origin — that is the
-// content security policy's whole point — so the logo is four paths rather than an <img>
-// pointed at a Google CDN.
 function GoogleMark() {
   return (
     <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden focusable="false">
@@ -33,9 +19,6 @@ function GoogleMark() {
   );
 }
 
-// Every way the round trip to Google can come back unhappy, in the words the person
-// standing there needs. The server sends a reason rather than a sentence, so the copy
-// lives here with the rest of the copy.
 const GOOGLE_REFUSALS: Record<string, string> = {
   'no-account': 'That Google account has no access to this library yet. Ask an administrator to add the address, then try again.',
   suspended: 'That account has been suspended. An administrator can reactivate it.',
@@ -64,12 +47,8 @@ export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  // Someone who arrived on a gated share link is sent back to it after signing in, rather
-  // than being dropped on a dashboard and left to find the link again in their email.
   const returnTo = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/';
 
-  // Whether the button is worth showing at all. A deployment with no OAuth client
-  // configured would otherwise offer a route that can only end in an error page.
   const { data: providers } = useQuery({
     queryKey: ['auth', 'providers'],
     queryFn: () => api<AuthProviders>('/auth/providers'),
@@ -77,14 +56,6 @@ export function Login() {
     retry: false,
   });
 
-  // Coming back from Google. The callback has already set the refresh cookie, so there is
-  // no token in this URL to read and nothing to exchange here: the session is picked up by
-  // the one bootstrap the app already runs at start-up, and this screen only waits for it.
-  //
-  // Deliberately not calling bootstrap() again. A refresh token is good for exactly one
-  // use, and a second redemption of the same one is indistinguishable from a stolen token
-  // being replayed — the server would correctly destroy the whole session family and sign
-  // the person out at the moment they signed in.
   const googleResult = params.get('google');
   const [pendingReturn, setPendingReturn] = useState<string | null>(null);
 
@@ -93,8 +64,6 @@ export function Login() {
     const reason = params.get('reason') ?? 'refused';
     const detail = params.get('detail');
     const to = params.get('returnTo') || '/';
-    // Cleared straight away so a reload does not replay the result — and so the effect
-    // does not fire twice on the same one.
     setParams({}, { replace: true });
 
     if (googleResult !== 'ok') {
@@ -105,7 +74,6 @@ export function Login() {
     setPendingReturn(to);
   }, [googleResult, params, setParams]);
 
-  // The session has landed — or it has not, and the cookie the callback set was rejected.
   useEffect(() => {
     if (!returning || loading) return;
     if (!user) {
@@ -123,8 +91,6 @@ export function Login() {
     setError('');
     try {
       const user = await login(email, password);
-      // An account still holding the password an administrator handed over goes nowhere
-      // else until it has one of its own.
       navigate(user.mustChangePassword ? '/set-password' : returnTo, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
@@ -133,8 +99,6 @@ export function Login() {
     }
   };
 
-  // A full navigation, not a fetch. The flow is redirects end to end, and it is the
-  // top-level window that has to make the trip.
   const continueWithGoogle = () => {
     setError('');
     window.location.href = googleSignInUrl(email.trim() || undefined);
@@ -195,8 +159,6 @@ export function Login() {
 
         {providers?.google?.enabled && (
           <>
-            {/* A separator rather than two buttons side by side: they are alternatives,
-                not a primary and a secondary, and the same account is behind both. */}
             <div className="row" style={{ gap: 12, alignItems: 'center', margin: '18px 0' }}>
               <span style={{ height: 1, background: 'var(--edge)', flex: 1 }} />
               <span className="t-small" style={{ textTransform: 'uppercase', letterSpacing: '.08em', fontSize: 12 }}>or</span>
@@ -219,8 +181,6 @@ export function Login() {
           Accounts are created by an administrator. If you do not have one, ask them to add you.
         </p>
 
-        {/* The one screen everybody reaches before signing in, so it is the one place a
-            build number can be read off a phone that is misbehaving. */}
         <p className="t-small" style={{ textAlign: 'center', marginTop: 10, fontFamily: 'var(--mono)', letterSpacing: '.1em', opacity: .62 }}>
           {BUILD_TAG}
         </p>

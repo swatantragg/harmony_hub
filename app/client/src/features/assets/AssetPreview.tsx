@@ -1,10 +1,3 @@
-// Preview & streaming (§10.3). Everything here is served by a short-lived signed URL that
-// the browser fetches directly from storage — audio and video seeking use HTTP Range, so
-// large files stream progressively instead of downloading in full.
-//
-// The viewer itself lives in features/preview/FilePreview so the public share page renders
-// exactly the same thing: what a partner sees before downloading is what you saw before
-// sharing.
 import { useEffect, useState } from 'react';
 import { Archive, CircleAlert } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -13,8 +6,6 @@ import { FilePreview } from '../preview/FilePreview';
 
 export function AssetPreview({ asset }: { asset: Asset }) {
   const [url, setUrl] = useState<string | null>(null);
-  // An unchecked file is almost certainly fine — it simply has not been proven recently.
-  // Only a confirmed absence or an archived object actually blocks a preview.
   const playable = ['AVAILABLE', 'MISMATCH', 'UNVERIFIED'].includes(asset.availability.status);
 
   useEffect(() => {

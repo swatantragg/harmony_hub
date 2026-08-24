@@ -1,12 +1,3 @@
-// Universal search (§10.6). The $unwind + $match aggregation, expressed in plain JS:
-// results are asset-granular and every result carries its parent song and artist.
-//
-// The index lives here rather than in Google Drive on purpose. Drive's own `q` can match a
-// name, a full-text body and an appProperties key, but it knows nothing about artists,
-// songs, asset types, release years or facet counts — and it cannot rank a tag hit above a
-// filename hit. So the catalogue stays the search index, and Drive-side search is offered
-// separately, below, for the one thing the catalogue cannot see: files nobody uploaded
-// through this app.
 import express from 'express';
 import { db, allAssets, persist } from '../db.js';
 import { authenticate, problem } from '../middleware/auth.js';
@@ -20,16 +11,8 @@ searchRouter.use(authenticate);
 
 const asArray = (v) => (v == null || v === '' ? [] : Array.isArray(v) ? v : String(v).split(',').filter(Boolean));
 
-// A file's own language when it has one, otherwise its release's. Resolved through the
-// shared helper so this screen, the master log and the asset drawer can never disagree
-// about what language a file is in — which they did, when each computed it itself.
 const languageOf = (row) => resolveLanguage(row.asset, row.song).language;
 
-// Naive relevance scoring, standing in for a MongoDB $text score.
-//
-// Tags are weighted alongside the filename deliberately. Tagging is the one piece of
-// curation this library asks people to do, so a term that matches a tag exactly should
-// rank as highly as one that matches a name — otherwise the effort never pays off.
 function score(row, terms) {
   if (!terms.length) return 0;
   const fields = [
@@ -47,7 +30,6 @@ function score(row, terms) {
   ];
   let total = 0;
   for (const term of terms) {
-    // An exact tag hit is the strongest signal in the index.
     if (row.asset.tags.some((t) => t.toLowerCase() === term)) total += 24;
     for (const [value, weight] of fields) {
       const hay = String(value || '').toLowerCase();
@@ -92,7 +74,6 @@ export function runSearch(query) {
 
   let rows = allAssets();
 
-  // Free-text stage.
   if (terms.length) {
     rows = rows
       .map((row) => ({ row, s: score(row, terms) }))
@@ -119,8 +100,6 @@ export function runSearch(query) {
     return filters[key].some((f) => value.includes(f));
   };
 
-  // Facet counts are computed against everything EXCEPT the facet being counted, so a
-  // selected filter never zeroes out its own sibling options.
   const facetKeys = Object.keys(filters);
   const narrowed = (skip) =>
     rows.filter((row) => facetKeys.every((k) => k === skip || filters[k].length === 0 || matches(row, k)));
@@ -141,8 +120,6 @@ export function runSearch(query) {
   };
 
   const sort = query.sort || (terms.length ? 'relevance' : 'newest');
-  // Every order is offered in both directions. A one-way sort forces the reader to page to
-  // the end to answer "which is the oldest?", which is the same question asked backwards.
   const updatedAt = (row) => Date.parse(row.asset.updatedAt || row.asset.createdAt);
   const sorters = {
     relevance: (a, b) => (b._score ?? 0) - (a._score ?? 0) || Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
@@ -160,12 +137,7 @@ export function runSearch(query) {
   return { results, facets, sort };
 }
 
-// The ceiling on a page. It used to be 5,000, which is a whole library serialised into
-// one JSON body on demand — a cheap request to make and an expensive one to answer, which
-// is the shape of every denial-of-service. 500 is still far more than any screen renders.
 const MAX_PAGE = 500;
-// A live verification is one Drive call per row, against a per-application quota shared by
-// everybody. It is capped much lower than the page it verifies.
 const MAX_LIVE_VERIFY = 25;
 
 searchRouter.get('/', async (req, res) => {
@@ -179,7 +151,6 @@ searchRouter.get('/', async (req, res) => {
 
   const slice = results.slice((page - 1) * limit, page * limit);
 
-  // &verify=live forces a real files.get for the visible rows — slower, but definitive.
   if (req.query.verify === 'live') {
     await storage.verifyAssets(slice.slice(0, MAX_LIVE_VERIFY).map((row) => row.asset));
     persist();
@@ -202,7 +173,6 @@ searchRouter.get('/facets', (req, res) => {
   res.json(facets);
 });
 
-// Command-palette source: a small mixed set of files, tags, folders, songs and artists.
 searchRouter.get('/quick', (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   if (!q) return res.json({ assets: [], tags: [], folders: [], songs: [], artists: [] });
@@ -222,8 +192,6 @@ searchRouter.get('/quick', (req, res) => {
       songTitle: r.song?.title ?? r.folder?.name ?? 'Unfiled',
       status: r.asset.availability?.status,
     })),
-    // Tags are offered as their own jump target so "search by tag" is one keystroke,
-    // not a filter someone has to discover in the sidebar.
     tags: [...tagCounts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -241,13 +209,6 @@ searchRouter.get('/quick', (req, res) => {
 });
 
 
-// Search Google Drive itself, not the catalogue.
-//
-// This exists for exactly one question: "I know the file is in the Drive — why can't I
-// find it here?" The answer is almost always that somebody dropped it into the folder
-// without uploading it through GCloud, so it has no catalogue record and the normal
-// search cannot see it. Anything this turns up that is not already catalogued can be
-// adopted from Storage Health.
 searchRouter.get('/drive', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.json({ data: [], total: 0, query: null });
@@ -256,12 +217,8 @@ searchRouter.get('/drive', async (req, res) => {
   const escaped = escapeQuery(q);
   const clauses = [
     `name contains '${escaped}'`,
-    // Drive indexes the contents of documents, PDFs and even OCRs images, which is a
-    // capability the catalogue simply does not have.
     `fullText contains '${escaped}'`,
   ];
-  // appProperties are how GCloud writes tags, artist and song onto the file itself,
-  // so a Drive-side search can match them too.
   for (const key of ['tags', 'artist', 'song', 'assetType']) {
     clauses.push(`appProperties has { key='${key}' and value='${escaped}' }`);
   }
@@ -275,10 +232,6 @@ searchRouter.get('/drive', async (req, res) => {
     const known = new Set();
     for (const { asset } of allAssets()) if (asset.drive?.fileId) known.add(asset.drive.fileId);
 
-    // Every folder id that belongs to the library: the four role folders, plus the Drive
-    // folder behind each catalogue folder. Comparing a file's parent against ROOTS.assets
-    // alone is wrong — the library nests, so anything filed inside a folder would be
-    // reported as sitting outside it, which is exactly the opposite of the truth.
     const libraryFolders = new Set([
       ...Object.values(ROOTS).filter(Boolean),
       ...db.folders.filter((f) => !f.deletedAt && f.driveFolderId).map((f) => f.driveFolderId),
@@ -296,7 +249,6 @@ searchRouter.get('/drive', async (req, res) => {
         modifiedAt: f.modifiedTime,
         webViewLink: f.webViewLink,
         appProperties: f.appProperties || {},
-        // The whole point of the endpoint.
         catalogued: known.has(f.id),
         inLibraryFolder: (f.parents || []).some((id) => libraryFolders.has(id)) || libraryFolders.has(f.id),
       })),

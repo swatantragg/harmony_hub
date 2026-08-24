@@ -14,9 +14,7 @@ interface UserRow {
   _id: string; name: string; email: string; role: Role;
   status: string; lastLoginAt: string | null; createdAt: string; permissions: string[];
   mustChangePassword: boolean;
-  /** Set once this person has signed in with Google. It links itself on first use. */
   google: { email: string; linkedAt: string } | null;
-  /** What deleting this account would detach — stated before it is destroyed, not after. */
   uploadCount: number;
   activeShareCount: number;
 }
@@ -28,13 +26,6 @@ interface UsersResponse {
   minPasswordLength: number;
 }
 
-// Suspend, restore, delete — what can be done to somebody's account, offered from the same
-// "…" menu every other row in the product carries.
-//
-// Suspending and deleting are deliberately two things rather than one. Suspending is what
-// offboarding almost always wants: access stops at the next request, and their name stays
-// on everything they uploaded. Deleting is the irreversible one, and it is behind a typed
-// name and the administrator's own password for the same reason purging a file is.
 function usePersonActions(person: UserRow, isSelf: boolean) {
   const [suspending, setSuspending] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -194,15 +185,11 @@ function PersonRow({ person, roles, isSelf }: { person: UserRow; roles: Role[]; 
             {isSelf && <span className="tag" style={{ marginLeft: 8 }}>you</span>}
           </span>
           <span className="row-sub">{person.email}</span>
-          {/* A suspended account is otherwise indistinguishable from a live one, which is
-              the state you least want to be guessing about. */}
           {suspended && (
             <span className="row-sub row-tight" style={{ marginTop: 3, color: 'var(--danger)' }}>
               <UserMinus size={12} /> suspended — cannot sign in
             </span>
           )}
-          {/* An account that has not been picked up yet looks identical to one in daily
-              use unless the page says so. */}
           {person.mustChangePassword && (
             <span className="row-sub row-tight" style={{ marginTop: 3, color: 'var(--mismatch-ink)' }}>
               <KeyRound size={12} /> has not set their own password yet
@@ -251,10 +238,6 @@ export function Users() {
         <button className="btn btn-primary" onClick={() => setAdding(true)}><UserPlus size={15} /> Add someone</button>
       </div>
 
-      {/* Not a table. Four columns of which one is a control and two are dates never fit a
-          phone, and the person's name — the thing you are looking for — was the column that
-          got squeezed. Each account is now a block: who they are, then the role control with
-          the date they were added beside it. */}
       <div className="panel rows">
         {data.data.map((u) => (
           <PersonRow key={u._id} person={u} roles={data.roles} isSelf={u._id === me?._id} />

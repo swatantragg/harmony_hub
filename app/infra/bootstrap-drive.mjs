@@ -1,16 +1,3 @@
-// Prepares a Google Drive for GCloud, and proves it works (§6.1).
-//
-//   node infra/bootstrap-drive.mjs          show what it would do, change nothing
-//   node infra/bootstrap-drive.mjs --apply  create the folder tree
-//   node infra/bootstrap-drive.mjs --check  run a full write/read/delete round trip
-//
-// There is very little to set up: Drive needs no globally unique name reserved, no
-// public-access switch turned off, no access policy written, no versioning enabled
-// (revisions are always on) and no CORS rule (Google mirrors the request Origin into each
-// upload session itself). What is left is a folder tree and a straight answer about
-// whether the credentials actually work.
-//
-// It is idempotent: run it twice and the second run finds what the first one made.
 import path from 'node:path';
 import fs from 'node:fs';
 import dotenv from 'dotenv';
@@ -20,8 +7,6 @@ for (const file of [path.resolve(here, '../.env'), path.resolve(here, '../server
   if (fs.existsSync(file)) dotenv.config({ path: file });
 }
 
-// The server's own modules, so this script and the running app can never disagree about
-// what "the GCloud folder" means.
 const { GOOGLE, GOOGLE_CONFIGURED, DRIVE_ID, DRIVE_ROOT_FOLDER_NAME, ROOTS } =
   await import('../server/src/config.js');
 const storage = await import('../server/src/services/storage.js');
@@ -57,7 +42,6 @@ async function step(label, fn) {
 console.log(`\n${bold('GCloud — Google Drive bootstrap')}`);
 console.log(dim(APPLY ? 'apply mode — changes will be made' : CHECK ? 'check mode — a temporary file will be written and deleted' : 'dry run — nothing will be changed\n'));
 
-// ── 1. Credentials ──────────────────────────────────────────────────────────
 console.log(bold('\nCredentials'));
 
 if (!GOOGLE_CONFIGURED) {
@@ -89,7 +73,6 @@ await step('account', async () => {
   return quota.account ? `${quota.account.email}` : 'no user profile (service account)';
 });
 
-// ── 2. Storage ──────────────────────────────────────────────────────────────
 console.log(bold('\nStorage'));
 
 if (quota) {
@@ -131,7 +114,6 @@ if (DRIVE_ID) {
   ok('drive', 'My Drive');
 }
 
-// ── 3. Folder tree ──────────────────────────────────────────────────────────
 console.log(bold('\nFolders'));
 
 if (!APPLY && !CHECK) {
@@ -153,11 +135,6 @@ for (const [role, folder] of Object.entries(folders)) {
   console.log(`      ${dim(role.padEnd(11))} ${folder.name.padEnd(12)} ${dim(folder.id)}`);
 }
 
-// ── 4. Round trip ───────────────────────────────────────────────────────────
-// The only check that actually proves the thing works. Everything above can pass while
-// the app still cannot upload — a read-only scope, a Shared Drive with the account as a
-// Viewer, a full quota. This writes a real file, reads it back, renames it, moves it and
-// deletes it, in the same code paths the product uses.
 if (CHECK) {
   console.log(bold('\nRound trip'));
   const body = Buffer.from(`GCloud connectivity check — ${new Date().toISOString()}\n`, 'utf8');

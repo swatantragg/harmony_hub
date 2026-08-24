@@ -1,19 +1,8 @@
-// MongoDB connection. One connection per process, opened before the first request and
-// closed on shutdown (§3.3).
 import mongoose from 'mongoose';
 import { MONGODB_DB, MONGODB_URI, NODE_ENV } from '../config.js';
 
 mongoose.set('strictQuery', false);
 
-// A driver failure here arrives as a sixty-line TopologyDescription dump that says
-// nothing about what to do. These are the three things it is almost always caused by.
-//
-// The per-server errors have to be included in the text being matched, and that is not a
-// detail. Mongoose replaces the real cause with one generic sentence about IP allowlists
-// on *every* server-selection failure, whatever went wrong; the actual reason — a TLS
-// alert, a refused connection, a DNS failure — survives only inside
-// `err.reason.servers`. Matching on the message alone meant every branch below was
-// unreachable for exactly the class of failure it was written for.
 function explain(err) {
   const perServer = [...(err?.reason?.servers?.values?.() ?? [])]
     .map((desc) => desc?.error?.message ?? '')
@@ -42,7 +31,6 @@ function explain(err) {
 export async function connect({ attempts = 3 } = {}) {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      // eslint-disable-next-line no-await-in-loop
       await mongoose.connect(MONGODB_URI, {
         dbName: MONGODB_DB,
         serverSelectionTimeoutMS: 8000,
@@ -51,11 +39,8 @@ export async function connect({ attempts = 3 } = {}) {
       });
       break;
     } catch (err) {
-      // A restarting container or a laptop waking up deserves a couple of retries before
-      // anyone is told anything is wrong.
       if (attempt < attempts) {
         console.warn(`[mongo] connection attempt ${attempt}/${attempts} failed, retrying…`);
-        // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => { setTimeout(r, 2000 * attempt); });
         continue;
       }

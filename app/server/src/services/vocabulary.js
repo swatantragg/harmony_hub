@@ -1,11 +1,6 @@
-// Tag hygiene. A library is only as searchable as its vocabulary is consistent, and the
-// fastest way to wreck that is three people typing "Raju Singh", "RajuSingh" and
-// "raju-singh" over three weeks. Before a custom tag is created, the same normalisation
-// and edit-distance check that would catch those runs here and offers the existing tag.
 import { db } from '../db.js';
 import { ASSET_TYPES, TYPE_INDEX, FAMILIES } from '../catalogue.js';
 
-// Case, spacing, punctuation and common separators all collapse away.
 export const normalise = (s) =>
   String(s ?? '')
     .toLowerCase()
@@ -32,9 +27,6 @@ function levenshtein(a, b) {
   return prev[b.length];
 }
 
-// Returns existing tags a candidate might be a duplicate of, strongest first.
-// `exact` means the two are the same tag once case and punctuation are ignored — the
-// caller should refuse to create a second one.
 export function similarTags(candidate, { limit = 5 } = {}) {
   const target = normalise(candidate);
   if (!target) return { exact: null, suggestions: [] };
@@ -53,7 +45,6 @@ export function similarTags(candidate, { limit = 5 } = {}) {
     const distance = levenshtein(target, other);
     const longest = Math.max(target.length, other.length);
     const contains = other.includes(target) || target.includes(other);
-    // Tolerance scales with length: one typo in a short tag, three in a long one.
     const tolerance = Math.max(1, Math.round(longest * 0.28));
     if (distance <= tolerance || contains) {
       scored.push({
@@ -72,10 +63,6 @@ export function similarTags(candidate, { limit = 5 } = {}) {
   return { exact, suggestions: scored.slice(0, limit) };
 }
 
-// ── Asset types ────────────────────────────────────────────────────────────
-// The 21-type catalogue is the shared vocabulary; custom types extend it without
-// touching it, so a team can file "Press Kit" or "Sync Licence" without waiting on a
-// release. Same duplicate check as tags — a second "Presskit" helps nobody.
 export function allTypes() {
   return [
     ...ASSET_TYPES.map((t) => ({ ...t, custom: false })),

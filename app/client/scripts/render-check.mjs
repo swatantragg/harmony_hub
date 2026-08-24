@@ -1,9 +1,3 @@
-// Front-end mount check:  npm run smoke:ui
-//
-// Renders real pages through Vite's own transform pipeline into jsdom and fails on any
-// React error. Cheap insurance against the class of breakage that a type check cannot see —
-// a hook rule violated, a router version that no longer exports what a page imports, a
-// provider missing from the tree. It renders; it does not assert on behaviour.
 import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -21,9 +15,6 @@ globalThis.window.matchMedia = () => ({ matches: false, media: '', addEventListe
 globalThis.matchMedia = globalThis.window.matchMedia;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-// Fixtures shaped like the real payloads. A page that reads `data.counts.needsReview` is
-// only genuinely exercised if something with that shape comes back — an empty array would
-// have it bail out early and the check would pass without rendering anything real.
 const asset = (i) => ({
   assetId: `a${i}`, displayName: `track_${i}.wav`, originalName: `track_${i}.wav`, description: '',
   type: 'Master Audio', family: 'Audio', format: 'WAV',
@@ -98,8 +89,6 @@ const FIXTURES = {
     permissionMatrix: { Admin: ['asset:read', 'admin:users'], User: ['asset:read'] },
     minPasswordLength: 8,
   },
-  // The master log answers with its own column registry, so the fixture has to carry one —
-  // the page renders nothing at all without it, which is exactly the regression worth catching.
   '/master-log': (() => {
     const columns = [
       { key: 'rowNo', header: '#', group: 'Identity', width: 6, num: true, always: true },
@@ -197,7 +186,6 @@ const origError = console.error;
 console.error = (...a) => { errors.push(a.map(String).join(' ')); origError(...a); };
 
 try {
-  // node_modules load natively; only the app's own source goes through Vite's transform.
   const React = (await import('react')).default;
   const { createRoot } = await import('react-dom/client');
   const { MemoryRouter, Routes, Route } = await import('react-router');
@@ -218,7 +206,6 @@ try {
   const { ToastHost } = await server.ssrLoadModule('/src/components/ui.tsx');
   const { useSession } = await server.ssrLoadModule('/src/app/session.ts');
 
-  // A signed-in Admin, so the permission-gated halves of these screens actually render.
   useSession.setState({
     loading: false,
     user: {
@@ -231,13 +218,10 @@ try {
   const h = React.createElement;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  // path is the route pattern; at is the URL rendered against it, for pages that read params.
   const PAGES = [
     { name: 'Login', Page: Login, path: '/', at: '/' },
     { name: 'Help', Page: Help, path: '/', at: '/' },
     { name: 'Home (browse)', Page: Dashboard, path: '/', at: '/' },
-    // The same component with a query on the URL: this is the merged search surface, and
-    // it renders an entirely different half of the page.
     { name: 'Home (searching)', Page: Dashboard, path: '/', at: '/?q=dil+se', expect: /file/i },
     { name: 'Artist · everything', Page: ArtistDetail, path: '/artists/:id', at: '/artists/artist_1', expect: /Releases|Folders/ },
     { name: 'Artist · folders tab', Page: ArtistDetail, path: '/artists/:id', at: '/artists/artist_1?tab=folders', expect: /Masters/ },
@@ -247,8 +231,6 @@ try {
     { name: 'Set password', Page: SetPassword, path: '/', at: '/', expect: /Choose your password/ },
     { name: 'Activity log', Page: ActivityLog, path: '/', at: '/', expect: /Activity log/ },
     { name: 'Master log', Page: MasterLog, path: '/', at: '/', expect: /Master log/ },
-    // The same screen with filters on the URL, which is the half that renders the
-    // "export these N" button rather than "export the register".
     { name: 'Master log (filtered)', Page: MasterLog, path: '/', at: '/?status=MISSING&family=Audio', expect: /Spreadsheet view/i },
     { name: 'Share links', Page: ShareManager, path: '/', at: '/', expect: /Share links/ },
     { name: 'Folders', Page: FolderList, path: '/', at: '/', expect: /Folders/ },

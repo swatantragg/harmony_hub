@@ -1,15 +1,3 @@
-// Front-end behaviour check:  npm run smoke:actions
-//
-// The companion to render-check.mjs, which proves the screens mount but asserts nothing
-// about what they do. This one drives the verbs — share a folder, move a folder, move a
-// file — the way a person does: open the "…" menu, press an entry, fill the dialog, press
-// the button, and check what reached the API.
-//
-// It exists because every one of those verbs was dead at once and nothing caught it. The
-// row menu closed itself on `mousedown`, in the capture phase, before the `click` that
-// would have run the entry's handler was ever dispatched — so the menu opened, the entries
-// looked right, and pressing one did nothing at all. A mount check cannot see that; only
-// dispatching a real mousedown/mouseup/click can.
 import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -28,21 +16,15 @@ for (const k of [
   }
 }
 globalThis.window.matchMedia = () => ({ matches: false, media: '', addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
-// jsdom implements no layout, so it ships neither of these. Both are universally available
-// in browsers; stubbing them here is closing a gap in the harness, not working around the
-// product.
 dom.window.Element.prototype.scrollIntoView = function scrollIntoView() {};
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-/* ── Fixtures, shaped like the real payloads ──────────────────────────────── */
 
 const folder = (id, name, parentId = null) => ({
   _id: id, name, description: '', tags: [], driveFolderId: `d_${id}`, driveWebViewLink: null,
   parentId, parentName: null, subfolderCount: 0, songId: null, artistId: null, songTitle: null,
   artistName: null, createdByName: 'Tester', createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
-  // Nothing filed directly, everything one level down — the shape that used to grey the
-  // Share entry out on a folder with a hundred files in it.
   assetCount: 0, totalBytes: 0, totalAssetCount: 9, totalBytesDeep: 5e7,
   byFamily: { Audio: 9 }, byStatus: { AVAILABLE: 9 }, needsAttention: 0,
 });
@@ -65,7 +47,6 @@ const asset = {
   verificationStale: false, verificationAgeHours: 1,
 };
 
-// Filled in below, once `asset` exists.
 const folderDetail = {
   ...folder('fo1', 'Masters'),
   breadcrumb: [{ _id: 'fo1', name: 'Masters' }],
@@ -73,7 +54,6 @@ const folderDetail = {
   assetCount: 1, assets: [], assetsByFamily: {},
 };
 
-// A folder that holds nothing but folders — no "All" tab to land on.
 const foldersOnly = {
   ...folder('fo9', 'Releases'),
   breadcrumb: [{ _id: 'fo9', name: 'Releases' }],
@@ -82,7 +62,7 @@ const foldersOnly = {
 };
 
 const FIXTURES = {
-  '/assets/a1': null,        // filled in below, once `asset` exists
+  '/assets/a1': null,
   '/folders/fo1': folderDetail,
   '/folders/fo9': foldersOnly,
   '/folders/lookup/options': [
@@ -143,7 +123,6 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response(JSON.stringify(key ? FIXTURES[key] : { data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
 };
 
-/* ── Harness ──────────────────────────────────────────────────────────────── */
 
 const server = await createServer({
   root: new URL('..', import.meta.url).pathname,
@@ -195,8 +174,6 @@ const mount = async (element, path = '/') => {
   await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
 };
 
-// A real press: mousedown, then mouseup and click. Splitting them is the whole point —
-// the bug this file guards against lived entirely in the gap between the two.
 const press = async (node, what) => {
   if (!node) { failures.push(`nothing to press: ${what}`); throw new Error(`missing element: ${what}`); }
   await act(async () => {
@@ -219,7 +196,6 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${ok || !detail ? '' : `  (${detail})`}`);
 };
 
-/* ── Folder list: the "…" menu and the verbs behind it ────────────────────── */
 
 console.log('\nFolder list');
 await mount(el(FolderList));
@@ -262,7 +238,6 @@ const patched = calls.find((c) => c.method === 'PATCH' && c.path === '/folders/f
 check('the move is sent as a re-parent', patched?.body?.parentId === 'fo2', JSON.stringify(patched?.body));
 check('the dialog closes on success', !document.querySelector('.scrim'));
 
-/* ── File list: the same menu on a row in a table ─────────────────────────── */
 
 console.log('\nFile list');
 await mount(el(AssetList, { assets: [asset], onOpen: () => { failures.push('the row opened its drawer instead of running the menu entry'); } }));
@@ -283,10 +258,6 @@ check('pressing Share opens the share dialog', /Share outside/.test(modalTitle()
 await press(document.querySelector('.modal-head .btn-icon'), 'close');
 check('the dialog closes', !document.querySelector('.scrim'));
 
-/* ── Sharing without the menu ─────────────────────────────────────────────
-   "Directly", from the button in the file's own details panel — a different render path
-   from the row menu, and one that stacks a modal on top of a drawer. */
-
 console.log('\nFile drawer');
 await mount(el(AssetDrawer, { assetId: 'a1', onClose: () => {} }));
 check('the drawer opens', !!document.querySelector('.drawer'));
@@ -298,14 +269,11 @@ check('the drawer is still behind it', !!document.querySelector('.drawer'));
 await press(document.querySelector('.modal-head .btn-icon'), 'close the dialog');
 check('closing the dialog leaves the drawer open', !document.querySelector('.scrim') && !!document.querySelector('.drawer'));
 check('the page stays locked while the drawer is up', document.body.style.overflow === 'hidden');
-
 const drawerMove = [...document.querySelectorAll('.drawer-foot .btn')].find((b) => /Move/.test(b.textContent));
 check('the drawer offers Move, as the folder screens promise it does', !!drawerMove);
 await press(drawerMove, 'drawer Move');
 check('the move dialog opens over the drawer', /Move “track_1.wav”/.test(modalTitle()), modalTitle());
 await press(footBtn(/Cancel/), 'Cancel');
-
-/* ── Folder detail: the same verbs from the page header ──────────────────── */
 
 console.log('\nFolder detail');
 await mount(el(FolderDetail), '/folders/fo1');
@@ -316,26 +284,22 @@ await press(headerTrigger, 'folder page menu trigger');
 await press(menuItem('Share folder'), 'Share folder');
 check('Share works from the folder page too', /Share this folder/.test(modalTitle()), modalTitle());
 await press(document.querySelector('.modal-head .btn-icon'), 'close');
-
 const tabLabels = () => [...document.querySelectorAll('.tab')].map((t) => t.textContent.trim());
 const tabNamed = (name) => [...document.querySelectorAll('.tab')].find((t) => t.textContent.startsWith(name));
 check('the tabs read All, Folders, then the file kinds',
   tabLabels().join('|') === 'All1|Folders1|Audio1', tabLabels().join(' | '));
 check('the page lands on All, not on the folders', !rowNamed('2024'));
 check('All shows the files', !!document.querySelector('.tbl tbody tr'));
-
 await press(tabNamed('Folders'), 'Folders tab');
 check('the Folders tab lists the folders inside this one', !!rowNamed('2024'));
 check('exactly the one subfolder is listed', document.querySelectorAll('.rows .row-item').length === 1);
 check('the file table gives way to the folder list', !document.querySelector('.tbl tbody tr'));
-
 const subRow = rowNamed('2024');
 check('the subfolder row carries its own menu', !!subRow?.querySelector('.row-menu-trigger'));
 await press(subRow.querySelector('.row-menu-trigger'), 'subfolder menu trigger');
 await press(menuItem('Move folder'), 'Move folder');
 check('a subfolder can be moved from inside its parent', /Move “2024”/.test(modalTitle()), modalTitle());
 await press(footBtn(/Cancel/), 'Cancel');
-
 console.log('\nA folder holding only folders');
 await mount(el(FolderDetail), '/folders/fo9');
 check('it is not called empty', !document.querySelector('.empty'));
@@ -345,8 +309,6 @@ check('the only tab offered is Folders',
 check('it lands on that tab rather than on a selection it does not offer',
   !!rowNamed('2024') && !!rowNamed('2025'));
 
-/* ── People: suspend, restore, delete ─────────────────────────────────────── */
-
 console.log('\nPeople');
 await mount(el(Users));
 const personRow = (name) => [...document.querySelectorAll('.person-row')]
@@ -354,21 +316,16 @@ const personRow = (name) => [...document.querySelectorAll('.person-row')]
 check('every account renders', document.querySelectorAll('.person-row').length === 3);
 check('a suspended account says so', /suspended/.test(personRow('Old Account')?.textContent ?? ''));
 check('the signed-in account is marked', /you/.test(personRow('Test Admin')?.querySelector('.row-title')?.textContent ?? ''));
-
-// An active person: suspend is offered, delete is offered.
 await press(personRow('Priya Nair').querySelector('.row-menu-trigger'), 'Priya menu');
 let items = [...document.querySelectorAll('.row-menu-item')].map((b) => b.textContent.trim());
 check('an active account offers Suspend and Delete, not Restore',
   items.join('|') === 'Suspend access|Delete account', items.join(' | '));
-
 await press(menuItem('Suspend access'), 'Suspend access');
 check('the suspend confirmation names the person', /Suspend Priya Nair/.test(modalTitle()), modalTitle());
 check('it says what is not affected', /4 files/.test(document.querySelector('.modal-body')?.textContent ?? ''));
 await press(footBtn(/Suspend access/), 'confirm suspend');
 const suspended = calls.find((c) => c.method === 'PATCH' && c.path === '/admin/users/u2');
 check('suspending sends the status', suspended?.body?.status === 'suspended', JSON.stringify(suspended?.body));
-
-// A suspended person: restore instead of suspend.
 await press(personRow('Old Account').querySelector('.row-menu-trigger'), 'Old Account menu');
 items = [...document.querySelectorAll('.row-menu-item')].map((b) => b.textContent.trim());
 check('a suspended account offers Restore instead of Suspend',
@@ -377,8 +334,6 @@ await press(menuItem('Restore access'), 'Restore access');
 await press(footBtn(/Restore access/), 'confirm restore');
 const restored = calls.find((c) => c.method === 'PATCH' && c.path === '/admin/users/u3');
 check('restoring sends the status', restored?.body?.status === 'active', JSON.stringify(restored?.body));
-
-// Deleting: typed name plus the administrator's own password, and it says what it detaches.
 await press(personRow('Priya Nair').querySelector('.row-menu-trigger'), 'Priya menu');
 await press(menuItem('Delete account'), 'Delete account');
 check('the delete dialog is the irreversible one', /Delete this account permanently/.test(modalTitle()), modalTitle());
@@ -387,7 +342,6 @@ check('it says the uploads survive but lose the name', /4 files/.test(deleteBody
 check('it says they have no live links', /no live share links/.test(deleteBody), deleteBody.slice(0, 200));
 const deleteBtn = footBtn(/Delete the account/);
 check('it will not fire until the name is typed', !!deleteBtn && deleteBtn.disabled);
-
 const typed = document.querySelector('.modal-body .input.mono');
 check('it asks for the name to be typed', !!typed);
 await act(async () => {
@@ -406,8 +360,6 @@ check('it fires once both are given', !footBtn(/Delete the account/).disabled);
 await press(footBtn(/Delete the account/), 'confirm delete');
 const deleted = calls.find((c) => c.method === 'DELETE' && c.path === '/admin/users/u2');
 check('deleting hits DELETE on the account', !!deleted);
-
-// The one account it must refuse.
 await press(personRow('Test Admin').querySelector('.row-menu-trigger'), 'own menu');
 const own = [...document.querySelectorAll('.row-menu-item')];
 check('your own account cannot be suspended or deleted from here',
@@ -416,37 +368,27 @@ await act(async () => {
   document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 });
 
-/* ── Dropdowns ────────────────────────────────────────────────────────────
-   Every native <select> was replaced with a portalled listbox, so the things a native one
-   gave away for free have to be proven rather than assumed. */
-
 console.log('\nDropdowns');
 await mount(el(FolderList));
 const trigger = () => document.querySelector('.select-trigger');
 const listbox = () => document.querySelector('.select-menu');
 const optionLabels = () => [...document.querySelectorAll('.select-option-label')].map((o) => o.textContent);
-
 check('the sort control renders as a trigger, not a native select',
   !!trigger() && !document.querySelector('select'));
 check('it shows the current value', trigger()?.textContent.trim() === 'Name — A to Z', trigger()?.textContent);
 check('the list is closed to begin with', !listbox());
-
 await press(trigger(), 'sort trigger');
 check('pressing it opens the list', !!listbox());
 check('every option is offered', optionLabels().length === 7, optionLabels().join(' | '));
 check('the current one is ticked',
   document.querySelector('.select-option.on .select-option-label')?.textContent === 'Name — A to Z');
 check('the list is portalled out of the page', listbox()?.parentElement === document.body);
-
-// Choosing re-sorts the list behind it.
 await press([...document.querySelectorAll('.select-option')].find((o) => /Name — Z to A/.test(o.textContent)), 'Z to A');
 check('choosing closes the list', !listbox());
 check('the trigger shows the new value', trigger()?.textContent.trim() === 'Name — Z to A', trigger()?.textContent);
 check('the choice actually applied',
   [...document.querySelectorAll('.row-item .row-title')].map((s) => s.textContent).join() === 'Masters,Artwork',
   [...document.querySelectorAll('.row-item .row-title')].map((s) => s.textContent).join());
-
-// Keyboard: the affordances a native select gave away for free.
 const key = async (k) => {
   await act(async () => {
     trigger().dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true }));
@@ -470,33 +412,22 @@ await key('ArrowDown');
 await key('Escape');
 check('Escape closes without changing anything',
   !listbox() && trigger().textContent.trim() === 'Largest first', trigger()?.textContent);
-
-// Dismissal, the bug class the row menu already taught us about.
 await press(trigger(), 'sort trigger');
 await act(async () => {
   document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 });
 check('a press outside closes the list', !listbox());
-
-/* ── The calendar ─────────────────────────────────────────────────────────
-   `<input type="date">` had its picker drawn by the browser. This one is ours, so the day
-   it lands on has to be proven — a date filter that quietly moves a day either side of
-   midnight is worse than no filter, and that is exactly what parsing an ISO string as UTC
-   would do west of Greenwich. */
-
 console.log('\nCalendar');
 await mount(el(ActivityLog));
 const dateTriggers = () => [...document.querySelectorAll('.date-trigger')];
 const calendar = () => document.querySelector('.calendar');
 const dayNamed = (n) => [...document.querySelectorAll('.calendar-day:not(.outside)')]
   .find((b) => b.textContent.trim() === String(n));
-
 check('both range ends render as date triggers, not native date inputs',
   dateTriggers().length === 2 && !document.querySelector('input[type="date"]'));
 check('an unset date reads as a placeholder', dateTriggers()[0].textContent.includes('Any date'),
   dateTriggers()[0].textContent);
 check('the calendar is closed to begin with', !calendar());
-
 await press(dateTriggers()[0], 'From');
 check('pressing it opens the calendar', !!calendar());
 check('the calendar is portalled out of the page', calendar()?.parentElement === document.body);
@@ -512,7 +443,6 @@ check('it opens on the current month',
   document.querySelector('.calendar-title')?.textContent);
 check('today is marked', !!document.querySelector('.calendar-day.today'));
 
-// The timezone trap: pick the 15th and the value must be the 15th.
 await press(dayNamed(15), 'the 15th');
 const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-15`;
 const fromCall = [...calls].reverse().find((c) => c.path === '/admin/activity');
@@ -522,15 +452,12 @@ check('the chosen day survives the round trip to YYYY-MM-DD, with no timezone dr
   `expected ${expected} in ${fromCall?.raw}`);
 check('the trigger now reads the date, not the placeholder',
   !dateTriggers()[0].textContent.includes('Any date'), dateTriggers()[0].textContent);
-
-// The other end is bounded by the first, so a range cannot be put out of order.
 await press(dateTriggers()[1], 'To');
 const blocked = [...document.querySelectorAll('.calendar-day:not(.outside)')]
   .filter((b) => b.disabled).map((b) => b.textContent.trim());
 check('the To end refuses every day before the From end',
   blocked.length === 14 && blocked[0] === '1' && blocked.at(-1) === '14', blocked.join(','));
 
-// Keyboard.
 await act(async () => {
   document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 });
@@ -560,15 +487,11 @@ check('Shift+PageUp moves a year back',
   document.querySelector('.calendar-title')?.textContent);
 await dkey('Escape');
 check('Escape closes it', !calendar());
-
-// Clearing, without opening the panel to undo opening the panel.
 const clearBtn = dateTriggers()[0].querySelector('.date-clear');
 check('a set date offers an inline clear', !!clearBtn);
 await press(clearBtn, 'clear');
 check('clearing empties the field', dateTriggers()[0].textContent.includes('Any date'),
   dateTriggers()[0].textContent);
-
-/* ── Dismissal still works ───────────────────────────────────────────────── */
 
 console.log('\nDismissal');
 await mount(el(AssetList, { assets: [asset], onOpen: () => {} }));
@@ -578,19 +501,14 @@ await act(async () => {
   document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 });
 check('a press outside closes it', !document.querySelector('.row-menu'));
-
 await press(document.querySelector('.tbl .row-menu-trigger'), 'file menu trigger');
 await act(async () => {
   document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 });
 check('Escape closes it', !document.querySelector('.row-menu'));
-
 await press(document.querySelector('.tbl .row-menu-trigger'), 'file menu trigger');
 await press(document.querySelector('.tbl .row-menu-trigger'), 'file menu trigger');
 check('pressing the trigger again closes it', !document.querySelector('.row-menu'));
-
-/* ── Report ──────────────────────────────────────────────────────────────── */
-
 await act(async () => { root.unmount(); });
 console.error = origError;
 const real = errors.filter((e) => !/not wrapped in act|ReactDOMTestUtils/.test(e));
@@ -599,7 +517,6 @@ if (real.length) {
   real.forEach((e) => console.log('  ', e.slice(0, 400)));
 }
 await server.close();
-
 if (failures.length || real.length) {
   console.log(`\n${failures.length} failure${failures.length === 1 ? '' : 's'}:`);
   failures.forEach((f) => console.log(`  · ${f}`));

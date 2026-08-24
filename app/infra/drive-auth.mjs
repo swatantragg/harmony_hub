@@ -1,15 +1,3 @@
-// Mint a Google Drive refresh token, without leaving the terminal.
-//
-//   node infra/drive-auth.mjs
-//
-// Why this exists: a refresh token is the one credential you cannot copy out of the Google
-// Cloud console. It is only ever handed over at the end of a consent flow, exactly once,
-// and every guide on the internet tells you to paste a code into a form. This script runs
-// the whole flow locally — it starts a one-request server on 127.0.0.1, opens the consent
-// screen, catches the redirect, exchanges the code, and prints the three lines that go in
-// app/.env.
-//
-// Nothing is sent anywhere except Google. The client secret never leaves this machine.
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline/promises';
@@ -23,8 +11,6 @@ for (const file of [path.resolve(here, '../.env'), path.resolve(here, '../server
   if (fs.existsSync(file)) dotenv.config({ path: file });
 }
 
-// Must match one of the "Authorized redirect URIs" on the OAuth client in Google Cloud.
-// Google treats http://localhost as a special case and allows it for desktop-style flows.
 const PORT = 8107;
 const REDIRECT = `http://localhost:${PORT}/oauth2callback`;
 const SCOPE = 'https://www.googleapis.com/auth/drive';
@@ -67,8 +53,6 @@ async function main() {
     process.exit(1);
   }
 
-  // CSRF protection on the redirect. Cheap, and the flow is over a loopback socket any
-  // other process on this machine could also talk to.
   const state = crypto.randomBytes(16).toString('hex');
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
@@ -76,9 +60,6 @@ async function main() {
     redirect_uri: REDIRECT,
     response_type: 'code',
     scope: SCOPE,
-    // Without both of these Google returns an access token and no refresh token, and the
-    // whole exercise has to be repeated an hour later. `prompt=consent` is what forces a
-    // refresh token even on a re-authorisation.
     access_type: 'offline',
     prompt: 'consent',
     state,
@@ -146,8 +127,6 @@ async function main() {
     process.exit(1);
   }
 
-  // Whose Drive did we just connect to? Answering it here prevents the classic mistake of
-  // authorising a personal account and wondering why the team cannot see anything.
   const who = await fetch('https://www.googleapis.com/drive/v3/about?fields=user,storageQuota', {
     headers: { authorization: `Bearer ${payload.access_token}` },
   }).then((r) => r.json()).catch(() => null);

@@ -1,23 +1,3 @@
-// The Master Log — the library's register of record.
-//
-// It is not the activity log, and the distinction is the whole reason this screen exists.
-// The activity log is a stream of events: what happened, who did it, in what order. This is
-// a register: one row per catalogued file, every field the catalogue holds about it, as it
-// stands right now. "Who deleted the master on Tuesday" is a question for the other screen.
-// "What do we hold, in what state, and can we prove it" is this one.
-//
-// Three decisions shape it:
-//
-//   · The columns are chosen, not fixed. A delivery to a distributor wants ISRC, title,
-//     artist and checksum. A storage audit wants Drive ids, sizes and verification dates. A
-//     rights conversation wants uploader, folder and share history. Sixty-nine columns are
-//     available, seventeen are on by default, and five named presets cover the questions
-//     people actually arrive with.
-//   · What leaves in the file is what is on the screen. The same filters, the same order,
-//     the same columns — and the workbook's last sheet writes down every one of them, so a
-//     spreadsheet forwarded to somebody outside the company still says what it left out.
-//   · The whole thing is linkable. Every filter lives in the URL, so "the register of
-//     everything missing, oldest first" is a link somebody can be sent.
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,51 +18,31 @@ import type {
   Availability, FacetValue, MasterLogColumn, MasterLogResponse, MasterLogRow,
 } from '../../lib/types';
 
-/* ── What the URL carries ──────────────────────────────────────────────────
-   Every filter, so a narrowed register is a link. The column choice is deliberately not
-   here: sixty keys in a query string makes an unpasteable URL, and it is a preference
-   about how somebody reads rather than about which rows they mean. */
 const FILTERS = [
   'q', 'status', 'family', 'type', 'artist', 'folder', 'uploadedBy',
   'tags', 'language', 'version', 'placement', 'year', 'shared', 'lifecycle', 'from', 'to',
 ] as const;
 type FilterKey = typeof FILTERS[number];
 
-// Versioned, and the version is bumped whenever a column joins the default set. Without
-// that, anybody who has already used this screen keeps the set they were first given and
-// never sees the new column at all — which looks exactly like the column not shipping.
-// Losing a hand-tuned selection once is the cheaper of the two failures.
 const COLUMNS_KEY = 'gcloud.masterlog.columns.v2';
 const DENSITY_KEY = 'gcloud.masterlog.density';
-
-/* ── Cell rendering ────────────────────────────────────────────────────────
-   A row arrives display-ready — the server has already turned 1503238553 into "1.4 GB" —
-   so this decides presentation only: which cells are monospaced, which are timestamps,
-   which carry a badge. Nothing here re-derives a value, because the moment it does the
-   table and the exported file can disagree. */
-
 const MONO = new Set([
   'assetId', 'versionGroupId', 'supersedes', 'folderId', 'driveFileId', 'driveParentId',
   'revisionId', 'sha256', 'md5', 'sha1', 'artistId', 'songId', 'uploadedById', 'linkedTo', 'isrc',
 ]);
-
 const TIMESTAMPS = new Set([
   'lastCheckedAt', 'lastVerifiedAt', 'createdAt', 'updatedAt', 'renamedAt', 'deletedAt',
   'driveCreatedAt', 'driveModifiedAt', 'lastSharedAt',
 ]);
 
-// Long identifiers are elided in the middle, never at the end: the tail of a checksum is
-// what distinguishes two files whose first sixteen characters match.
 const ELIDE: Record<string, [number, number]> = {
   sha256: [12, 8], sha1: [12, 8], md5: [10, 6],
   assetId: [8, 6], versionGroupId: [8, 6], supersedes: [8, 6], linkedTo: [8, 6],
   driveFileId: [10, 6], driveParentId: [10, 6], folderId: [8, 6], artistId: [8, 6],
   songId: [8, 6], uploadedById: [8, 6], revisionId: [10, 6],
 };
-
 function Cell({ column, row }: { column: MasterLogColumn; row: MasterLogRow }) {
   const value = row[column.key];
-
   if (column.key === 'status') {
     return <AvailabilityBadge status={row._status as Availability} />;
   }
@@ -95,7 +55,6 @@ function Cell({ column, row }: { column: MasterLogColumn; row: MasterLogRow }) {
       </span>
     );
   }
-
   if (column.key === 'driveLink') {
     if (!row._driveLink) return <span className="t-small">—</span>;
     return (
@@ -111,10 +70,6 @@ function Cell({ column, row }: { column: MasterLogColumn; row: MasterLogRow }) {
       </a>
     );
   }
-
-  // Language is the one column whose value means nothing without knowing who stated it.
-  // Rather than force a second column into every view to say so, the cell carries its own
-  // provenance: an inherited value is marked, and a blank says what blank means.
   if (column.key === 'language') {
     if (!value) {
       return <span className="t-small" title="Nobody has recorded a language for this file, and it belongs to no release that could answer for it.">—</span>;
@@ -127,9 +82,7 @@ function Cell({ column, row }: { column: MasterLogColumn; row: MasterLogRow }) {
       </span>
     );
   }
-
   if (value == null || value === '') return <span className="t-small">—</span>;
-
   if (column.key === 'title') {
     return (
       <span className="mlog-title" title={String(value)}>
@@ -138,25 +91,18 @@ function Cell({ column, row }: { column: MasterLogColumn; row: MasterLogRow }) {
       </span>
     );
   }
-
   if (TIMESTAMPS.has(column.key)) {
     return <span title={String(value)}>{date(String(value), true)}</span>;
   }
-
   if (column.num) {
     return <span className="mlog-num">{Number(value).toLocaleString()}</span>;
   }
-
   if (MONO.has(column.key)) {
     const [head, tail] = ELIDE[column.key] ?? [18, 8];
     return <span className="mlog-mono" title={String(value)}>{midTruncate(String(value), head, tail)}</span>;
   }
-
   return <span title={String(value)}>{String(value)}</span>;
 }
-
-/* ── A facet dropdown ────────────────────────────────────────────────────── */
-
 function Facet({
   label, value, options, onChange, allLabel,
 }: {
@@ -175,20 +121,13 @@ function Facet({
         ariaLabel={label}
         options={[
           { value: '', label: allLabel },
-          // A chosen value that no longer counts anything still has to appear, or the
-          // dropdown silently resets itself and the table stops matching the URL.
           ...(!options.some((o) => o.value === value) && value ? [{ value, label: value }] : []),
-          // The count sits in its own column rather than inside the label, so the names
-          // line up down the list and the figures line up against them.
           ...options.map((o) => ({ value: o.value, label: o.value, meta: o.count.toLocaleString() })),
         ]}
       />
     </label>
   );
 }
-
-/* ── The column picker ───────────────────────────────────────────────────── */
-
 function ColumnPicker({
   all, groups, presets, chosen, everyColumn, onChange, onEveryColumn, onClose,
 }: {
@@ -202,10 +141,7 @@ function ColumnPicker({
   onClose: () => void;
 }) {
   const set = new Set(chosen);
-  // Order is the registry's, never the click order: a person who switches a column off and
-  // on again expects it back where it was, not appended to the right-hand end.
   const apply = (keys: Set<string>) => onChange(all.filter((c) => keys.has(c.key) || c.always).map((c) => c.key));
-
   const toggle = (key: string) => {
     const next = new Set(set);
     if (next.has(key)) next.delete(key);
@@ -232,10 +168,6 @@ function ColumnPicker({
             ))}
           </div>
         </div>
-
-        {/* An export normally carries exactly what is on screen — that is the property
-            that makes the file answerable for. The override is here, next to the columns
-            it overrides, rather than buried among the filters. */}
         <div>
           <div className="eyebrow" style={{ marginBottom: 8 }}>An export carries</div>
           <div className="row-tight" style={{ flexWrap: 'wrap' }}>
@@ -247,7 +179,6 @@ function ColumnPicker({
             </button>
           </div>
         </div>
-
         {groups.map((group) => {
           const inGroup = all.filter((c) => c.group === group);
           const allOn = inGroup.every((c) => set.has(c.key));
@@ -293,9 +224,6 @@ function ColumnPicker({
     </Modal>
   );
 }
-
-/* ── The screen ──────────────────────────────────────────────────────────── */
-
 export function MasterLog() {
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState(params.get('q') ?? '');
@@ -314,17 +242,12 @@ export function MasterLog() {
     try { return JSON.parse(localStorage.getItem(COLUMNS_KEY) || 'null'); } catch { return null; }
   });
   const [dense, setDense] = useState(() => localStorage.getItem(DENSITY_KEY) !== 'comfortable');
-
   const debounced = useDebounced(text, 300);
   const toast = useToast();
   const qc = useQueryClient();
-
   const get = (key: FilterKey) => params.get(key) ?? '';
   const tags = get('tags') ? get('tags').split(',') : [];
 
-  // Any change to what is being asked for invalidates the page number and the selection:
-  // page 7 of a different filter is a different set of rows, and a tick against a row that
-  // is no longer on screen is a row somebody would export without meaning to.
   const narrow = (key: FilterKey, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -333,14 +256,11 @@ export function MasterLog() {
     setPage(1);
     setSelected(new Set());
   };
-
   useEffect(() => {
     if (debounced.trim() === get('q')) return;
     narrow('q', debounced.trim());
   }, [debounced]);
 
-  // Arriving back here from a link — a browser Back, a bookmark — the box has to agree
-  // with what is actually being filtered.
   useEffect(() => {
     const fromUrl = get('q');
     if (fromUrl !== debounced.trim()) setText(fromUrl);
@@ -350,12 +270,10 @@ export function MasterLog() {
     if (chosen) localStorage.setItem(COLUMNS_KEY, JSON.stringify(chosen));
   }, [chosen]);
   useEffect(() => { localStorage.setItem(DENSITY_KEY, dense ? 'compact' : 'comfortable'); }, [dense]);
-
   const filterQuery = useMemo(
     () => Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? ''])),
     [params.toString()],
   );
-
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['master-log', filterQuery, sort, dir, page, pageSize],
     queryFn: () => api<MasterLogResponse>(`/master-log${qs({
@@ -363,20 +281,15 @@ export function MasterLog() {
     })}`),
     placeholderData: (prev) => prev,
   });
-
-  // Until the registry has arrived there is nothing to choose from, so the default set the
-  // server names is what renders — never a hard-coded list that could disagree with it.
   const visible = useMemo(() => {
     if (!data) return [];
     const keys = new Set(chosen ?? data.defaultColumns);
     return data.columns.filter((c) => keys.has(c.key) || c.always);
   }, [data, chosen]);
-
   const rows = data?.data ?? [];
   const pageIds = rows.map((r) => r._id);
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const anyFilter = FILTERS.some((k) => params.get(k));
-
   const toggleRow = (id: string) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -398,21 +311,12 @@ export function MasterLog() {
     setSelected(new Set());
   };
 
-  // Clicking a column heading sorts by it; clicking the one already sorted reverses it.
-  // Text starts A→Z and numbers and dates start at the largest, because "the newest" and
-  // "the biggest" are what somebody means by sorting those.
   const sortBy = (column: MasterLogColumn) => {
     if (sort === column.key) { setDir(dir === 'asc' ? 'desc' : 'asc'); return; }
     setSort(column.key);
     setDir(column.num || TIMESTAMPS.has(column.key) ? 'desc' : 'asc');
     setPage(1);
   };
-
-  /* ── Export ──────────────────────────────────────────────────────────────
-     Three scopes, and each one says in words what it will contain, because the difference
-     between "these 412" and "all 8,900" is the difference between a delivery note and a
-     copy of the whole library leaving the building. The chosen columns travel with it, and
-     a hand-picked selection is POSTed — six hundred asset ids do not fit in a URL. */
   const runExport = async (scope: 'selected' | 'filtered' | 'all') => {
     const key = `${scope}-${format}`;
     setBusy(key);
@@ -420,7 +324,6 @@ export function MasterLog() {
       const columns = everyColumn ? 'all' : visible.map((c) => c.key).join(',');
       const base = { columns, sort, dir };
       if (scope === 'selected') {
-        // lifecycle:all so a deleted row somebody deliberately ticked is still in the file.
         await downloadFile(
           `/master-log/export.${format}`,
           `gcloud-master-log.${format}`,
@@ -445,13 +348,10 @@ export function MasterLog() {
       setBusy(null);
     }
   };
-
   const facet = (key: string) => data?.facets[key] ?? [];
   const s = data?.summary;
-
   return (
     <div className="page stack-4">
-      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="page-head">
         <div className="spread" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -485,10 +385,6 @@ export function MasterLog() {
           </div>
         </div>
       </div>
-
-      {/* ── The figures, over the filtered set ──────────────────────────────
-          They describe what the table under them is showing, not the library — the two
-          disagreeing is how a tile ends up quoted in a meeting as a library total. */}
       <div className="tiles">
         <div className="stat plain">
           <div className="stat-k">Files</div>
@@ -521,8 +417,6 @@ export function MasterLog() {
           <div className="stat-n">behind a live external link</div>
         </div>
       </div>
-
-      {/* ── The register ────────────────────────────────────────────────── */}
       <div className="panel">
         <div className="panel-head" style={{ display: 'block' }}>
           <div className="spread" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
@@ -532,16 +426,12 @@ export function MasterLog() {
                 {data?.filtered ? 'Matching rows' : 'Every file in the library'}
               </div>
             </div>
-
             <div className="row-tight" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <span className="chip chip-static">
                 {(data?.total ?? 0).toLocaleString()} shown
                 {' · '}{(data?.libraryTotal ?? 0).toLocaleString()} total
                 {' · '}{selected.size.toLocaleString()} chosen
               </span>
-
-              {/* One format switch rather than six buttons: the scope is the decision
-                  worth making twice, and the file type is a preference. */}
               <div className="seg" role="group" aria-label="Export format">
                 <button className={format === 'xlsx' ? 'on' : ''} onClick={() => setFormat('xlsx')}>
                   <Sheet size={13} /> Excel
@@ -550,7 +440,6 @@ export function MasterLog() {
                   <FileText size={13} /> CSV
                 </button>
               </div>
-
               <button
                 className="btn btn-secondary"
                 disabled={selected.size === 0 || busy !== null}
@@ -581,8 +470,6 @@ export function MasterLog() {
               )}
             </div>
           </div>
-
-          {/* ── Filters ─────────────────────────────────────────────────── */}
           <div className="mlog-filters" style={{ marginTop: 14 }}>
             <label className="mlog-filter" style={{ flex: '2 1 260px' }}>
               <span className="eyebrow">Search rows</span>
@@ -601,14 +488,12 @@ export function MasterLog() {
                 )}
               </div>
             </label>
-
             <Facet label="Status" allLabel="Any status" value={get('status')} options={facet('status')} onChange={(v) => narrow('status', v)} />
             <Facet label="Family" allLabel="Any family" value={get('family')} options={facet('family')} onChange={(v) => narrow('family', v)} />
             <Facet label="Asset type" allLabel="Any type" value={get('type')} options={facet('type')} onChange={(v) => narrow('type', v)} />
             <Facet label="Artist" allLabel="Any artist" value={get('artist')} options={facet('artist')} onChange={(v) => narrow('artist', v)} />
             <Facet label="Folder" allLabel="Any folder" value={get('folder')} options={facet('folder')} onChange={(v) => narrow('folder', v)} />
             <Facet label="Uploaded by" allLabel="Anybody" value={get('uploadedBy')} options={facet('uploadedBy')} onChange={(v) => narrow('uploadedBy', v)} />
-
             <div className="mlog-filter" style={{ flex: '0 0 auto', justifyContent: 'flex-end' }}>
               <span className="eyebrow" aria-hidden>&nbsp;</span>
               <div className="row-tight">
@@ -621,14 +506,12 @@ export function MasterLog() {
               </div>
             </div>
           </div>
-
           {moreOpen && (
             <div className="mlog-filters mlog-more" style={{ marginTop: 12 }}>
               <Facet label="Language" allLabel="Any language" value={get('language')} options={facet('language')} onChange={(v) => narrow('language', v)} />
               <Facet label="Version" allLabel="Any version" value={get('version')} options={facet('version')} onChange={(v) => narrow('version', v)} />
               <Facet label="Filed as" allLabel="Anywhere" value={get('placement')} options={facet('placement')} onChange={(v) => narrow('placement', v)} />
               <Facet label="Release year" allLabel="Any year" value={get('year')} options={facet('year')} onChange={(v) => narrow('year', v)} />
-
               <label className="mlog-filter">
                 <span className="eyebrow">Sharing</span>
                 <Select
@@ -643,10 +526,6 @@ export function MasterLog() {
                   ]}
                 />
               </label>
-
-              {/* Deleted rows are still catalogue records and still matter to an audit, so
-                  they are one dropdown away rather than gone — but they are off by default,
-                  because "how many files do we hold" must not count the recycle bin. */}
               <label className="mlog-filter">
                 <span className="eyebrow">Deleted files</span>
                 <Select
@@ -660,7 +539,6 @@ export function MasterLog() {
                   ]}
                 />
               </label>
-
               <label className="mlog-filter">
                 <span className="eyebrow">Added from</span>
                 <DateField value={get('from')} max={get('to') || undefined} onChange={(v) => narrow('from', v)} ariaLabel="Added from" placeholder="Any date" />
@@ -669,7 +547,6 @@ export function MasterLog() {
                 <span className="eyebrow">Added to</span>
                 <DateField value={get('to')} min={get('from') || undefined} onChange={(v) => narrow('to', v)} ariaLabel="Added up to" placeholder="Any date" />
               </label>
-
               <label className="mlog-filter" style={{ flex: '1 1 100%' }}>
                 <span className="eyebrow">Tags — a row must carry all of the ones chosen</span>
                 <div className="row-tight" style={{ flexWrap: 'wrap' }}>
@@ -691,8 +568,6 @@ export function MasterLog() {
             </div>
           )}
         </div>
-
-        {/* ── The table ───────────────────────────────────────────────── */}
         {isLoading && !data ? (
           <div style={{ padding: 20 }}><Skeleton h={360} /></div>
         ) : rows.length === 0 ? (
@@ -763,7 +638,6 @@ export function MasterLog() {
           </div>
         )}
       </div>
-
       {rows.length > 0 && (
         <div className="spread" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div className="row-tight">
@@ -786,7 +660,6 @@ export function MasterLog() {
           </div>
         </div>
       )}
-
       {pickerOpen && data && (
         <ColumnPicker
           all={data.columns}
@@ -799,7 +672,6 @@ export function MasterLog() {
           onClose={() => setPickerOpen(false)}
         />
       )}
-
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
     </div>
   );

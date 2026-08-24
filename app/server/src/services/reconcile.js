@@ -1,14 +1,3 @@
-// ReconcileService — the authoritative answer to "does the catalogue still match the
-// Drive?" (§10.11). Four phases: inventory Drive, inventory the database, compare, act.
-//
-// One listing returns the checksum, the size, the trashed flag and the parent folder
-// together, so almost every question is answered without a second call.
-//
-// The hard part is that a Drive is a place people can open and rearrange by hand — a file
-// can be renamed, dragged to another folder, or thrown in the trash without GCloud
-// ever hearing about it. Those are not errors; they are the normal life of a shared Drive.
-// So the drift report treats them as findings with obvious remedies rather than as
-// corruption.
 import { db, persist, allAssets } from '../db.js';
 import { HEAD_CONCURRENCY, ROOTS, TRASH_DAYS } from '../config.js';
 import { uuid } from '../util/crypto.js';
@@ -16,12 +5,8 @@ import * as storage from './storage.js';
 import { mapLimit, FOLDER_MIME } from '../storage/drive.js';
 import { notify, record } from './audit.js';
 
-// A run is a full-Drive walk, so two of them at once is only ever waste.
 let running = null;
 
-// `applyAvailability: false` produces the drift report without rewriting every asset's
-// availability block — an inventory-only pass, used to give a freshly seeded library a
-// prior run to show while leaving never-checked assets honestly marked UNVERIFIED.
 export async function runReconciliation(req, { trigger = 'manual', applyAvailability = true } = {}) {
   if (running) return running;
   running = reconcile(req, { trigger, applyAvailability });
@@ -36,30 +21,22 @@ async function reconcile(req, { trigger, applyAvailability }) {
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
 
-  // PHASE 1 — walk the Drive. Trashed files are included deliberately: a file somebody
-  // dropped in the bin is the single most common drift in a shared Drive, and a listing
-  // that hides it would report the file as missing and send an admin hunting for nothing.
   const { files, folders, pages } = await storage.inventory({ includeTrashed: true });
   const inDrive = new Map(files.map((f) => [f.id, f]));
   const driveFolders = new Map(folders.map((f) => [f.id, f]));
 
-  // PHASE 2 — build the database inventory.
   const rows = allAssets();
   const inDb = new Map(rows.filter(({ asset }) => asset.drive?.fileId).map(({ asset, song }) => [asset.drive.fileId, { asset, song }]));
 
-  // Folder ids the catalogue believes in, so an untracked *folder* is reported separately
-  // from an untracked file — they need different remedies.
   const knownFolderIds = new Set(db.folders.filter((f) => !f.deletedAt && f.driveFolderId).map((f) => f.driveFolderId));
   const folderNameById = new Map(db.folders.map((f) => [f.driveFolderId, f.name]));
 
-  // PHASE 3 — compare.
   const findings = [];
   const finding = (kind, severity, fileId, asset, song, extra = {}) => ({
     _id: uuid(),
     kind,
     severity,
     fileId,
-    // Kept under the old name too so the activity log and any saved run stay readable.
     key: fileId,
     assetId: asset?.assetId ?? null,
     displayName: asset?.displayName ?? extra.driveName ?? fileId,
@@ -107,9 +84,6 @@ async function reconcile(req, { trigger, applyAvailability }) {
       }));
     }
 
-    // Drive-specific, and the drift people actually cause: a file dragged into another
-    // folder in the Drive UI. Nothing is damaged — the catalogue simply now describes the
-    // wrong shelf, and the remedy is to believe Drive.
     const liveParent = file.parents?.[0] ?? null;
     const recordedParent = asset.drive?.parentId ?? null;
     if (liveParent && recordedParent && liveParent !== recordedParent) {
@@ -122,8 +96,6 @@ async function reconcile(req, { trigger, applyAvailability }) {
       }));
     }
 
-    // Renamed by hand in Drive. Harmless, and worth surfacing because the two names
-    // disagreeing is confusing for everybody.
     if (file.name && asset.displayName && file.name !== asset.displayName) {
       findings.push(finding('NAME_DRIFT', 'informational', fileId, asset, song, {
         detail: `Renamed in Drive to “${file.name}”, while the catalogue still says “${asset.displayName}”.`,
@@ -136,7 +108,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
 
   for (const [fileId, file] of inDrive) {
     if (inDb.has(fileId)) continue;
-    if (file.trashed) continue; // Somebody's discarded file is not the library's problem.
+    if (file.trashed) continue;
     findings.push(finding('UNTRACKED_IN_DRIVE', 'orphan', fileId, null, null, {
       detail: `Dropped into the GCloud folder without going through the app (${file.size ? `${file.size} bytes` : 'no stored bytes'}). Invisible to search until it is adopted.`,
       driveName: file.name,
@@ -157,12 +129,6 @@ async function reconcile(req, { trigger, applyAvailability }) {
     }));
   }
 
-  // PHASE 4 — act: refresh every availability block, store the run, alert on criticals.
-  //
-  // The listing already answers "is it there, is it the same size, is it in the bin" for
-  // every file in one pass, so availability is derived from it rather than from N
-  // files.get calls — that is what checkMethod: LIST_RECONCILE means. Only the handful
-  // the listing could not settle get an individual read.
   let readsIssued = 0;
   if (applyAvailability) {
     const now = new Date().toISOString();
@@ -175,8 +141,6 @@ async function reconcile(req, { trigger, applyAvailability }) {
       const base = { lastCheckedAt: now, checkMethod: 'LIST_RECONCILE' };
 
       if (!file) {
-        // A file the walk did not see might genuinely be gone, or might have been moved
-        // outside the GCloud root — which the walk cannot see but files.get can.
         needRead.push(asset);
         continue;
       }
@@ -230,8 +194,6 @@ async function reconcile(req, { trigger, applyAvailability }) {
   };
   for (const f of findings) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
 
-  // Quota is cheap to read and belongs with the run: "everything matched, and by the way
-  // you are at 94% of your Drive" is the pair of facts an admin needs together.
   const space = await storage.quota().catch(() => null);
 
   const run = {
@@ -296,7 +258,6 @@ export function latestRun() {
   return db.reconciliationRuns[0] ?? null;
 }
 
-// Health summary used by the dashboard tile and the Storage Health screen.
 export function healthSummary() {
   const rows = allAssets();
   const byStatus = { AVAILABLE: 0, UNVERIFIED: 0, TRASHED: 0, RESTORING: 0, MISSING: 0, MISMATCH: 0 };

@@ -1,5 +1,3 @@
-// Repository facade. Everything above this line works against the catalogue's shape; the
-// storage of that catalogue lives in db/store.js and db/models.js.
 export {
   db,
   load,

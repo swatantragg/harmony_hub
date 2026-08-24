@@ -1,8 +1,3 @@
-// Upload manager. Drop files or a whole folder, describe them, send them.
-//
-// Only one question is compulsory — what kind of file this is — because that is what
-// makes it findable. Song and folder are both optional: plenty of files belong to the
-// library without belonging to a release.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -44,7 +39,6 @@ export function UploadCenter() {
   const defaultSongId = params.get('songId') ?? '';
   const defaultFolderId = params.get('folderId') ?? '';
 
-  // Hash each newly added file so duplicates can be flagged before anything is sent.
   useEffect(() => {
     for (const item of items) {
       if (item.state !== 'HASHING' || item.checksum) continue;
@@ -59,9 +53,6 @@ export function UploadCenter() {
     add(files, { songId: defaultSongId, folderId, assetType: guessType(files[0]) });
   };
 
-  // Dropping or choosing a directory: every file carries a webkitRelativePath, so the
-  // top-level directory name becomes the folder and each file joins it. In storage they
-  // remain individual objects — the folder exists only in the catalogue.
   const acceptDirectory = async (files: File[]) => {
     if (!files.length) return;
     const first = files[0] as File & { webkitRelativePath?: string };
@@ -96,36 +87,25 @@ export function UploadCenter() {
 
   const pause = (item: QueueItem) => controllers.current.get(item.id)?.abort();
 
-  // Only the type and at least one tag gate an upload now.
   const isReady = (i: QueueItem) => i.state === 'READY' && Boolean(i.assetType) && i.tags.length > 0;
   const ready = items.filter(isReady);
   const active = items.filter((i) => ['UPLOADING', 'FINALISING'].includes(i.state));
   const done = items.filter((i) => i.state === 'DONE');
 
-  // Every tag anywhere in the queue. Passed to each picker so a tag typed on one file is
-  // immediately part of the duplicate check on all the others.
   const sessionTags = useMemo(
     () => [...new Set(items.flatMap((i) => i.tags))],
     [items],
   );
 
-  // Apply one choice to the whole queue — the point of dropping a folder is not to fill
-  // the same form forty times.
   const applyToAll = (patch: Partial<QueueItem>) => {
     for (const i of items) if (!['DONE', 'UPLOADING', 'FINALISING'].includes(i.state)) update(i.id, patch);
   };
 
-  // A queued file carries a type, and the family behind it may belong to a custom type the
-  // built-in table has never heard of — so the registry answers, and `familyOf` is only
-  // the fallback for a type chosen before the registry arrived.
   const familyOfType = (type: string) =>
     typeData?.data.find((t) => t.type === type)?.family ?? familyOf(type);
 
   const speaks = (i: QueueItem) => carriesLanguage(familyOfType(i.assetType));
 
-  // Applying a language to "all" must not write one onto the covers in the queue: the
-  // field is not offered for them, so a value they could never see or remove would be
-  // stranded on the record. It reaches the audio and video only, and the control says so.
   const applyLanguageToAll = (language: string) => {
     for (const i of items) {
       if (['DONE', 'UPLOADING', 'FINALISING'].includes(i.state) || !speaks(i)) continue;
@@ -156,15 +136,12 @@ export function UploadCenter() {
           hidden
           onChange={(e) => { accept([...(e.target.files ?? [])]); e.target.value = ''; }}
         />
-        {/* webkitdirectory lets the browser hand over an entire directory tree at once. */}
         <input
           ref={dirRef}
           type="file"
           multiple
           hidden
-          // @ts-expect-error — non-standard but supported everywhere this ships
-          webkitdirectory=""
-          directory=""
+          {...{ webkitdirectory: '', directory: '' }}
           onChange={(e) => { void acceptDirectory([...(e.target.files ?? [])]); e.target.value = ''; }}
         />
 
@@ -219,7 +196,6 @@ export function UploadCenter() {
             </div>
           </div>
 
-          {/* Bulk apply — the difference between filing 40 files and abandoning the job. */}
           {items.filter((i) => i.state === 'READY').length > 1 && (
             <div className="panel" style={{ borderStyle: 'dashed' }}>
               <div className="panel-body stack-3">
@@ -301,7 +277,6 @@ function UploadRow({
   item, family, songs, knownTags, onChange, onStart, onPause, onRemove,
 }: {
   item: QueueItem;
-  /** Resolved by the parent from the live type registry, so custom types are right too. */
   family: string;
   songs: SongRow[];
   knownTags: string[];
@@ -313,7 +288,6 @@ function UploadRow({
   const complete = item.state === 'DONE';
   const busy = ['UPLOADING', 'FINALISING'].includes(item.state);
 
-  // Song and folder are deliberately absent from this list.
   const blockers = useMemo(() => {
     const out: string[] = [];
     if (!item.assetType) out.push('choose the kind of file');
@@ -409,10 +383,6 @@ function UploadRow({
                 />
               </div>
 
-              {/* Audio and video only — a cover or a credits sheet has no language of
-                  its own, and a field that insists otherwise collects a guess. It says
-                  which of the two answers will be used rather than leaving somebody to
-                  wonder why it looks redundant next to a song. */}
               {carriesLanguage(family) && (
                 <LanguagePicker
                   value={item.language}

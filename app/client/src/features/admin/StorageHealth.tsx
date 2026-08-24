@@ -1,14 +1,3 @@
-// Storage health — the drift dashboard (§10.11). Its job is to answer two questions
-// honestly: does the catalogue still match the Google Drive, and is there room left?
-//
-// A Drive fills up, and when it does every upload stops. So quota is the first thing on
-// this page rather than a footnote.
-//
-// The first question got harder, and more interesting. A Drive is a place people can open
-// and rearrange by hand — files get renamed, dragged between folders and dropped in the
-// bin without the app ever hearing about it. None of that is corruption, so most findings
-// here are a disagreement to settle rather than damage to repair, and each one offers both
-// answers: believe Drive, or push the catalogue's version back onto it.
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -28,9 +17,6 @@ import type { Availability, Finding, Quota, SongRow, StorageHealth as Health } f
 
 interface Remedy { action: string; label: string; hint: string; danger?: boolean; needsSong?: boolean }
 
-// Where a finding has two defensible answers, both are offered and neither is preselected.
-// Guessing which side an admin wants — Drive's version or the catalogue's — is exactly the
-// decision a tool should not make on their behalf.
 const REMEDIES: Record<string, Remedy[]> = {
   MISSING_IN_DRIVE: [
     { action: 'mark-lost', label: 'Mark permanently lost', hint: 'Flags the record so nobody keeps trying to download it. Re-upload later to replace it.', danger: true },
@@ -65,8 +51,6 @@ const REMEDIES: Record<string, Remedy[]> = {
   ],
 };
 
-// Sizing a bar against a limit that may not exist. A Shared Drive on a pooled Workspace
-// plan reports no limit at all, and "unlimited" is a real answer rather than a missing one.
 function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
   const critical = !quota.unlimited && quota.percentUsed >= 90;
   const warn = !quota.unlimited && quota.percentUsed >= 75;
@@ -102,8 +86,6 @@ function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
               <span className="t-small">free of {bytes(quota.limit ?? 0)}</span>
             </div>
 
-            {/* One bar, segmented by what is actually consuming the space — because
-                "you are 94% full" is far less useful than "38% of that is your bin". */}
             <div style={{ display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden', background: 'var(--surface-2)' }}>
               {segments.map((seg) => (
                 <div
@@ -179,15 +161,9 @@ export function StorageHealth() {
     queryFn: () => api<Health>('/admin/storage/health'),
   });
 
-  // Home's Review button arrives with ?focus=review. Landing at the top of a long page
-  // and leaving somebody to hunt for what they were sent to look at is not an answer, so
-  // the section is scrolled to as soon as there is something to scroll to.
   const focused = params.get('focus') === 'review';
   useEffect(() => {
     if (!focused || !data) return;
-    // Guarded rather than called straight: scrolling is a nicety, and a page that throws
-    // because the environment has no scrollIntoView would fail at showing the very thing
-    // the reader was sent here to see.
     const target = reviewRef.current;
     if (typeof target?.scrollIntoView === 'function') {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -212,17 +188,13 @@ export function StorageHealth() {
   }
 
   const run = data.lastRunFull;
-  // Most urgent first — a missing file must never sit below a routine lifecycle note.
   const RANK: Record<string, number> = { critical: 0, integrity: 1, orphan: 2, informational: 3 };
   const open = (run?.findings ?? [])
     .filter((f) => !f.resolvedAt)
     .sort((a, b) => (RANK[a.severity] ?? 9) - (RANK[b.severity] ?? 9));
   const critical = open.filter((f) => f.severity === 'critical');
-  // The same number Home shows on its Review button, computed from the same two states.
   const needingDecision = (data.byStatus.MISSING ?? 0) + (data.byStatus.MISMATCH ?? 0);
 
-  // The API already ranks and caps this list, so paging is a slice of what arrived rather
-  // than another round trip.
   const reviewPage = reviewSize === 0
     ? data.attention
     : data.attention.slice((reviewPageNo - 1) * reviewSize, reviewPageNo * reviewSize);
@@ -237,12 +209,10 @@ export function StorageHealth() {
         </button>
       </div>
 
-      {/* Space first. Everything else on this page is moot if there is no room left. */}
       {data.quota && (
         <QuotaPanel quota={data.quota} trashDays={data.storage?.trashRecoverableForDays ?? 30} />
       )}
 
-      {/* Headline verdict */}
       <div className={`note ${critical.length ? 'danger' : 'ok'}`}>
         {critical.length ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
         <div>
@@ -265,10 +235,6 @@ export function StorageHealth() {
         </div>
       </div>
 
-      {/* Status split.
-          The tiles are the whole section. A summary panel above them restated the same six
-          numbers in smaller type next to a percentage, so the screen said everything twice
-          and neither copy was the obvious one to read. */}
       <section>
         <h2 className="t-h2" style={{ marginBottom: 13 }}>Where every file stands</h2>
 
@@ -292,7 +258,6 @@ export function StorageHealth() {
         </div>
       </section>
 
-      {/* Findings */}
       <section>
         <div className="spread" style={{ marginBottom: 13 }}>
           <h2 className="t-h2 row-tight"><FileWarning size={16} color="var(--ink-3)" /> What the comparison found</h2>
@@ -330,8 +295,6 @@ export function StorageHealth() {
                       </div>
 
                       <div className="row-tight" style={{ flexWrap: 'wrap' }}>
-                        {/* Seeing the file in Drive is very often the whole investigation, so it
-                            is one click rather than a copy-the-id-and-go-hunting exercise. */}
                         {f.webViewLink && (
                           <a className="btn btn-ghost btn-sm" href={f.webViewLink} target="_blank" rel="noreferrer">
                             <ExternalLink size={13} /> View in Drive
@@ -351,9 +314,6 @@ export function StorageHealth() {
         )}
       </section>
 
-      {/* Files needing a check.
-          Home states how many of these there are and sends the reader here; this is where
-          the files themselves live, alongside everything that can be done about them. */}
       {data.attention.length > 0 && (
         <section id="review" ref={reviewRef} style={focused ? { scrollMarginTop: 84 } : undefined}>
           <div className="spread" style={{ marginBottom: 13, flexWrap: 'wrap', gap: 10 }}>
@@ -392,7 +352,6 @@ export function StorageHealth() {
         </section>
       )}
 
-      {/* Distribution */}
       <section className="auto-grid">
         <div className="panel">
           <div className="panel-head"><span className="t-h3 row-tight"><Database size={15} color="var(--ink-3)" /> By kind of file</span></div>

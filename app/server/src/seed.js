@@ -1,14 +1,3 @@
-// Seeds a realistic library: 5 artists, 12 songs, ~120 assets, with REAL files written
-// into Google Drive — plus deliberate drift so Storage Health has something true to
-// report, and deliberate duplicates so the de-duplication screen does too.
-//
-// Every file here is a genuine, openable one. That matters: preview, waveform scrubbing,
-// Range streaming, checksum drift detection, de-duplication by checksum and the
-// in-browser OOXML reader all run against real bytes rather than a mock. Because Drive
-// computes sha256 and md5 on arrival, the seeded duplicates are detected by exactly the
-// same mechanism a real duplicate would be — nothing about the demo is faked.
-//
-// Total upload is a few megabytes, so this is safe to run against a personal 15 GB Drive.
 import { db, flushNow, reset, writeMeta } from './db.js';
 import { FOUNDING_ADMIN, ROOTS, SEED_PASSWORD } from './config.js';
 import { hashPassword, uuid, token } from './util/crypto.js';
@@ -26,18 +15,8 @@ const iso = (daysAgo, hour = 10) =>
 
 const pick = (arr, n) => arr.slice(0, n);
 
-// Uploads run under a concurrency cap rather than one at a time: 120 sequential round
-// trips to Google is a minute of waiting for no reason. Kept modest because Drive's
-// enforces a per-user request ceiling.
 const PUT_CONCURRENCY = 6;
 
-// The founding administrator is prepended at seed time from FOUNDING_ADMIN, with the
-// password set in the environment and no forced change — it is the account that exists so
-// somebody can sign in and create the others.
-//
-// These three are colleagues, all on the User role, all holding SEED_PASSWORD and all
-// required to replace it at first sign-in. A User can do everything an Admin can except
-// add another account.
 const USERS = [
   ['Aarti Deshmukh', 'aarti@gcloud.app'],
   ['Rohan Iyer', 'rohan@gcloud.app'],
@@ -67,7 +46,6 @@ const SONGS = [
   ['Aaj Ki Raat', 3, 'Hindi', 'Party', 'INH252600403', 5],
 ];
 
-// Which asset types a song gets, and how the file is generated.
 const RECIPE = [
   { type: 'Song Cover', ext: '.svg', mime: 'image/svg+xml', tags: ['Promo'] },
   { type: 'Master Audio', ext: '.wav', mime: 'audio/wav', tags: ['Master'], version: 'Final Master' },
@@ -98,7 +76,6 @@ function makeBody({ recipe, song, artist }) {
     case 'Lyrics':
       return lyricsDoc({ title: song.title, artist: artist.name });
     case 'Credits / Metadata Sheet':
-      // A real PDF, so the preview panel opens a genuine document rather than a stand-in.
       return pdfDoc({
         title: `Credits — ${song.title}`,
         subtitle: `${artist.name} · ISRC ${song.isrc}`,
@@ -122,7 +99,6 @@ function makeBody({ recipe, song, artist }) {
   }
 }
 
-// Bodies for the loose, song-less files — one real file per format the preview supports.
 function unfiledBody({ displayName, mime }) {
   if (mime.startsWith('audio')) return wav({ seconds: 8, seed: displayName });
   if (mime === 'image/svg+xml') {
@@ -187,12 +163,6 @@ function unfiledBody({ displayName, mime }) {
   });
 }
 
-// ── Deferred uploads ────────────────────────────────────────────────────────
-// An asset document is built with the size it will have, and the Drive file id, checksums
-// and revision are patched in once Google has confirmed the write. That keeps the seed
-// readable, lets every upload fly concurrently, and — because the parent folder is
-// resolved at write time rather than at stage time — lets the folder tree be created
-// after the assets that live in it have already been described.
 function uploader() {
   const queue = [];
   const stage = ({ asset, body, contentType, appProperties }) => {
@@ -216,8 +186,6 @@ function uploader() {
         path: `${folder?.name ? `${folder.name}/` : ''}${job.asset.displayName}`,
         uploadedAt: job.asset.drive.uploadedAt,
       });
-      // The checksum the catalogue records is Drive's own, which is what makes the
-      // duplicate scan authoritative rather than advisory.
       job.asset.checksumSHA256 = drive.sha256;
       done += 1;
     });
@@ -227,13 +195,6 @@ function uploader() {
   return { stage, run };
 }
 
-// Everything the previous library left in the Drive. Seeding wipes MongoDB, so the
-// matching files have to go too — otherwise the next reconciliation correctly reports
-// every one of them as UNTRACKED_IN_DRIVE, and a re-seed quietly doubles the space used.
-//
-// files.delete rather than trash, deliberately: a trashed file still occupies quota, and
-// a re-seed that silently consumed another few megabytes of a 15 GB Drive every time
-// would be a nasty surprise.
 async function clearLibraryFolder(log) {
   const { files, folders } = await storage.inventory({ includeTrashed: true });
   const doomed = [...files, ...folders];
@@ -250,12 +211,8 @@ export async function seed({ log = console.log } = {}) {
   await reset();
 
   const put = uploader();
-  // The colleagues share one starting password, so one bcrypt hash is computed rather than
-  // three. It is good for exactly one sign-in each — `mustChangePassword` closes every
-  // route until they set one of their own.
   const handoverHash = await hashPassword(SEED_PASSWORD);
 
-  // ── Users ────────────────────────────────────────────────────────────────
   db.users = [
     {
       _id: 'user_admin',
@@ -284,7 +241,6 @@ export async function seed({ log = console.log } = {}) {
   ];
   const editor = db.users[1];
 
-  // ── Tags ─────────────────────────────────────────────────────────────────
   db.tags = [];
   for (const [group, names] of Object.entries(CONTROLLED_TAGS)) {
     for (const name of names) {
@@ -295,7 +251,6 @@ export async function seed({ log = console.log } = {}) {
     db.tags.push({ _id: uuid(), name, group: 'Custom', type: 'custom', usageCount: 0, createdAt: iso(30) });
   }
 
-  // ── Artists ──────────────────────────────────────────────────────────────
   db.artists = ARTISTS.map(([name, genre, label, city], i) => ({
     _id: `artist_${i + 1}`,
     name,
@@ -314,7 +269,6 @@ export async function seed({ log = console.log } = {}) {
     deletedAt: null,
   }));
 
-  // ── Songs + assets ───────────────────────────────────────────────────────
   db.songs = [];
   let assetCounter = 0;
 
@@ -337,7 +291,6 @@ export async function seed({ log = console.log } = {}) {
       deletedAt: null,
     };
 
-    // Older songs carry the full asset set; the newest are still being filled in.
     const count = daysAgo < 15 ? 4 : daysAgo < 60 ? 7 : RECIPE.length;
     for (const recipe of RECIPE.slice(0, count)) {
       assetCounter += 1;
@@ -356,8 +309,6 @@ export async function seed({ log = console.log } = {}) {
         family: familyOf(recipe.type),
         format: typeInfo.formats[0],
         folderId: null,
-        // Filled in by put.run() once Google has confirmed the write. Until then the size
-        // is the only field that is known, and it is the one the catalogue is built from.
         drive: {
           fileId: null, name: displayName, parentId: null, driveId: null, path: displayName,
           revisionId: null, sizeBytes: body.length, md5: null, sha256: null, sha1: null,
@@ -392,8 +343,6 @@ export async function seed({ log = console.log } = {}) {
         asset,
         body,
         contentType: recipe.mime,
-        // Written onto the Drive file itself, so the folder reads correctly to anyone who
-        // opens it at drive.google.com without ever having heard of GCloud.
         appProperties: properties({
           app: 'gcloud',
           assetId,
@@ -412,7 +361,6 @@ export async function seed({ log = console.log } = {}) {
     db.songs.push(song);
   });
 
-  // Artist profile photos, stored as assets on the artist's first song.
   db.artists.forEach((artist) => {
     const song = db.songs.find((s) => s.artistId === artist._id);
     if (!song) return;
@@ -457,7 +405,6 @@ export async function seed({ log = console.log } = {}) {
     artist.imageAssetId = assetId;
   });
 
-  // A version lineage on the flagship song, so the timeline has something to show.
   const flagship = db.songs[0];
   const reel = flagship.assets.find((a) => a.type === 'Reel - BTS/MV');
   if (reel) {
@@ -489,11 +436,6 @@ export async function seed({ log = console.log } = {}) {
     reel.supersedes = oldId;
   }
 
-  // ── Unfiled assets — real files with no song ─────────────────────────────
-  // These prove the "song is optional" path end to end: they are catalogued, searchable,
-  // taggable and foldered, and Drive treats them exactly like everything else. The office
-  // formats are real OOXML packages and the PDFs are real PDFs, so the preview panel is
-  // reading genuine bytes out of storage for every format the product claims to show.
   const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const unfiledSpecs = [
@@ -507,8 +449,6 @@ export async function seed({ log = console.log } = {}) {
     ['platform_delivery_checklist.csv', 'Marketing Plan', 'text/csv', ['Promo'], 0, 'Delivery status per DSP, exported from the tracker.'],
   ];
 
-  // ── Custom asset types ───────────────────────────────────────────────────
-  // Types the team added beyond the built-in 21, to show that the catalogue extends.
   db.customTypes = [
     ['Press Kit', 'Document'],
     ['Sync Licence', 'Document'],
@@ -523,10 +463,6 @@ export async function seed({ log = console.log } = {}) {
     deletedAt: null,
   }));
 
-  // ── Folders ──────────────────────────────────────────────────────────────
-  // Real Google Drive folders, created before any file is written so the uploads land
-  // straight into them. The last one is nested inside the third, because Drive supports a
-  // tree.
   const folderSpecs = [
     ['Dil Se — launch kit', 'Everything the marketing team needs for the Dil Se rollout.', ['Promo', 'Launch Week'], db.songs[0]._id, null],
     ['Chandni Raat — BTS shoot', 'Raw footage and stills from the two-day shoot.', ['BTS'], db.songs[1]._id, null],
@@ -536,7 +472,6 @@ export async function seed({ log = console.log } = {}) {
   db.folders = [];
   for (const [i, [name, description, tags, songId, parentIdx]] of folderSpecs.entries()) {
     const parent = parentIdx == null ? null : db.folders[parentIdx];
-    // eslint-disable-next-line no-await-in-loop
     const driveFolder = await storage.makeFolder({ name, parentId: parent?.driveFolderId || ROOTS.assets });
     db.folders.push({
       _id: `folder_${uuid().slice(0, 8)}`,
@@ -552,10 +487,6 @@ export async function seed({ log = console.log } = {}) {
     });
   }
 
-  // Put the first song's promo-facing assets into its launch kit, and the BTS footage
-  // into the shoot folder. Because the uploads have not run yet, this is still just a
-  // field — the files are written directly into the right Drive folder, so nothing is
-  // ever copied or moved.
   for (const asset of db.songs[0].assets) {
     if (['Song Cover', 'Banner Image', 'Reel - BTS/MV', 'Horizontal Video'].includes(asset.type)) {
       asset.folderId = db.folders[0]._id;
@@ -613,17 +544,9 @@ export async function seed({ log = console.log } = {}) {
     return asset;
   });
 
-  // ── Deliberate duplicates, so the de-duplication screen is honest on first run ──
-  //
-  // This is the exact situation the feature exists for, reproduced faithfully: the same
-  // reel filed in two different folders under two different names, plus a near-miss pair
-  // that only *looks* like a duplicate. Nothing here is annotated as a duplicate — the
-  // scan finds them the same way it would find a real one, by comparing the sha256 that
-  // Google computes on arrival.
   const duplicates = [];
   const sourceReel = db.songs[0].assets.find((a) => a.type === 'Reel - BTS/MV');
   if (sourceReel) {
-    // 1. Byte-for-byte identical, different folder, different name. IDENTICAL tier.
     const dupId = uuid();
     const dupBody = videoPlaceholder({ seed: `reel-${sourceReel.assetId}`, sizeKb: 120 });
     const identical = {
@@ -645,8 +568,6 @@ export async function seed({ log = console.log } = {}) {
     db.unfiled.push(identical);
     duplicates.push('IDENTICAL');
 
-    // The source has to hold the identical bytes for this to be a real duplicate, so it
-    // is re-staged with the same body rather than the recipe's.
     put.stage({
       asset: sourceReel,
       body: dupBody,
@@ -660,8 +581,6 @@ export async function seed({ log = console.log } = {}) {
       appProperties: properties({ app: 'gcloud', assetId: dupId }),
     });
 
-    // 2. Same name pattern, genuinely different bytes. SAME_NAME tier — the one that must
-    // never be acted on blindly, and the reason the UI labels it "worth a look".
     const nearId = uuid();
     const nearBody = videoPlaceholder({ seed: 'reel-recut', sizeKb: 118 });
     const near = {
@@ -691,17 +610,10 @@ export async function seed({ log = console.log } = {}) {
     duplicates.push('SAME_NAME');
   }
 
-  // Everything catalogued so far now goes into Google Drive, concurrently.
   await put.run('Library', log);
 
-  // ── Deliberate drift, so Storage Health is honest on first run ────────────
-  // Each of these is a real Drive operation performed out of band, exactly the way the
-  // corresponding accident would happen in production — somebody working in
-  // drive.google.com rather than in GCloud. Which is the whole category of drift that
-  // only exists because a Drive is a place people can open and rearrange by hand.
   const drift = [];
 
-  // 1. MISSING — catalogued, but permanently deleted from Drive.
   const missing = db.songs[2].assets.find((a) => a.type === 'Audio Snippet');
   if (missing?.drive.fileId) {
     await storage.destroy(missing.drive.fileId);
@@ -713,7 +625,6 @@ export async function seed({ log = console.log } = {}) {
     drift.push('MISSING');
   }
 
-  // 2. MISMATCH — the file was overwritten in Drive, so size and checksum drift.
   const mismatch = db.songs[4].assets.find((a) => a.type === 'Banner Image');
   if (mismatch?.drive.fileId) {
     await storage.putFile({
@@ -730,8 +641,6 @@ export async function seed({ log = console.log } = {}) {
     drift.push('MISMATCH');
   }
 
-  // 3. TRASHED — somebody dragged a master into the Drive bin. On a 30-day clock, after
-  //    which Google deletes it and no backup here can bring it back.
   const trashed = db.songs[1].assets.find((a) => a.type === 'BTS - Unedited Footage');
   if (trashed?.drive.fileId) {
     await storage.trash(trashed.drive.fileId);
@@ -749,8 +658,6 @@ export async function seed({ log = console.log } = {}) {
     drift.push('TRASHED');
   }
 
-  // 4. PARENT_DRIFT — a file dragged into a different folder in the Drive UI. Nothing is
-  //    damaged; the catalogue simply now describes the wrong shelf.
   const moved = db.songs[0].assets.find((a) => a.type === 'Horizontal Video' && a.drive.fileId);
   if (moved) {
     await storage.move(moved.drive.fileId, {
@@ -760,14 +667,12 @@ export async function seed({ log = console.log } = {}) {
     drift.push('PARENT_DRIFT');
   }
 
-  // 5. NAME_DRIFT — renamed by hand in Drive, so the two names disagree.
   const renamed = db.songs[3].assets.find((a) => a.type === 'Song Cover' && a.drive.fileId);
   if (renamed) {
     await storage.rename(renamed.drive.fileId, 'USE THIS ONE - cover.svg');
     drift.push('NAME_DRIFT');
   }
 
-  // 6. UNTRACKED — a file somebody dropped straight into the Drive folder.
   const orphan = await storage.putFile({
     name: 'unknown_bounce_0417.wav',
     parentId: ROOTS.assets,
@@ -778,7 +683,6 @@ export async function seed({ log = console.log } = {}) {
   void orphan;
   drift.push('UNTRACKED');
 
-  // 7. UNVERIFIED — never checked, older than 24 h.
   for (const song of db.songs.slice(8)) {
     for (const asset of song.assets.slice(0, 2)) {
       asset.availability = { status: 'UNVERIFIED', lastCheckedAt: null, lastVerifiedAt: null, checkMethod: null, detail: 'Never verified against Google Drive' };
@@ -786,8 +690,6 @@ export async function seed({ log = console.log } = {}) {
   }
   drift.push('UNVERIFIED');
 
-  // ── Shares ───────────────────────────────────────────────────────────────
-  // One live link of each audience, so the Share links page shows all three on first open.
   const shareables = [
     [db.songs[0].assets[0], 7, true, 10, 3, 'PUBLIC', [], 'Sent to launch partner'],
     [db.songs[1].assets[3], 2, true, 5, 5, 'RESTRICTED', ['neha.k@northlight.example'], 'Countersignature copy'],
@@ -820,9 +722,6 @@ export async function seed({ log = console.log } = {}) {
       revokedAt: null,
     }));
 
-  // A whole-folder link. Editor audience: the recipient signs in and can work on the
-  // files, not just read them. The folder is a catalogue grouping, so the link resolves
-  // to a manifest and each file is signed separately at the moment it is opened.
   db.shares.push({
     _id: uuid(),
     target: 'FOLDER',
@@ -848,17 +747,13 @@ export async function seed({ log = console.log } = {}) {
     revokedAt: null,
   });
 
-  // ── Tag usage counts ─────────────────────────────────────────────────────
   const usage = new Map();
   for (const song of db.songs) for (const a of song.assets) for (const t of a.tags) usage.set(t, (usage.get(t) || 0) + 1);
   for (const a of db.unfiled) for (const t of a.tags) usage.set(t, (usage.get(t) || 0) + 1);
   for (const tag of db.tags) tag.usageCount = usage.get(tag.name) || 0;
 
-  // A pair of tags that are the same idea spelled two ways — the vocabulary check on the
-  // upload screen catches exactly this before a third spelling appears.
   db.tags.push({ _id: uuid(), name: 'Raju Singh', group: 'Custom', type: 'custom', usageCount: 0, createdAt: iso(25) });
 
-  // ── Seed activity, so the audit view is not empty ─────────────────────────
   const actions = [
     ['ASSET_UPLOAD', 'Uploaded dil_se_master_audio.wav', db.users[1]],
     ['ASSET_RENAME', 'Renamed chandni_raat_reel_bts_mv.mp4', db.users[1]],
@@ -873,8 +768,6 @@ export async function seed({ log = console.log } = {}) {
     ip: '10.0.2.14', userAgent: 'Mozilla/5.0', timestamp: iso(i * 0.4, 12 - i),
   }));
 
-  // A prior, inventory-only reconciliation run so Storage Health has real findings the
-  // first time it is opened, without overwriting the never-checked assets above.
   await runReconciliation({ ip: '127.0.0.1', get: () => 'scheduler', user: null }, {
     trigger: 'scheduled',
     applyAvailability: false,

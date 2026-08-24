@@ -1,12 +1,3 @@
-// Home. The only search bar in the product lives here, and so do the controls that used
-// to sit on a search screen of its own — running a live check, ordering, grid or list,
-// and the facets. Type something and the results replace everything below the bar; clear
-// it and the library summary comes back.
-//
-// What is deliberately *not* here any more: the storage-health breakdown, which belongs on
-// the page that can act on it, and the list of files needing a decision, which is a
-// sentence and a button rather than a wall of cards somebody has to scroll past to reach
-// the work they actually came for.
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -34,7 +25,6 @@ const QUICK_FILTERS = [
   { label: 'Needs checking', to: '/?availability=UNVERIFIED' },
 ];
 
-// How many artists the roster shows before "View all" takes over.
 const ARTISTS_ON_HOME = 5;
 
 export function Dashboard() {
@@ -49,7 +39,6 @@ export function Dashboard() {
 
   const search = useAssetSearch(params, setParams);
 
-  // The URL is the source of truth for a query — every search is shareable as a link.
   useEffect(() => {
     const next = new URLSearchParams(params);
     if (debounced.trim()) next.set('q', debounced.trim());
@@ -58,8 +47,6 @@ export function Dashboard() {
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
   }, [debounced]);
 
-  // Someone arriving back on Home from a link — a browser Back, a quick filter — must see
-  // the box agree with what is actually being searched.
   useEffect(() => {
     const fromUrl = params.get('q') ?? '';
     if (fromUrl !== debounced.trim()) setText(fromUrl);
@@ -81,7 +68,6 @@ export function Dashboard() {
 
   return (
     <div className="page stack-5">
-      {/* ── Hero search ─────────────────────────────────────────────────── */}
       <section>
         <div className="eyebrow" style={{ marginBottom: 10 }}>
           {greeting}, {data?.greetingName ?? user?.name.split(' ')[0]} · signed in as {user?.role}
@@ -112,10 +98,6 @@ export function Dashboard() {
           </div>
         </form>
 
-        {/* The controls belong to the bar, not to a page of their own, so they sit in the
-            bar's own column and line up with its left edge. Once a search is running the
-            row widens to the results grid, which puts the result count hard left and the
-            controls hard right — the arrangement a results screen wants. */}
         <div style={{ marginTop: 12, maxWidth: search.isSearching ? undefined : 680 }}>
           <SearchToolbar
             search={search}
@@ -145,7 +127,6 @@ export function Dashboard() {
         )}
       </section>
 
-      {/* ── Results, once anything is being searched ────────────────────── */}
       {search.isSearching ? (
         <section>
           <SearchResults
@@ -156,7 +137,6 @@ export function Dashboard() {
         </section>
       ) : (
         <>
-          {/* ── Library at a glance ──────────────────────────────────────── */}
           <section className="tiles as-list">
             <button className="stat" onClick={() => navigate('/?sort=newest')}>
               <div className="stat-k">Files</div>
@@ -182,10 +162,6 @@ export function Dashboard() {
             )}
           </section>
 
-          {/* ── Needs a decision ─────────────────────────────────────────── */}
-          {/* One line and one button. The files themselves, and everything that can be
-              done about them, are on Storage health — which is where the reader ends up
-              rather than being shown a problem here that cannot be solved here. */}
           {needsReview > 0 && data?.canSeeStorage && (
             <section>
               <div className="note danger">
@@ -198,7 +174,6 @@ export function Dashboard() {
             </section>
           )}
 
-          {/* ── Recently added ───────────────────────────────────────────── */}
           <section>
             <div className="spread" style={{ marginBottom: 14 }}>
               <h2 className="t-h2 row-tight"><Clock size={16} color="var(--ink-3)" /> Added recently</h2>
@@ -213,7 +188,6 @@ export function Dashboard() {
             )}
           </section>
 
-          {/* ── Artists + activity, side by side ─────────────────────────── */}
           <section className="home-split">
             <div className="panel">
               <div className="panel-head">
@@ -221,8 +195,6 @@ export function Dashboard() {
                 <Link className="btn btn-ghost btn-sm" to="/artists">View all <ArrowRight size={13} /></Link>
               </div>
               <div>
-                {/* A name and a number. Anything else here — a genre, a size, a rank — is
-                    detail the artist's own page carries better. */}
                 {data?.artists.slice(0, ARTISTS_ON_HOME).map((a) => (
                   <Link
                     key={a._id}

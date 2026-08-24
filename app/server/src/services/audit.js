@@ -1,17 +1,7 @@
-// AuditService — P4: every mutation is recorded with actor, before/after, and address.
-//
-// Two addresses are kept, not one. req.ip is derived from X-Forwarded-For according to
-// the trust-proxy setting: correct for rate limiting behind a known proxy, and worthless
-// as evidence, because a header is something the client writes. The socket address cannot
-// be forged by the client, so it is recorded alongside — and when the two disagree, the
-// row says so. An audit trail that can be authored by the party under investigation is
-// not an audit trail.
 import { db, persist } from '../db.js';
 import { models } from '../db/models.js';
 import { uuid } from '../util/crypto.js';
 
-// Actions that are worth waking somebody for. Each raises a notification as well as a row,
-// because a log nobody reads is a log that reports a breach three weeks late.
 const ALERTABLE = new Set([
   'AUTH_TOKEN_REUSE',
   'AUTH_LOCKOUT',
@@ -39,7 +29,6 @@ export function record(req, { action, entity, entityId, label, before = null, af
     after,
     meta,
     ip: req.ip || socketIp || '127.0.0.1',
-    // The unforgeable one, and the header it disagreed with when it did.
     socketIp,
     forwardedFor: forwarded && socketIp && !String(forwarded).includes(socketIp) ? forwarded : null,
     userAgent: String(req.get?.('user-agent') || 'worker').slice(0, 300),
@@ -68,8 +57,6 @@ export function notify({ userId = null, level = 'info', title, body, link = null
   return n;
 }
 
-// A security-relevant event: recorded, and surfaced to administrators rather than left in
-// a log for somebody to find later.
 export function alert(req, event) {
   const entry = record(req, event);
   if (ALERTABLE.has(event.action)) {
@@ -83,8 +70,6 @@ export function alert(req, event) {
   return entry;
 }
 
-// Retention (§12.6). Rows older than the window are deleted from MongoDB outright — the
-// in-memory tail is display only and shrinks on its own.
 export async function sweepAudit(days) {
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
   const out = await models.activityLog.deleteMany({ timestamp: { $lt: cutoff } });

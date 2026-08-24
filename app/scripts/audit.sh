@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-#
-# The check that belongs in CI, and the one to run before a deploy.
-#
-# Three things, in the order that catches the most for the least time:
-#
-#   1. Known vulnerabilities in the dependency tree that actually ships.
-#   2. Secrets that have been committed. `.gitignore` covers the known names, which is
-#      exactly why the failure mode is a *new* file nobody thought to add to it.
-#   3. The configuration mistakes that turn a hardened build back into an open one.
-#
-# Exits non-zero on anything it considers a release blocker.
 
 set -uo pipefail
 
@@ -24,17 +13,13 @@ bad()     { printf '  \033[31m✗\033[0m %s\n' "$1"; fail=$((fail + 1)); }
 meh()     { printf '  \033[33m!\033[0m %s\n' "$1"; warn=$((warn + 1)); }
 ok()      { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 
-# ── 1. Dependencies ─────────────────────────────────────────────────────────
 section 'Dependencies'
-# Production only. A vulnerability in a build-time tool is worth knowing about and is not
-# the same class of thing as one in code that serves requests.
 if npm audit --omit=dev --audit-level=high >/dev/null 2>&1; then
   ok 'no high or critical advisories in the runtime tree'
 else
   bad 'npm audit reports high/critical advisories — run: npm audit --omit=dev'
 fi
 
-# ── 2. Secrets ──────────────────────────────────────────────────────────────
 section 'Secrets'
 if git -C "$here/.." rev-parse >/dev/null 2>&1; then
   tracked="$(git -C "$here/.." ls-files | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|serviceaccount.*\.json$|_rsa$' | grep -v '\.env\.example$' || true)"
@@ -45,11 +30,6 @@ if git -C "$here/.." rev-parse >/dev/null 2>&1; then
     ok 'no credential files tracked'
   fi
 
-  # The high-signal shapes. Deliberately few patterns: a scanner that cries wolf is turned
-  # off within a week.
-  # Each pattern requires enough real key material to rule out the documentation form —
-  # `MIIE...` in a README is an illustration, not a leak, and a scanner that flags it is a
-  # scanner people learn to ignore.
   leaked="$(git -C "$here/.." grep -nIE '(AIza[0-9A-Za-z_-]{35}|GOCSPX-[0-9A-Za-z_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^A-Za-z0-9]{0,4}[A-Za-z0-9+/=]{40,}|mongodb(\+srv)?://[^:[:space:]]+:[^@[:space:]]{6,}@|1//[0-9A-Za-z_-]{30,})' -- . ':(exclude)*.example' ':(exclude)*SECURITY.md' ':(exclude)*audit.sh' 2>/dev/null || true)"
   if [[ -n "$leaked" ]]; then
     bad 'credential-shaped strings in tracked files:'
@@ -66,7 +46,6 @@ if [[ -f .env ]]; then
   if [[ "$perms" == "600" ]]; then ok '.env is 600'; else bad ".env is mode $perms — run: chmod 600 .env"; fi
 fi
 
-# ── 3. Configuration ────────────────────────────────────────────────────────
 section 'Configuration'
 value() { sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1; }
 
@@ -106,7 +85,6 @@ if [[ -f .env ]]; then
   fi
 fi
 
-# ── 4. The things that must not come back ───────────────────────────────────
 section 'Regressions'
 grep -q 'contentSecurityPolicy: false' server/src/index.js 2>/dev/null \
   && bad 'the content security policy has been disabled again in index.js' \

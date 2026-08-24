@@ -1,9 +1,5 @@
-// Synthetic media generation for the seeded library. The prototype stores REAL bytes in
-// the object store, so preview, waveform scrubbing, Range streaming and checksum drift
-// detection all exercise the genuine code path rather than a mock.
 import { CONTROLLED_TAGS } from '../catalogue.js';
 
-// ── Cover art / banners: deterministic SVG in the brand palette ──────────────
 const PALETTES = [
   ['#5546E8', '#8B6CFF'],
   ['#FF9E44', '#E07A18'],
@@ -44,20 +40,11 @@ function escapeXml(s) {
   return String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 }
 
-// ── Audio: a real, playable 8-bit PCM WAV so <audio> and the waveform work ───
 export function wav({ seconds = 6, seed = 'x', sampleRate = 8000 }) {
   const n = Math.floor(seconds * sampleRate);
   const data = Buffer.alloc(n);
   const h = hashInt(seed);
 
-  // The seed has to reach every part of the waveform, not just pick from a small menu.
-  //
-  // An earlier version chose a root from `h % 8` and an offset from `h % 3`, which is 24
-  // distinct tunes in total — so with twelve songs in the seeded library, two of them were
-  // certain to come out byte-for-byte identical. That is not a cosmetic problem: the
-  // duplicate scan compares the sha256 Google computes, correctly reported the collision,
-  // and the demo opened on two unrelated songs presented as copies of each other. Seeded
-  // data that lies to the feature it is meant to demonstrate is worse than no data.
   const root = 150 + (h % 977) * 0.31;
   const notes = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888, 2];
   const rotate = h % notes.length;
@@ -89,7 +76,6 @@ export function wav({ seconds = 6, seed = 'x', sampleRate = 8000 }) {
   return Buffer.concat([header, data]);
 }
 
-// ── Documents: plain-text lyric and credit sheets ────────────────────────────
 export function lyricsDoc({ title, artist }) {
   const lines = [
     `${title.toUpperCase()}`,
@@ -127,8 +113,6 @@ export function creditsDoc({ title, artist, isrc }) {
   );
 }
 
-// ── Video: a tiny placeholder payload. Bytes are real (so size/ETag/Range/drift
-// all behave), but no decodable stream is synthesised — the UI shows a poster.
 export function videoPlaceholder({ seed, sizeKb = 96 }) {
   const h = hashInt(seed);
   const buf = Buffer.alloc(sizeKb * 1024);
@@ -137,10 +121,6 @@ export function videoPlaceholder({ seed, sizeKb = 96 }) {
   return buf;
 }
 
-// ── PDF: a real, openable PDF 1.4 file ───────────────────────────────────────
-// Written by hand rather than pulled from a library, for the same reason the Drive client and
-// the JWT signer are: the preview panel has to open a genuine document, and the whole
-// server still installs with two packages.
 const pdfEscape = (s) => String(s).replace(/[\\()]/g, (c) => `\\${c}`);
 
 export function pdfDoc({ title, lines = [], subtitle = '' }) {
@@ -176,7 +156,6 @@ export function pdfDoc({ title, lines = [], subtitle = '' }) {
   return Buffer.from(out, 'latin1');
 }
 
-// ── ZIP writer (stored, no compression) — the container under every OOXML file ──
 const CRC_TABLE = (() => {
   const t = new Int32Array(256);
   for (let n = 0; n < 256; n += 1) {
@@ -205,8 +184,8 @@ export function zip(entries) {
     const head = Buffer.alloc(30);
     head.writeUInt32LE(0x04034b50, 0);
     head.writeUInt16LE(20, 4);
-    head.writeUInt16LE(0, 8); // stored
-    head.writeUInt16LE(0x21, 12); // fixed date, so the bytes are deterministic
+    head.writeUInt16LE(0, 8);
+    head.writeUInt16LE(0x21, 12);
     head.writeUInt32LE(crc, 14);
     head.writeUInt32LE(data.length, 18);
     head.writeUInt32LE(data.length, 22);
@@ -238,7 +217,6 @@ export function zip(entries) {
   return Buffer.concat([...local, dirBuf, end]);
 }
 
-// ── Excel: a real .xlsx, opened by Excel, Sheets, Numbers and the preview panel ──
 export function xlsxDoc({ sheetName = 'Sheet1', rows = [] }) {
   const col = (n) => {
     let s = '';
@@ -282,7 +260,6 @@ export function xlsxDoc({ sheetName = 'Sheet1', rows = [] }) {
   ]);
 }
 
-// ── Word: a real .docx ───────────────────────────────────────────────────────
 export function docxDoc({ paragraphs = [] }) {
   const body = paragraphs
     .map((text) => {

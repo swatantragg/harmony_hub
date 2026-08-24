@@ -1,4 +1,3 @@
-// Authentication + authorisation middleware chain (§9.3, §12.2).
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { verifyJwt, verifyPassword } from '../util/crypto.js';
@@ -15,30 +14,18 @@ export function problem(res, status, title, detail, extra = {}) {
   });
 }
 
-// The address the socket actually came from, kept separately from req.ip.
-//
-// req.ip is derived from X-Forwarded-For according to the trust-proxy setting, which is
-// right for rate limiting behind a known proxy and wrong for an audit trail: a header is
-// something the client writes. Both are recorded, and the socket address is the one that
-// cannot be forged.
 export function clientAddress(req, _res, next) {
   req.socketIp = req.socket?.remoteAddress ?? null;
   req.forwardedFor = String(req.get('x-forwarded-for') || '').slice(0, 200) || null;
   next();
 }
 
-// A token is only as good as the account behind it *now*. Every field checked here is
-// re-read from the catalogue on every request, so suspending an account, changing its
-// role or changing its password takes effect on the next call rather than at the end of
-// the token's lifetime.
 function resolve(req) {
   const header = req.get('authorization') || '';
   const claims = verifyJwt(header.replace(/^Bearer\s+/i, ''));
   if (!claims) return null;
   const user = db.users.find((u) => u._id === claims.sub && u.status === 'active');
   if (!user) return null;
-  // The session generation. Bumped by a password change, a suspension, a role change and
-  // "sign out everywhere" — every token minted before the bump stops verifying here.
   if (Number(claims.tv ?? 0) !== Number(user.tokenVersion ?? 0)) return null;
   return user;
 }
@@ -48,9 +35,6 @@ const identify = (user) => ({
   tokenVersion: Number(user.tokenVersion ?? 0),
 });
 
-// The normal gate. An account that still holds the password an administrator handed over
-// gets no further than here: the token is valid, but every route except the two below is
-// closed until a password of the person's own is set.
 export function authenticate(req, res, next) {
   const user = resolve(req);
   if (!user) return problem(res, 401, 'Unauthorized', 'A valid access token is required.');
@@ -65,8 +49,6 @@ export function authenticate(req, res, next) {
   next();
 }
 
-// The same check without the password gate, for the two routes a person with a starting
-// password must still be able to reach: reading their own account, and replacing it.
 export function authenticatePending(req, res, next) {
   const user = resolve(req);
   if (!user) return problem(res, 401, 'Unauthorized', 'A valid access token is required.');
@@ -74,16 +56,12 @@ export function authenticatePending(req, res, next) {
   next();
 }
 
-// Identifies the caller when a token is present, and lets them through when it is not.
-// Used by the public share surface, where one URL serves an anonymous partner, a signed-in
-// editor and a named recipient — and the share record decides which of the three is allowed.
 export function optionalAuthenticate(req, _res, next) {
   const user = resolve(req);
   req.user = user && !user.mustChangePassword ? identify(user) : null;
   next();
 }
 
-// Permissions are resolved server-side on every request — never carried in the token.
 export function requires(permission) {
   return (req, res, next) => {
     if (!can(req.user.role, permission)) {
@@ -98,19 +76,6 @@ export function requires(permission) {
   };
 }
 
-// ── Step-up authentication (§12.2) ──────────────────────────────────────────
-//
-// For the handful of operations that destroy data no backup can return: purging an asset,
-// emptying the Drive trash, changing somebody's role. A valid session is not enough,
-// because the threat being defended against is a session that was not opened by its
-// owner — a borrowed laptop, a stolen token, a hijacked tab.
-//
-// Two ways to satisfy it, and both end at the same place — the account's own password:
-//
-//   · POST /api/auth/step-up with the password, then send the returned ticket in
-//     `x-step-up` for a few minutes. This is what the UI does, so a person confirming
-//     three deletions types their password once.
-//   · Put `confirmPassword` in the request body. Simpler for a script or a curl.
 
 const stepUpKey = () => crypto.createHmac('sha256', JWT_SECRET).update('step-up-v1').digest();
 

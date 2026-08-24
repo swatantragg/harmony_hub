@@ -1,22 +1,12 @@
-// Pagination, in the shape a long list actually needs.
-//
-// "Show more" is fine for a feed and wrong for a catalogue: it can only move forwards, it
-// forgets where you were the moment you navigate away, and reaching page 10 means pressing
-// it nine times. This does the three things that replaces — jump to any page directly,
-// choose how many rows to load, and say plainly which slice of the whole you are looking at.
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Select } from './Select';
 
-/** 0 means "every row" — a real choice on a library this size, and named as such. */
 export const PAGE_SIZES = [50, 100, 200, 250, 0] as const;
 export const ALL_ROWS = 0;
 
 const sizeLabel = (n: number) => (n === ALL_ROWS ? 'All rows' : `${n} rows`);
 
-// Which page numbers to render. Always the first, the last, and a window around the
-// current one — with gaps marked rather than silently skipped, so the scale of the list
-// stays visible even when most of it is not listed.
 function pageNumbers(page: number, pages: number): (number | 'gap')[] {
   if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
   const out: (number | 'gap')[] = [1];
@@ -38,7 +28,6 @@ export function Pagination({
   onPage: (page: number) => void;
   onPageSize: (size: number) => void;
   noun?: string;
-  /** For nouns that do not pluralise by adding an s — "entry" becomes "entries". */
   nounPlural?: string;
 }) {
   const plural = nounPlural ?? `${noun}s`;
@@ -47,8 +36,6 @@ export function Pagination({
   const first = total === 0 ? 0 : showingAll ? 1 : (page - 1) * pageSize + 1;
   const last = showingAll ? total : Math.min(total, page * pageSize);
 
-  // The jump box is free text while being typed — clamping every keystroke makes "12"
-  // impossible to type on a 9-page list, because "1" is committed before the "2" arrives.
   const [jump, setJump] = useState(String(page));
   useEffect(() => { setJump(String(page)); }, [page]);
 
@@ -107,7 +94,6 @@ export function Pagination({
             <ChevronsRight size={16} />
           </button>
 
-          {/* The point of the whole component: page 1 to page 10 without nine clicks. */}
           <label className="pagination-jump">
             <span className="t-small">Go to</span>
             <input

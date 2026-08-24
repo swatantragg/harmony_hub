@@ -1,7 +1,3 @@
-// Signing and password primitives (§12.1).
-//
-// bcrypt at cost 12 for passwords, HS256 JWTs signed with a secret that comes from the
-// environment — and, in a deployed architecture, from a secrets manager.
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -16,22 +12,14 @@ export function hmac(key, value) {
   return crypto.createHmac('sha256', key).update(value).digest('base64url');
 }
 
-// Compares two strings without leaking, through timing, how much of a prefix matched.
-// Used wherever a caller-supplied value is checked against a stored secret — a share
-// passcode, a session token hash — because the naive === does leak exactly that.
 export function safeEqual(a, b) {
   const left = Buffer.from(String(a ?? ''));
   const right = Buffer.from(String(b ?? ''));
-  // timingSafeEqual throws on a length mismatch, so both are hashed to a fixed width
-  // first: the comparison then stays constant-time whatever was passed in.
   const ha = crypto.createHash('sha256').update(left).digest();
   const hb = crypto.createHash('sha256').update(right).digest();
   return crypto.timingSafeEqual(ha, hb);
 }
 
-// ── JWT (HS256) ─────────────────────────────────────────────────────────────
-// The token carries `sub`, `role` and a display name only. Permissions are never carried
-// in a token — they are resolved server-side from the role on every request (§12.1).
 
 export function signJwt(payload, ttlSec = ACCESS_TTL_SEC) {
   return jwt.sign(payload, JWT_SECRET, {
@@ -50,17 +38,12 @@ export function verifyJwt(value) {
       algorithms: ['HS256'],
       issuer: 'gcloud',
       audience: 'gcloud-api',
-      // Tokens minted before `aud` existed are refused rather than grandfathered: the
-      // whole point of the claim is that it cannot be optional.
     });
   } catch {
     return null;
   }
 }
 
-// ── Passwords (bcrypt, cost 12) ─────────────────────────────────────────────
-// Async on purpose: a cost-12 hash is ~250 ms of CPU, and doing that synchronously would
-// stall every other request in the process for the duration of one sign-in.
 
 export function hashPassword(plain) {
   return bcrypt.hash(String(plain), BCRYPT_ROUNDS);

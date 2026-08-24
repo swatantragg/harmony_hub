@@ -1,9 +1,3 @@
-// Choose an existing folder or make one on the spot.
-//
-// A folder here is a real Google Drive folder. Creating one creates it in the Drive;
-// putting a file in one re-parents the Drive file. Neither copies a byte — Drive moves a
-// file by updating an index entry — so this is still free and still freely undoable, but
-// now the Drive and the app show the same thing to anybody who opens either.
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus } from 'lucide-react';
@@ -34,8 +28,6 @@ export function FolderPicker({
           }}
           options={[
             { value: '', label: 'No folder' },
-            // Drive folders nest, so a flat list of names hides which "Masters" is which.
-            // The full path answers that properly, where the old indent could only hint.
             ...(folders ?? []).map((f) => ({
               value: f._id,
               label: f.name,
@@ -65,9 +57,7 @@ export function NewFolderDialog({
   onClose: () => void;
   onCreated: (f: Folder) => void;
   defaultName?: string;
-  /** Creates the folder inside this one. Null makes it a top-level folder. */
   parentId?: string | null;
-  /** Only for the sentence in the header — the id is what the server acts on. */
   parentName?: string;
 }) {
   const [name, setName] = useState(defaultName);
@@ -93,9 +83,6 @@ export function NewFolderDialog({
       });
       onCreated(folder);
     },
-    // A duplicate name is the one refusal the reader can answer by insisting, so only that
-    // one turns the button into "Create it anyway". Offering it for a 503 from Drive or a
-    // rejected field just meant pressing it a second time and getting the same refusal.
     onError: (err: Error) => {
       setConflict(err.message);
       setAllowDuplicate(err instanceof ApiError && err.status === 409);

@@ -16,12 +16,6 @@ import { useQueue } from '../features/upload/useUploadQueue';
 
 interface NavEntry { to: string; label: string; icon: typeof Home; perm?: string; end?: boolean }
 
-// Home *is* search — there is one search bar in the product and it lives there — so there
-// is no second entry pointing at a second one.
-//
-// Below it, the order is what people reach for most: get a file in, find where files live,
-// send one out. Artists, songs and duplicates are how the library is organised rather than
-// how it is worked, so they sit under those.
 const PRIMARY: NavEntry[] = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/upload', label: 'Upload', icon: UploadCloud, perm: 'asset:upload' },
@@ -29,8 +23,6 @@ const PRIMARY: NavEntry[] = [
   { to: '/shares', label: 'Share links', icon: Share2, perm: 'share:create' },
 ];
 const LIBRARY: NavEntry[] = [
-  // The whole library as one table, and the first entry here because it is the only view
-  // that answers "what do we hold" in a single screen rather than by browsing.
   { to: '/master-log', label: 'Master log', icon: Table2 },
   { to: '/artists', label: 'Artists', icon: Users },
   { to: '/songs', label: 'Songs', icon: Disc3 },
@@ -53,9 +45,6 @@ export function Shell() {
   const queue = useQueue((s) => s.items);
   const uploading = queue.filter((i) => ['UPLOADING', 'FINALISING', 'HASHING'].includes(i.state)).length;
 
-  // Off-canvas navigation, on a phone, has to behave like every other off-canvas menu:
-  // it closes when the route changes, when Escape is pressed, and when anything outside
-  // it is tapped. The page behind it must not scroll while it is open.
   useEffect(() => { setNavOpen(false); }, [location.pathname]);
 
   useEffect(() => {
@@ -79,7 +68,6 @@ export function Shell() {
     refetchInterval: 60_000,
   });
 
-  // Global shortcuts. Discoverable via the "?" panel and the palette footer.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName);
@@ -174,8 +162,6 @@ export function Shell() {
             onOpenStorage={() => navigate('/admin/storage')}
           />
 
-          {/* Indigo, not spark: the brand keeps one warm signal per view, and each page
-              spends it on its own most important action. */}
           {can('asset:upload') && (
             <button className="btn btn-primary" data-tour="upload" onClick={() => navigate('/upload')} aria-label="Upload">
               <UploadCloud size={16} />
@@ -186,8 +172,6 @@ export function Shell() {
 
         <Outlet />
 
-        {/* Build marker, as the page footer — the last thing in the flow, so it is reached
-            by scrolling to the bottom rather than floating over the content. */}
         <footer className="build-tag">{BUILD_TAG}</footer>
       </div>
 
@@ -266,8 +250,6 @@ function NotificationBell({
         )}
       </button>
       {open && (
-        // Anchored to the bell, which on a phone sits about 60px from the right edge — so
-        // a fixed 330px panel hangs off the screen. It takes the width it can get.
         <div
           className="panel"
           style={{

@@ -17,17 +17,12 @@ export function EditMetadataDialog({ asset, onClose }: { asset: Asset; onClose: 
   const [version, setVersion] = useState(asset.version);
   const [description, setDescription] = useState(asset.description);
   const [tags, setTags] = useState<string[]>(asset.tags);
-  // The file's own language, not the resolved one — editing here must not silently copy
-  // the release's answer onto the file and make it look like somebody chose it.
   const [language, setLanguage] = useState(asset.languageSource === 'file' ? asset.language ?? '' : '');
   const [folderId, setFolderId] = useState(asset.folderId ?? '');
   const qc = useQueryClient();
   const toast = useToast();
 
   const { data: typeData } = useAssetTypes();
-  // Gated on the type selected in this dialog rather than the one on the record: re-typing
-  // a reel as a cover has to take the field away in the same breath, or somebody edits a
-  // language onto a file that will drop it the moment they save.
   const family = typeData?.data.find((t) => t.type === type)?.family ?? familyOf(type);
   const speaks = carriesLanguage(family);
 
@@ -36,8 +31,6 @@ export function EditMetadataDialog({ asset, onClose }: { asset: Asset; onClose: 
   const save = useMutation({
     mutationFn: async () => {
       await api(`/assets/${asset.assetId}`, { method: 'PATCH', body: { type, version, description, tags, language: speaks ? language : '' } });
-      // Membership is a separate, tiny call — moving a file between folders is a
-      // catalogue update and never touches the stored object.
       if (folderChanged) {
         await api(`/folders/${folderId || 'none'}/assets`, { method: 'POST', body: { assetIds: [asset.assetId] } });
       }
@@ -71,7 +64,6 @@ export function EditMetadataDialog({ asset, onClose }: { asset: Asset; onClose: 
       <div className="stack-4">
         <div className="row" style={{ gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <TypePicker value={type} onChange={setType} label="Asset type" />
-          {/* 150px beside the type picker, full width once it has wrapped below it. */}
           <div className="field" style={{ flex: '1 1 150px', minWidth: 150 }}>
             <label className="label">Version label</label>
             <Select
@@ -89,8 +81,6 @@ export function EditMetadataDialog({ asset, onClose }: { asset: Asset; onClose: 
             onChange={setFolderId}
             hint="Move this file into a folder, or take it out. Google Drive re-parents it — no bytes are copied, however large it is."
           />
-          {/* Audio and video only. Artwork and paperwork have no language of their own —
-              what the master log shows for them is inherited from their release. */}
           {speaks && (
           <LanguagePicker
             value={language}

@@ -1,27 +1,3 @@
-// The Master Log — the library's register of record (§10.6, §10.11).
-//
-// This is not the activity log. The activity log answers "what happened, and who did it";
-// it is a stream of events and it grows forever. The master log answers the other half of
-// the question an auditor, a label or an investor actually asks: "what do you *have*, and
-// what is the state of each one of them, right now." One row per catalogued file, every
-// field the catalogue holds about it, laid out as a spreadsheet rather than as cards.
-//
-// Why it is a screen and not only an export. The columns a person needs are never the same
-// two weeks running — a delivery to a distributor wants ISRC, title, artist and checksum; a
-// storage audit wants Drive ids, sizes and verification dates; a rights conversation wants
-// uploader, folder and share history. So the column set is chosen on the screen, the same
-// set is what leaves in the file, and the file records which columns were left out.
-//
-// Three properties this deliberately holds to:
-//
-//   · What is exported is what was on screen. The scope is stated in words on the button
-//     ("these 412", "everything"), the filters travel on the query string, and the
-//     provenance sheet in the workbook repeats them back.
-//   · Every value is rendered once, here. A row leaves this file display-ready — a size is
-//     already "1.4 GB", a boolean is already "Yes" — so the table and the spreadsheet can
-//     never disagree about what a field says. The few genuinely numeric columns stay
-//     numbers so a spreadsheet can sum and sort them.
-//   · No spreadsheet dependency. util/xlsx.js writes the .xlsx; CSV is twenty lines.
 import express from 'express';
 import { db, allAssets } from '../db.js';
 import { authenticate, problem } from '../middleware/auth.js';
@@ -33,11 +9,6 @@ import { safeFilename, workbook } from '../util/xlsx.js';
 export const masterLogRouter = express.Router();
 masterLogRouter.use(authenticate);
 
-/* ── Formatting ──────────────────────────────────────────────────────────── */
-//
-// The same rules as the client's lib/format.ts, restated here rather than reached for
-// across the wire boundary, so a row is complete when it leaves the server and the export
-// never has to re-derive anything the screen already decided.
 
 const bytesText = (n) => {
   if (n == null) return '';
@@ -56,14 +27,10 @@ const durationText = (sec) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
-// Yes/No rather than TRUE/FALSE: a spreadsheet coerces the latter into a boolean and then
-// a locale decides how to print it, which is how an export ends up saying VERDADERO.
 const yesNo = (v) => (v ? 'Yes' : 'No');
 
 const list = (values) => (Array.isArray(values) ? values.filter(Boolean).join(', ') : '');
 
-// Plain-language status, mirroring the client's STATUS_COPY labels so the exported file
-// reads the same as the screen it came from.
 const STATUS_LABEL = {
   AVAILABLE: 'Available',
   UNVERIFIED: 'Not checked',
@@ -73,17 +40,8 @@ const STATUS_LABEL = {
   MISMATCH: 'Mismatch',
 };
 
-/* ── Columns ─────────────────────────────────────────────────────────────── */
-//
-// One registry, and it is the only place a column is described. The client asks for it at
-// load rather than carrying its own copy — two lists of sixty columns drift within a
-// release, and the failure mode is a spreadsheet whose header names the wrong data.
-//
-// `num` marks a column that must stay a real number: it sorts numerically here and sums in
-// Excel there. Everything else is text on purpose, including ids that look numeric.
 
 export const COLUMNS = [
-  // Identity — who and what this file is.
   { key: 'rowNo', header: '#', group: 'Identity', width: 6, num: true, always: true },
   { key: 'title', header: 'Title', group: 'Identity', width: 42, always: true },
   { key: 'artist', header: 'Artist', group: 'Identity', width: 24 },
@@ -91,7 +49,6 @@ export const COLUMNS = [
   { key: 'assetId', header: 'Asset ID', group: 'Identity', width: 38 },
   { key: 'originalName', header: 'Original filename', group: 'Identity', width: 38 },
 
-  // Classification — the catalogue's own vocabulary (§10.2).
   { key: 'type', header: 'Asset type', group: 'Classification', width: 22 },
   { key: 'family', header: 'Family', group: 'Classification', width: 11 },
   { key: 'format', header: 'Format', group: 'Classification', width: 11 },
@@ -101,7 +58,6 @@ export const COLUMNS = [
   { key: 'versionGroupId', header: 'Version group', group: 'Classification', width: 38 },
   { key: 'supersedes', header: 'Supersedes', group: 'Classification', width: 38 },
 
-  // State — is the file actually there, and when was that last proven.
   { key: 'status', header: 'Status', group: 'State', width: 15, always: true },
   { key: 'statusCode', header: 'Status code', group: 'State', width: 14 },
   { key: 'lifecycle', header: 'Lifecycle', group: 'State', width: 18 },
@@ -112,14 +68,12 @@ export const COLUMNS = [
   { key: 'checkMethod', header: 'Check method', group: 'State', width: 16 },
   { key: 'hoursSinceCheck', header: 'Hours since check', group: 'State', width: 16, num: true },
 
-  // Placement — where it sits, in the catalogue and in Drive.
   { key: 'placement', header: 'Filed as', group: 'Placement', width: 16 },
   { key: 'folder', header: 'Folder', group: 'Placement', width: 26 },
   { key: 'folderPath', header: 'Folder path', group: 'Placement', width: 40 },
   { key: 'folderTags', header: 'Folder tags', group: 'Placement', width: 26 },
   { key: 'folderId', header: 'Folder ID', group: 'Placement', width: 38 },
 
-  // Storage — the bytes themselves.
   { key: 'size', header: 'Size', group: 'Storage', width: 12 },
   { key: 'sizeBytes', header: 'Size (bytes)', group: 'Storage', width: 15, num: true },
   { key: 'mimeType', header: 'MIME type', group: 'Storage', width: 26 },
@@ -135,14 +89,12 @@ export const COLUMNS = [
   { key: 'trashedInDrive', header: 'Trashed in Drive', group: 'Storage', width: 15 },
   { key: 'googleNative', header: 'Google-native', group: 'Storage', width: 14 },
 
-  // Integrity — what makes a claim about this file provable.
   { key: 'sha256', header: 'SHA-256', group: 'Integrity', width: 66 },
   { key: 'md5', header: 'MD5', group: 'Integrity', width: 34 },
   { key: 'sha1', header: 'SHA-1', group: 'Integrity', width: 42 },
   { key: 'linkedCopy', header: 'Linked copy', group: 'Integrity', width: 12 },
   { key: 'linkedTo', header: 'Linked to', group: 'Integrity', width: 38 },
 
-  // Release — what the song this file belongs to is.
   { key: 'tags', header: 'Tags', group: 'Release', width: 32 },
   { key: 'description', header: 'Description', group: 'Release', width: 46 },
   { key: 'language', header: 'Language', group: 'Release', width: 13 },
@@ -154,7 +106,6 @@ export const COLUMNS = [
   { key: 'artistId', header: 'Artist ID', group: 'Release', width: 38 },
   { key: 'songId', header: 'Song ID', group: 'Release', width: 38 },
 
-  // Custody — who put it here, and when anything last moved.
   { key: 'uploadedBy', header: 'Uploaded by', group: 'Custody', width: 22 },
   { key: 'uploadedById', header: 'Uploader account ID', group: 'Custody', width: 38 },
   { key: 'createdAt', header: 'Added to library', group: 'Custody', width: 22 },
@@ -164,7 +115,6 @@ export const COLUMNS = [
   { key: 'driveCreatedAt', header: 'Created in Drive', group: 'Custody', width: 22 },
   { key: 'driveModifiedAt', header: 'Modified in Drive', group: 'Custody', width: 22 },
 
-  // Distribution — where this file has been sent.
   { key: 'shareLinks', header: 'Share links', group: 'Distribution', width: 12, num: true },
   { key: 'activeShares', header: 'Active links', group: 'Distribution', width: 12, num: true },
   { key: 'externalDownloads', header: 'External downloads', group: 'Distribution', width: 17, num: true },
@@ -174,16 +124,11 @@ export const COLUMNS = [
 const COLUMN_INDEX = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
 const GROUPS = [...new Set(COLUMNS.map((c) => c.group))];
 
-// What the table opens on. Wide enough to read as a register rather than a list, narrow
-// enough that the first screenful is legible on a laptop without scrolling sideways.
-// Everything else is one click away in the column picker.
 const DEFAULT_COLUMNS = [
   'rowNo', 'title', 'artist', 'song', 'type', 'family', 'status', 'version',
   'folder', 'size', 'duration', 'tags', 'language', 'uploadedBy', 'createdAt', 'sha256', 'driveLink',
 ];
 
-// A preset is a question somebody actually arrives with. Naming them is what stops the
-// column picker from being sixty checkboxes nobody reads.
 const PRESETS = [
   { id: 'default', label: 'Standard register', hint: 'The columns most people need first', columns: DEFAULT_COLUMNS },
   {
@@ -207,10 +152,7 @@ const PRESETS = [
   { id: 'everything', label: 'Every column', hint: `All ${COLUMNS.length} fields the catalogue holds`, columns: COLUMNS.map((c) => c.key) },
 ];
 
-/* ── Row construction ────────────────────────────────────────────────────── */
 
-// "Launch kits / Dil Se / Stills" — the path a person recognises, built from the parent
-// pointers. Hop-capped, because a cycle in hand-edited data must not hang a request.
 function folderPath(folderId) {
   const names = [];
   let id = folderId;
@@ -223,8 +165,6 @@ function folderPath(folderId) {
   return names.join(' / ');
 }
 
-// Share history, indexed once per request rather than scanned per row: a library of 40,000
-// files and 300 links would otherwise be twelve million comparisons per page.
 function shareIndex() {
   const now = Date.now();
   const byAsset = new Map();
@@ -247,9 +187,6 @@ function shareIndex() {
 
 const EMPTY_SHARE = { links: 0, active: 0, downloads: 0, lastSharedAt: null };
 
-// A folder link puts every file under that folder in front of an outsider, so a register
-// that counted only asset-level links would understate exposure — which is the one number
-// on this row somebody is likely to act on.
 const mergeShares = (a, b) => ({
   links: a.links + b.links,
   active: a.active + b.active,
@@ -268,8 +205,6 @@ function buildRow(item, shares) {
   const status = availability.status ?? 'UNVERIFIED';
 
   return {
-    // Sidecars, underscore-prefixed so they can never collide with a column key. The table
-    // needs the raw status for its badge and the ids for its links; none is a column.
     _id: a.assetId,
     _status: status,
     _family: a.family,
@@ -280,7 +215,7 @@ function buildRow(item, shares) {
     _tags: a.tags ?? [],
     _deleted: Boolean(a.deletedAt),
 
-    rowNo: 0, // assigned after ordering — a position in this view, not an identity
+    rowNo: 0,
     title: a.displayName ?? '',
     artist: a.artistName ?? '',
     song: a.songTitle ?? '',
@@ -335,9 +270,6 @@ function buildRow(item, shares) {
 
     tags: list(a.tags),
     description: a.description ?? '',
-    // Resolved in services/assets.js: this file's own language if it has one, otherwise
-    // the release's. Blank means nobody has stated one — which the register says plainly
-    // rather than filling in a plausible guess.
     language: a.language ?? '',
     languageSource: a.languageSource === 'file' ? 'This file' : a.languageSource === 'release' ? 'The release' : '',
     mood: a.mood ?? '',
@@ -363,26 +295,18 @@ function buildRow(item, shares) {
   };
 }
 
-/* ── Filtering ───────────────────────────────────────────────────────────── */
 
-// The facet value standing for "nothing recorded here". Artist and folder already used a
-// bare em dash inline; naming it keeps the three in step and makes "which files have no
-// language?" an answerable question rather than a gap in a dropdown.
 const NONE = '—';
 
 const asArray = (v) => (v == null || v === '' ? [] : Array.isArray(v) ? v : String(v).split(',').filter(Boolean));
 const one = (v) => (Array.isArray(v) ? v[0] : v);
 
-// The register defaults to what is live. A deleted row is still in the catalogue and still
-// matters to an audit — so it is one dropdown away rather than gone — but "how many files
-// do we hold" must not silently count the recycle bin.
 const LIFECYCLES = ['live', 'deleted', 'all'];
 
 function parseFilters(query) {
   const from = String(one(query.from) ?? '').trim();
   const to = String(one(query.to) ?? '').trim();
   const fromMs = from ? Date.parse(`${from}T00:00:00.000Z`) : null;
-  // Inclusive of the whole of the `to` day, which is what a person choosing a date means.
   const toMs = to ? Date.parse(`${to}T23:59:59.999Z`) : null;
   const lifecycle = String(one(query.lifecycle) ?? '');
   return {
@@ -408,9 +332,6 @@ function parseFilters(query) {
   };
 }
 
-// Free text searches the fields somebody actually pastes into a box — a filename, a title,
-// an artist, a tag, an id, a checksum. Checksums are in there because "is this file already
-// in the library?" is asked by pasting a hash, and nothing else answers it in one step.
 const haystack = (row) => [
   row.title, row.artist, row.song, row.originalName, row.type, row.family, row.format,
   row.tags, row.folder, row.folderPath, row.uploadedBy, row.assetId, row.driveFileId,
@@ -431,8 +352,6 @@ function matches(row, f) {
   if (f.version.length && !f.version.includes(row.version)) return false;
   if (f.placement.length && !f.placement.includes(row.placement)) return false;
   if (f.year.length && !f.year.includes(String(row.releaseYear ?? ''))) return false;
-  // Every chosen tag, not any of them: tags narrow, and two of them chosen together mean
-  // "both", which is the only reading that lets a tag filter converge on anything.
   if (f.tags.length && !f.tags.every((t) => row._tags.includes(t))) return false;
   if (f.shared === 'yes' && row.shareLinks === 0) return false;
   if (f.shared === 'active' && row.activeShares === 0) return false;
@@ -452,25 +371,16 @@ const MULTI = ['family', 'type', 'status', 'artist', 'folder', 'uploadedBy', 'ta
 const active = (f) =>
   Boolean(f.q || f.ids.length || f.shared || f.from || f.to || f.lifecycle !== 'live' || MULTI.some((k) => f[k].length));
 
-/* ── Ordering ────────────────────────────────────────────────────────────── */
-//
-// Every column sorts, in both directions, because a register whose order is fixed is a
-// register somebody re-sorts in Excel — and then the file and the screen disagree about
-// which rows are the first fifty.
 
 function sortRows(rows, key, dir) {
   const column = COLUMN_INDEX[key];
   if (!column || key === 'rowNo') {
-    // The default: newest first, which is how a register of arrivals is read.
     return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }
   const sign = dir === 'asc' ? 1 : -1;
   return rows.sort((a, b) => {
     const x = a[key];
     const y = b[key];
-    // Blanks sort last in both directions: an empty cell is not "smallest", it is absent,
-    // and burying the answer under 300 empty rows is the commonest complaint about an
-    // exported register.
     const xEmpty = x == null || x === '';
     const yEmpty = y == null || y === '';
     if (xEmpty && yEmpty) return 0;
@@ -481,7 +391,6 @@ function sortRows(rows, key, dir) {
   });
 }
 
-/* ── Facets and roll-ups ─────────────────────────────────────────────────── */
 
 function tally(rows, get) {
   const counts = new Map();
@@ -496,7 +405,6 @@ function tally(rows, get) {
     .sort((a, b) => b.count - a.count || String(a.value).localeCompare(String(b.value)));
 }
 
-// Grouped totals — the sheets that make the workbook a report rather than a data dump.
 function rollUp(rows, get, label) {
   const groups = new Map();
   for (const row of rows) {
@@ -523,7 +431,6 @@ function summarise(rows) {
     songs: new Set(rows.map((r) => r.songId).filter(Boolean)).size,
     folders: new Set(rows.map((r) => r.folderId).filter(Boolean)).size,
     available: byStatus.AVAILABLE ?? 0,
-    // The one figure here that means somebody has to do something today.
     needsAttention: (byStatus.MISSING ?? 0) + (byStatus.MISMATCH ?? 0) + (byStatus.TRASHED ?? 0),
     unchecked: byStatus.UNVERIFIED ?? 0,
     shared: rows.filter((r) => r.activeShares > 0).length,
@@ -532,10 +439,7 @@ function summarise(rows) {
   };
 }
 
-/* ── The register itself ─────────────────────────────────────────────────── */
 
-// Deleted rows are built into the source set and filtered by lifecycle afterwards, so the
-// recycle-bin view is a filter rather than a second code path.
 const buildAll = () => {
   const shares = shareIndex();
   return allAssets({ includeDeleted: true }).map((item) => buildRow(item, shares));
@@ -552,12 +456,7 @@ function view(query) {
   return { all, rows, filters, sort, dir };
 }
 
-// A page ceiling, for the same reason search has one: a request that costs nothing to make
-// and everything to answer is the shape of every denial of service. "All rows" on the
-// client asks for 5,000, which is what this allows and no more.
 const MAX_PAGE = 5_000;
-// An export is one response held whole in memory. A 50,000-row register with every column
-// is roughly 90 MB of XML, which is not a download, it is an outage.
 const MAX_EXPORT_ROWS = 25_000;
 
 masterLogRouter.get('/', (req, res) => {
@@ -569,9 +468,6 @@ masterLogRouter.get('/', (req, res) => {
 
   const { all, rows, filters, sort, dir } = view(req.query);
 
-  // Facet counts are taken over every row the register could show under the current
-  // lifecycle, not over the filtered set: a dropdown whose options vanish the moment one
-  // is chosen cannot be used to change your mind, which is most of what a filter is for.
   const universe = all.filter((row) => (
     filters.lifecycle === 'all' ? true : filters.lifecycle === 'deleted' ? row._deleted : !row._deleted
   ));
@@ -589,8 +485,6 @@ masterLogRouter.get('/', (req, res) => {
     groups: GROUPS,
     defaultColumns: DEFAULT_COLUMNS,
     presets: PRESETS,
-    // The summary describes the filtered set — the tiles have to agree with the table
-    // under them, or one of the two is lying.
     summary: summarise(rows),
     facets: {
       status: tally(universe, (r) => r._status),
@@ -605,16 +499,11 @@ masterLogRouter.get('/', (req, res) => {
       placement: tally(universe, (r) => r.placement),
       year: tally(universe, (r) => (r.releaseYear == null ? null : String(r.releaseYear))),
     },
-    // What the date pickers can usefully be bounded to.
     earliest: universe.reduce((min, r) => (r.createdAt && (!min || r.createdAt < min) ? r.createdAt : min), null),
   });
 });
 
-/* ── Export ──────────────────────────────────────────────────────────────── */
 
-// Which columns leave in the file. The screen sends what it is showing; anything the
-// caller does not name falls back to the default set, and `all` is spelled out so a
-// scripted caller can ask for the whole register without listing sixty keys.
 function chosenColumns(raw) {
   const asked = asArray(raw);
   if (asked.length === 1 && asked[0] === 'all') return COLUMNS;
@@ -622,17 +511,9 @@ function chosenColumns(raw) {
   return picked.length ? picked : DEFAULT_COLUMNS.map((k) => COLUMN_INDEX[k]);
 }
 
-// RFC 4180. Every field is quoted rather than only the ones that need it — a conditional
-// quote is one regex away from mangling the single row that contained a comma, and the
-// size difference is nothing next to being able to trust the file.
 const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const csvRow = (values) => values.map(csvCell).join(',');
 
-// An export takes its parameters from the query string or from a JSON body, and the two
-// are read identically. The body exists for one case: exporting a hand-picked selection.
-// Six hundred chosen rows is twenty-two kilobytes of asset ids, and a URL that long is
-// refused by proxies long before it reaches this process — so the screen POSTs the ids
-// instead, and everything else about the request is unchanged.
 const params = (req) => ({ ...req.query, ...(req.body ?? {}) });
 
 function exportContext(req) {
@@ -649,9 +530,6 @@ const stampedName = (filters, ext) => {
   return safeFilename(`gcloud-master-log${range}-${stamp}.${ext}`);
 };
 
-// The provenance rows. A register with no note of what was filtered out of it is a
-// register nobody should quote from — "we hold no masters for that artist" reads very
-// differently once you can see the export was narrowed to one folder.
 const provenance = (req, ctx, scope) => {
   const f = ctx.filters;
   const named = (label, values) => [label, values.length ? values.join(', ') : '— any —'];
@@ -687,8 +565,6 @@ const provenance = (req, ctx, scope) => {
   return details;
 };
 
-// Taking a copy of the whole register out of the building is worth a row of its own — the
-// same reasoning as the activity export, and for the same reader.
 const recordExport = (req, ctx, format, scope) => record(req, {
   action: 'MASTER_LOG_EXPORT',
   entity: 'masterLog',
@@ -774,7 +650,6 @@ const exportXlsx = (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
   res.setHeader('Content-Length', String(file.length));
-  // A generated report is never a cached one: the next request is a different moment.
   res.setHeader('Cache-Control', 'no-store');
   res.send(file);
 };
@@ -787,9 +662,6 @@ const exportCsv = (req, res) => {
     csvRow(ctx.columns.map((c) => c.header)),
     ...ctx.rows.map((row) => csvRow(ctx.columns.map((c) => row[c.key]))),
   ];
-  // The byte-order mark is what makes Excel on Windows read this as UTF-8 rather than as
-  // the system code page — the difference between "Ranjha" and mojibake for every export
-  // this library will ever produce.
   const body = Buffer.from(`\uFEFF${lines.join('\r\n')}\r\n`, 'utf8');
   const filename = stampedName(ctx.filters, 'csv');
   recordExport(req, ctx, 'csv', scope);

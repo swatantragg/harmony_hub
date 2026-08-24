@@ -1,12 +1,3 @@
-// Find duplicates from the command line (§10.12).
-//
-//   npm run dedupe                     every tier, human-readable
-//   npm run dedupe -- --level exact    only byte-identical files
-//   npm run dedupe -- --family Video   only video
-//   npm run dedupe -- --json           machine-readable, for piping somewhere
-//
-// Read-only. Nothing is trashed, linked or changed — resolving a group is a decision, and
-// decisions are made in the UI where the files can be compared side by side.
 import { connect, disconnect } from '../db/mongo.js';
 import { load } from '../db.js';
 import { scan } from '../services/dedupe.js';

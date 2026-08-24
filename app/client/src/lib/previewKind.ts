@@ -1,6 +1,3 @@
-// What kind of viewer a file needs. Decided from the MIME type first and the extension
-// second, because uploads from a browser sometimes arrive with a generic or missing type
-// while the name is always there.
 
 export type PreviewKind =
   | 'image' | 'audio' | 'video' | 'pdf'
@@ -50,15 +47,11 @@ export const extensionOf = (name: string) => (name.split('.').pop() ?? '').toLow
 
 export function previewKind(mimeType: string | null | undefined, name = ''): PreviewKind {
   const ext = extensionOf(name);
-  // Extension wins for the office formats: a .xlsx uploaded from some browsers arrives as
-  // application/zip or application/octet-stream, and the generic type would lose it.
   if (BY_EXT[ext] && ['sheet', 'word', 'slides', 'table'].includes(BY_EXT[ext])) return BY_EXT[ext];
   for (const [pattern, kind] of BY_MIME) if (pattern.test(mimeType ?? '')) return kind;
   return BY_EXT[ext] ?? 'binary';
 }
 
-// The formats the in-browser reader can genuinely open, as opposed to the legacy binary
-// ones (.xls, .doc, .ppt) that only a converter could handle.
 export const isOoxml = (name: string) => ['xlsx', 'xlsm', 'docx', 'pptx'].includes(extensionOf(name));
 
 export const KIND_LABEL: Record<PreviewKind, string> = {

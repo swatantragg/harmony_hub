@@ -24,13 +24,10 @@ import type { Folder, Family } from '../../lib/types';
 
 const FAMILY_ICON: Record<string, typeof Music2> = { Audio: Music2, Video: Film, Image: ImageIcon, Document: FileText };
 const FAMILY_ORDER: Family[] = ['Audio', 'Video', 'Image', 'Document'];
-// Plural, because a tab labels a group rather than a single thing.
 const FAMILY_LABEL: Record<Family, string> = {
   Audio: 'Audio', Video: 'Videos', Image: 'Images', Document: 'Documents',
 };
 
-// Alphabetical first and by default: a folder list is something people scan for a name
-// they already know, and any other default order makes that a hunt.
 const FOLDER_SORTS = [
   ['name', 'Name — A to Z'],
   ['nameDesc', 'Name — Z to A'],
@@ -42,12 +39,6 @@ const FOLDER_SORTS = [
 ] as const;
 type FolderSort = typeof FOLDER_SORTS[number][0];
 
-// Share, move, edit, delete — the four things you can do to a folder, offered identically
-// wherever a folder appears. Returns the menu entries and the dialogs they open, so a
-// caller renders `{dialogs}` once and hands `actions` to a RowMenu.
-//
-// The alternative — each screen wiring its own four useState flags and four dialogs — is
-// how the list and the detail page end up offering different subsets of the same verbs.
 function useFolderActions(folder: Folder | null, opts: { onDeleted?: () => void } = {}) {
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -84,10 +75,6 @@ function useFolderActions(folder: Folder | null, opts: { onDeleted?: () => void 
       label: 'Share folder',
       icon: <Share2 size={16} />,
       hidden: !can('share:create'),
-      // A share link covers the whole tree, so the count that decides whether there is
-      // anything to share is the deep one. Testing `assetCount` greyed this out on every
-      // folder that keeps its files in subfolders — which is most of them once a library
-      // has been organised.
       disabled: (folder.totalAssetCount ?? folder.assetCount) === 0,
       disabledReason: 'Nothing is filed in this folder or in any folder inside it yet.',
       onSelect: () => setSharing(true),
@@ -153,16 +140,11 @@ function useFolderActions(folder: Folder | null, opts: { onDeleted?: () => void 
   return { actions, dialogs, openMove: () => setMoving(true), openNewChild: () => setAddingChild(true) };
 }
 
-// A folder row that carries its own action menu. Used by the folder list and by the
-// "folders inside this one" section, so a subfolder offers exactly what a folder does.
 function FolderRow({ folder, onOpen }: { folder: Folder; onOpen: () => void }) {
   const { actions, dialogs } = useFolderActions(folder);
   return (
     <>
       <div className="row-item" role="button" tabIndex={0} onClick={onOpen}
-        // Only when the row itself has focus. The action menu's trigger lives inside this
-        // row, and Enter on a focused button raises a keydown that bubbles here too — so
-        // reaching the menu by keyboard opened the folder instead of the menu.
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); }
@@ -171,8 +153,6 @@ function FolderRow({ folder, onOpen }: { folder: Folder; onOpen: () => void }) {
         <span className="row-icon info"><FolderIcon size={20} /></span>
         <span className="row-main">
           <span className="row-title">{folder.name}</span>
-          {/* Only set when this row came from a search, where a nested folder needs its
-              parent named to be told apart from a sibling with the same name. */}
           {folder.parentName && <span className="row-sub">in {folder.parentName}</span>}
           {folder.description && <span className="row-sub">{folder.description}</span>}
           {(folder.tags.length > 0 || folder.needsAttention > 0 || folder.subfolderCount > 0) && (
@@ -208,13 +188,6 @@ export function FolderList() {
   const navigate = useNavigate();
   const can = useSession((s) => s.can);
 
-  // Browsing shows the top level only; you go into a folder to see what is inside it, the
-  // way the Drive itself behaves. Listing every folder flat made a subfolder appear twice —
-  // once here and once inside its parent — and made moving one into another look like it
-  // had done nothing at all.
-  //
-  // Searching drops the restriction: a name you half-remember is worth finding at any
-  // depth, and each result carries its path.
   const { data, isLoading } = useQuery({
     queryKey: ['folders', debounced],
     queryFn: () => api<{ data: Folder[] }>(
@@ -287,8 +260,6 @@ export function FolderList() {
   );
 }
 
-// What the tab strip on a folder page can show: everything, the folders inside it, or one
-// kind of file.
 type FolderTab = 'all' | 'folders' | Family;
 
 export function FolderDetail() {
@@ -303,15 +274,10 @@ export function FolderDetail() {
     queryFn: () => api<Folder>(`/folders/${id}`),
   });
 
-  // The same four verbs the list offers, from the same place — plus "new folder inside",
-  // which is how a folder tree gets built at all.
   const { actions, dialogs, openNewChild } = useFolderActions(data ?? null, {
     onDeleted: () => navigate('/folders'),
   });
 
-  // "All" keeps the families in a deliberate order — audio, video, images, documents —
-  // rather than whatever order the API happened to return, so the list reads the same way
-  // every time it is opened.
   const visibleAssets = useMemo(() => {
     if (!data || tab === 'folders') return [];
     if (tab !== 'all') return data.assetsByFamily?.[tab] ?? [];
@@ -324,9 +290,6 @@ export function FolderDetail() {
 
   const subfolders = data.subfolders ?? [];
 
-  // One tab per kind of thing this folder actually holds, each carrying its count, so an
-  // empty tab is never offered. Folders sit ahead of the family splits for the same reason
-  // a directory listing puts them first: they are where you go next, not what you read.
   const tabs: { id: FolderTab; label: string; count: number }[] = [
     ...(data.assetCount > 0 ? [{ id: 'all' as FolderTab, label: 'All', count: data.assetCount }] : []),
     ...(subfolders.length > 0 ? [{ id: 'folders' as FolderTab, label: 'Folders', count: subfolders.length }] : []),
@@ -335,8 +298,6 @@ export function FolderDetail() {
       .map((f) => ({ id: f as FolderTab, label: FAMILY_LABEL[f], count: data.assetsByFamily![f].length })),
   ];
 
-  // A folder holding nothing but subfolders has no "All" tab to land on, so the choice
-  // falls to the first tab that exists rather than to a selection that is not offered.
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id;
 
   return (
@@ -358,8 +319,6 @@ export function FolderDetail() {
             <h1 className="t-h1">{data.name}</h1>
             {data.description && <p className="t-body" style={{ marginTop: 8, maxWidth: '62ch' }}>{data.description}</p>}
 
-            {/* Breadcrumb. Drive folders nest, so "which Masters folder is this" is a real
-                question that a bare name cannot answer. */}
             {data.breadcrumb && data.breadcrumb.length > 1 && (
               <div className="t-small" style={{ marginTop: 6 }}>
                 {data.breadcrumb.map((crumb, i) => (
@@ -392,8 +351,6 @@ export function FolderDetail() {
             )}
           </div>
 
-          {/* The two things done most often stay as buttons; the rest live in the menu, so
-              this bar does not grow a sixth control every time a verb is added. */}
           <div className="row-tight" style={{ flexWrap: 'wrap' }}>
             {can('asset:upload') && (
               <Link className="btn btn-spark" to={`/upload?folderId=${data._id}`}>
@@ -458,9 +415,6 @@ export function FolderDetail() {
           </div>
 
           {active === 'folders' ? (
-            /* The same row as the folder list uses, so a subfolder met here offers exactly
-               what it offers anywhere else — share, move, edit, delete, and a folder of its
-               own inside it. */
             <div className="panel rows">
               {subfolders.map((sub) => (
                 <FolderRow key={sub._id} folder={sub} onOpen={() => navigate(`/folders/${sub._id}`)} />
@@ -471,20 +425,17 @@ export function FolderDetail() {
           )}
         </section>
       )}
-
       {openAsset && <AssetDrawer assetId={openAsset} onClose={() => setOpenAsset(null)} />}
       {dialogs}
     </div>
   );
 }
-
 function EditFolderDialog({ folder, onClose }: { folder: Folder; onClose: () => void }) {
   const [name, setName] = useState(folder.name);
   const [description, setDescription] = useState(folder.description);
   const [tags, setTags] = useState<string[]>(folder.tags);
   const qc = useQueryClient();
   const toast = useToast();
-
   const save = useMutation({
     mutationFn: () => api(`/folders/${folder._id}`, { method: 'PATCH', body: { name, description, tags } }),
     onSuccess: () => {
@@ -494,7 +445,6 @@ function EditFolderDialog({ folder, onClose }: { folder: Folder; onClose: () => 
     },
     onError: (e: Error) => toast({ kind: 'danger', title: 'Could not save', body: e.message }),
   });
-
   return (
     <Modal
       title="Edit folder"

@@ -1,12 +1,3 @@
-// Tagging is a required, friendly step — good search depends on good tags, so the
-// controlled vocabulary is presented as one-click chips rather than a text field.
-//
-// The custom-tag field checks two vocabularies as you type:
-//   · the library — every tag already attached to a file, fetched from the server;
-//   · this session — tags typed on the other files in front of you but not yet uploaded.
-// The second half matters more than it sounds. Without it, a tag added to one file is
-// invisible to the check on the next, and "aloo wada" plus "Aloo Wada" both get created
-// inside a single upload batch.
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Tag as TagIcon, Lightbulb, Check, CornerDownLeft } from 'lucide-react';
 import { CONTROLLED_TAGS } from '../../lib/assetTypes';
@@ -24,8 +15,6 @@ export function TagPicker({
   required?: boolean;
   label?: string;
   hint?: string;
-  // Tags in play elsewhere in this session — other files in the upload queue, the folder
-  // being edited, and so on. Checked alongside the persisted library.
   knownTags?: string[];
 }) {
   const [custom, setCustom] = useState('');
@@ -36,7 +25,6 @@ export function TagPicker({
 
   const controlled = useMemo(() => Object.values(CONTROLLED_TAGS).flat(), []);
 
-  // Everything this browser already knows about, without a round trip.
   const sessionPool = useMemo(
     () => [...new Set([...knownTags, ...value, ...controlled])],
     [knownTags, value, controlled],
@@ -67,7 +55,6 @@ export function TagPicker({
 
   const term = custom.trim();
 
-  // An exact match — same tag, different spelling — from either vocabulary.
   const exact = useMemo(() => {
     if (term.length < 1) return null;
     return sessionPool.find((t) => isSameTag(t, term)) ?? libraryExact;
@@ -106,11 +93,8 @@ export function TagPicker({
 
   const addCustom = () => {
     if (!term) return;
-    // A different spelling of a tag that already exists always resolves to that tag.
     if (exact) { use(exact); return; }
-    // Close matches are surfaced once; a second press means the author meant it.
     if (suggestions.length > 0 && !acknowledged) { setAcknowledged(true); return; }
-    // Register it straight away so the very next file sees it in the duplicate check.
     void registerTag(term, suggestions.length > 0);
     use(term);
   };
@@ -171,8 +155,6 @@ export function TagPicker({
           </button>
         </div>
 
-        {/* Same tag, different spelling. Two cases: already on this file, or in the
-            vocabulary but not yet applied here. */}
         {exact && exactApplied && (
           <div className="note ok" id="tag-suggestions" style={{ marginTop: 10 }}>
             <Check size={15} />

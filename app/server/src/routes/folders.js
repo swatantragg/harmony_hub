@@ -1,19 +1,3 @@
-// Folders — real Google Drive folders, mirrored by a catalogue row.
-//
-// A GCloud folder *is* a Drive folder: open drive.google.com and the library is laid
-// out exactly as the app shows it, which is what makes the storage legible to someone who
-// never signs in here. The catalogue row carries what Drive has nowhere to put — the
-// description, the tags, the song and artist association.
-//
-// Drive reparents and renames by updating an index entry, never by copying bytes, and two
-// properties follow from that:
-//
-//   · Moving a file between folders touches no bytes, however large the file is.
-//   · Renaming a folder breaks nothing — every file keeps its id, and every share link
-//     keeps resolving.
-//
-// Folders nest. A folder may carry a parentId, and the tree in the catalogue is the tree
-// in Drive.
 import express from 'express';
 import { db, persist, assetsInFolder, assetsUnderFolder, assetContext } from '../db.js';
 import { authenticate, requires, problem } from '../middleware/auth.js';
@@ -49,13 +33,6 @@ const stats = (folder) => {
 
 const childrenOf = (folderId) => db.folders.filter((f) => !f.deletedAt && f.parentId === folderId);
 
-// What the whole tree under a folder holds, alongside what the folder itself holds.
-//
-// The two numbers answer different questions and both are needed. `assetCount` is what
-// this folder lists, and it is what "delete this folder releases N files" has to count.
-// The deep numbers are what a share link covers, and without them a folder whose files
-// all sit one level down looked empty — the Share action was greyed out with "there is
-// nothing in this folder to share yet" while the folder plainly had a hundred files in it.
 const deepStats = (folder) => {
   const rows = assetsUnderFolder(folder._id);
   return {
@@ -84,8 +61,6 @@ const decorate = (folder) => {
   };
 };
 
-// Walks up the catalogue tree. Used both for the breadcrumb and to stop a folder being
-// dragged inside one of its own descendants, which Drive would reject as a cycle.
 function ancestry(folderId) {
   const chain = [];
   let cursor = folderId;
@@ -142,9 +117,6 @@ foldersRouter.get('/:id', (req, res) => {
 });
 
 foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
-  // A catalogue folder is backed by a real Drive folder, so it cannot be created while
-  // Google is unreachable — and a catalogue row with no folder behind it is exactly the
-  // drift reconciliation exists to clean up.
   if (!storage.driveReady()) {
     const status = storage.driveStatus();
     return problem(
@@ -171,8 +143,6 @@ foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
   const parent = parentId ? db.folders.find((f) => f._id === parentId && !f.deletedAt) : null;
   if (parentId && !parent) return problem(res, 404, 'Not Found', 'The parent folder no longer exists.');
 
-  // Drive is perfectly happy with two folders of the same name in the same place, which is
-  // a well-known way to lose files. GCloud is not.
   const clash = db.folders.find((f) =>
     !f.deletedAt && (f.parentId ?? null) === parentId && f.name.toLowerCase() === name.toLowerCase());
   if (clash && !req.body?.allowDuplicateName) {
@@ -193,7 +163,6 @@ foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
     description: check.value.description || '',
     tags: check.value.tags || [],
     parentId,
-    // The link between the two worlds. Everything else about a folder is presentation.
     driveFolderId: driveFolder.fileId,
     driveWebViewLink: driveFolder.webViewLink ?? null,
     songId: check.value.songId || null,
@@ -214,8 +183,6 @@ foldersRouter.post('/', requires('asset:upload'), async (req, res) => {
   res.status(201).json(decorate(folder));
 });
 
-// Renaming or re-tagging a folder renames the Drive folder too — one PATCH, no bytes
-// copied, and every file inside keeps its id and every share link keeps working.
 foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   const folder = db.folders.find((f) => f._id === req.params.id && !f.deletedAt);
   if (!folder) return problem(res, 404, 'Not Found', 'No folder with that id.');
@@ -241,13 +208,6 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   let renamedInDrive = null;
   let movedInDrive = null;
 
-  // Drive first, catalogue second, and the catalogue is only written if Drive agreed.
-  //
-  // These two used to be applied regardless: a rename or a re-parent Drive had refused was
-  // still written here and answered 200, so the app showed the folder in its new place
-  // while the Drive still had it in the old one — the exact drift this whole file exists
-  // to prevent, and invisible until somebody opened drive.google.com. A refusal is now a
-  // failed request with nothing changed on either side.
   if (check.value.name && check.value.name !== folder.name && folder.driveFolderId) {
     renamedInDrive = await storage.renameFolder(folder.driveFolderId, check.value.name)
       .then(() => true)
@@ -260,8 +220,6 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     }
   }
 
-  // Re-parenting a folder. Refused when the destination sits inside the folder being
-  // moved, because that is a cycle and Drive would reject it with a much worse message.
   if ('parentId' in (req.body || {}) && (check.value.parentId ?? null) !== (folder.parentId ?? null)) {
     const nextParentId = check.value.parentId || null;
     if (nextParentId && isDescendant(nextParentId, folder._id)) {
@@ -279,9 +237,6 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
         .then(() => true)
         .catch((err) => err);
       if (movedInDrive !== true) {
-        // The rename above, if there was one, already went through. It is a name change on
-        // the same folder in the same place, so leaving it applied keeps the two sides in
-        // step; only the move is abandoned.
         if (renamedInDrive === true) {
           folder.name = check.value.name;
           folder.updatedAt = new Date().toISOString();
@@ -308,9 +263,6 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
   res.json(decorate(folder));
 });
 
-// Deleting a folder never deletes files. Every file is moved back to the Assets root in
-// Drive first, and only the emptied folder is trashed — because losing a grouping should
-// never risk losing a master.
 foldersRouter.delete('/:id', requires('asset:delete'), async (req, res) => {
   const folder = db.folders.find((f) => f._id === req.params.id && !f.deletedAt);
   if (!folder) return problem(res, 404, 'Not Found', 'No folder with that id.');
@@ -325,7 +277,6 @@ foldersRouter.delete('/:id', requires('asset:delete'), async (req, res) => {
   let relocated = 0;
   for (const { asset } of released) {
     if (asset.drive?.fileId && folder.driveFolderId) {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await storage
         .move(asset.drive.fileId, { toParentId: ROOTS.assets, fromParentId: folder.driveFolderId })
         .then((d) => { asset.drive = { ...asset.drive, ...d }; return true; })
@@ -351,15 +302,11 @@ foldersRouter.delete('/:id', requires('asset:delete'), async (req, res) => {
   res.json({ ok: true, filesReleased: released.length, filesRelocatedInDrive: relocated });
 });
 
-// Move files in or out. `folderId: 'none'` returns them to the Assets root. Every move is
-// a Drive reparent, so this is the endpoint behind drag-and-drop in the UI.
 foldersRouter.post('/:id/assets', requires('asset:edit'), async (req, res) => {
   const target = req.params.id === 'none' ? null : db.folders.find((f) => f._id === req.params.id && !f.deletedAt);
   if (req.params.id !== 'none' && !target) return problem(res, 404, 'Not Found', 'No folder with that id.');
 
   const destination = target?.driveFolderId || ROOTS.assets;
-  // Bounded: this loop issues one Drive call per id, so an unbounded list is both a
-  // request that never ends and a way to exhaust the shared Drive quota.
   const idCheck = list(req.body?.assetIds, { max: LIMITS.ids, itemMax: 80, field: 'assetIds' });
   if (idCheck.problem) return problem(res, 422, 'Unprocessable Entity', idCheck.problem);
   const ids = idCheck.value ?? [];
@@ -371,7 +318,6 @@ foldersRouter.post('/:id/assets', requires('asset:edit'), async (req, res) => {
     if (!ctx) continue;
     const source = ctx.asset.drive?.parentId ?? null;
     if (ctx.asset.drive?.fileId && source !== destination) {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await storage
         .move(ctx.asset.drive.fileId, { toParentId: destination, fromParentId: source })
         .then((d) => { ctx.asset.drive = { ...ctx.asset.drive, ...d }; return true; })
@@ -396,8 +342,6 @@ foldersRouter.post('/:id/assets', requires('asset:edit'), async (req, res) => {
   res.json({ ok: failed.length === 0, moved, failed });
 });
 
-// Used by the picker on the upload screen and the asset drawer. Indented by depth so a
-// nested tree reads correctly in a flat <select>.
 foldersRouter.get('/lookup/options', (_req, res) => {
   const depthOf = (folder) => ancestry(folder._id).length - 1;
   res.json(
@@ -414,7 +358,6 @@ foldersRouter.get('/lookup/options', (_req, res) => {
   );
 });
 
-// The whole tree in one call, for the folder sidebar.
 foldersRouter.get('/lookup/tree', (_req, res) => {
   const build = (parentId) =>
     db.folders

@@ -1,9 +1,3 @@
-// The one screen an account sees between its first sign-in and the rest of the product.
-//
-// A starting password is a handover value: an administrator typed it, spoke it aloud or
-// sent it over something, and at least two people know it. It is good for exactly one
-// sign-in. The server enforces that — every route except this one and /me is closed while
-// `mustChangePassword` is set — so this screen is the only way forward, not a suggestion.
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { KeyRound, Loader2, ArrowRight, LogOut } from 'lucide-react';
@@ -20,18 +14,10 @@ export function SetPassword() {
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 
-  // The server is the authority on this, and it sends it with the account. Hardcoding it
-  // is how the number ends up saying one thing here and another in the API.
   const MIN_LENGTH = user?.minPasswordLength ?? 8;
 
-  // Somebody who has just come in through Google has proved who they are already, and may
-  // never have been sent the handover password at all — asking them for it would be a
-  // dead end on the one screen there is no way past. The server grants this for a few
-  // minutes after a Google sign-in and re-checks it on the write.
   const viaGoogle = Boolean(user?.canSetPasswordWithoutCurrent);
 
-  // Checked here so the reader is told before submitting, and again on the server, which
-  // is the check that actually counts.
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
   const mismatch = confirm.length > 0 && next !== confirm;
   const unchanged = !viaGoogle && next.length > 0 && next === current;

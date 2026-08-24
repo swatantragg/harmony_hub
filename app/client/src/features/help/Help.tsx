@@ -1,6 +1,3 @@
-// "How GCloud works" — the whole product explained in one scrollable page, in plain
-// language, with no jargon and no assumed background. This is the single largest lever
-// on the learning curve: anyone can read it in five minutes and then use everything.
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router';
 import {
@@ -62,7 +59,6 @@ const CONCEPTS = [
   },
 ];
 
-// The three kinds of link, spelled out where someone will look for them.
 const LINK_TYPES = [
   {
     icon: Globe,
@@ -152,7 +148,6 @@ export function Help() {
         </p>
       </div>
 
-      {/* Concepts */}
       <section className="stack-3">
         {CONCEPTS.map(({ icon: Icon, title, body }) => (
           <div key={title} className="panel">
@@ -175,7 +170,6 @@ export function Help() {
         ))}
       </section>
 
-      {/* The badge system — the one thing worth memorising */}
       <section>
         <h2 className="t-h1" style={{ fontSize: 26, marginBottom: 8 }}>The six badges</h2>
         <p className="t-body" style={{ marginBottom: 18, maxWidth: '62ch' }}>
@@ -202,7 +196,6 @@ export function Help() {
         </div>
       </section>
 
-      {/* Sharing — the three kinds of link, and what the link actually is */}
       <section>
         <h2 className="t-h1" style={{ fontSize: 26, marginBottom: 8 }}>Three kinds of share link</h2>
         <p className="t-body" style={{ marginBottom: 18, maxWidth: '64ch' }}>
@@ -260,7 +253,6 @@ export function Help() {
         </div>
       </section>
 
-      {/* Deleting — the two buttons, and the folder case */}
       <section>
         <h2 className="t-h1" style={{ fontSize: 26, marginBottom: 8 }}>The delete buttons</h2>
         <p className="t-body" style={{ marginBottom: 18, maxWidth: '64ch' }}>
@@ -289,7 +281,6 @@ export function Help() {
         </div>
       </section>
 
-      {/* First tasks */}
       <section>
         <h2 className="t-h1" style={{ fontSize: 26, marginBottom: 8 }}>Try these four things</h2>
         <p className="t-body" style={{ marginBottom: 18, maxWidth: '62ch' }}>
@@ -324,7 +315,6 @@ export function Help() {
         </div>
       </section>
 
-      {/* Shortcuts */}
       <section className="auto-grid" style={{ '--min': '290px' } as CSSProperties}>
         <div className="panel">
           <div className="panel-head"><span className="t-h3 row-tight"><Command size={15} color="var(--ink-3)" /> Keyboard shortcuts</span></div>

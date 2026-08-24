@@ -1,12 +1,3 @@
-// The search apparatus, extracted so it has one implementation and two homes.
-//
-// It used to live inside a screen of its own. It does not any more: Home owns the only
-// search bar in the product, and an artist's page runs the same search narrowed to that
-// artist. Both need identical toolbars, identical facets and identical result rendering,
-// and the fastest way to guarantee that is for there to be one of each.
-//
-// The URL stays the source of truth for a query wherever it runs, so every search — on
-// Home or on an artist — is still a link somebody can send.
 import { useEffect, useMemo, useState } from 'react';
 import type { SetURLSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,8 +26,6 @@ export const FACETS: { key: string; label: string; hint?: string }[] = [
   { key: 'year', label: 'Release year' },
 ];
 
-// Ten facets is too many tabs. They group into six questions people actually ask, and
-// each tab carries a count so a filter set two tabs away is never invisible.
 const FILTER_TABS: { id: string; label: string; facets: string[] }[] = [
   { id: 'assets', label: 'Assets', facets: ['family', 'type', 'version'] },
   { id: 'tags', label: 'Tags', facets: ['tags'] },
@@ -46,8 +35,6 @@ const FILTER_TABS: { id: string; label: string; facets: string[] }[] = [
   { id: 'release', label: 'Release', facets: ['language', 'mood', 'year'] },
 ];
 
-// Every order in both directions. A one-way sort makes "which is the oldest?" a paging
-// exercise when it is the same question asked backwards.
 const SORTS = [
   ['relevance', 'Best match'],
   ['newest', 'Date added — newest first'],
@@ -60,31 +47,23 @@ const SORTS = [
   ['smallest', 'Size — smallest first'],
 ] as const;
 
-// The URL parameter a facet is stored under, where it differs from the facet's own key.
 const PARAM: Record<string, string> = { artist: 'artistId', folder: 'folderId' };
 const paramFor = (key: string) => PARAM[key] ?? key;
 
-// How many values a facet shows before it collapses. Everything past this stays one
-// click away — never hidden, because a tag you cannot reach is a tag you cannot use.
 const COLLAPSED = 8;
-// Past this many values, scanning stops working and a filter box earns its place.
 const FILTERABLE_AT = 12;
 
-/* ── The hook ──────────────────────────────────────────────────────────────── */
 
 export interface AssetSearch {
   data: SearchResponse | undefined;
   isLoading: boolean;
   isFetching: boolean;
-  /** Facet key → selected values, already resolved to whatever the API expects. */
   selected: Record<string, string[]>;
   activeCount: number;
-  /** True once the reader has actually asked for something. */
   isSearching: boolean;
   q: string;
   sort: string;
   page: number;
-  /** Rows per page; 0 is the "All rows" option. */
   pageSize: number;
   total: number;
   toggle: (key: string, value: string) => void;
@@ -99,8 +78,6 @@ export interface AssetSearch {
 export function useAssetSearch(
   params: URLSearchParams,
   setParams: SetURLSearchParams,
-  // Filters the page itself owns. An artist's page pins `artistId`, so every search there
-  // is inside that artist and no amount of clearing filters escapes it.
   {
     pinned = {}, defaultPageSize = 48,
   }: { pinned?: Record<string, string>; defaultPageSize?: number } = {},
@@ -116,8 +93,6 @@ export function useAssetSearch(
     return out;
   }, [params]);
 
-  // A pinned filter is not the reader's, so it never counts towards "3 filters on" and
-  // "Clear all" never removes it.
   const activeCount = FACETS
     .filter(({ key }) => !pinnedKeys.includes(paramFor(key)))
     .reduce((n, { key }) => n + selected[key].length, 0);
@@ -125,8 +100,6 @@ export function useAssetSearch(
   const q = params.get('q') ?? '';
   const sort = params.get('sort') ?? (q ? 'relevance' : 'newest');
 
-  // Page and rows-per-page live in the URL like everything else here, so a link carries
-  // the exact view somebody was looking at rather than resetting to page one.
   const page = Math.max(1, Number(params.get('page')) || 1);
   const rawSize = params.get('size');
   const pageSize = rawSize == null ? defaultPageSize : Math.max(0, Number(rawSize) || 0);
@@ -139,8 +112,6 @@ export function useAssetSearch(
     folderId: selected.folder,
     sort,
     page,
-    // "All rows" is expressed to the API as a limit past any realistic library size rather
-    // than as a special case the server has to know about.
     limit: pageSize === 0 ? 5000 : pageSize,
     ...pinned,
   }), [params, selected, q, sort, page, pageSize, JSON.stringify(pinned)]);
@@ -151,7 +122,6 @@ export function useAssetSearch(
     placeholderData: (prev) => prev,
   });
 
-  // Artist and folder facets arrive as names; the ids live on the same rows of results.
   const artistIdByName = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of data?.data ?? []) if (a.artistName && a.artistId) map.set(a.artistName, a.artistId);
@@ -179,9 +149,6 @@ export function useAssetSearch(
     setParams(next);
   };
 
-  // Keeps the free-text query, the page size and anything the page pinned; drops every
-  // filter the reader added. Dropping their query would be the one thing they never meant
-  // by "clear", and resetting how many rows they like to see is simply rude.
   const clearAll = () => {
     const next = new URLSearchParams();
     if (q) next.set('q', q);
@@ -204,8 +171,6 @@ export function useAssetSearch(
     setParams(next);
   };
 
-  // Changing the page size makes the current page number meaningless — page 7 of 50-row
-  // pages is not page 7 of 250-row pages — so it always returns to the first.
   const setPageSize = (size: number) => {
     const next = new URLSearchParams(params);
     next.set('size', String(size));
@@ -237,10 +202,7 @@ export function useAssetSearch(
   };
 }
 
-/* ── Toolbar ───────────────────────────────────────────────────────────────── */
 
-// The controls that used to sit above a search page of their own: run a live check over
-// what is on screen, choose an order, choose grid or list, open the facets.
 export function SearchToolbar({
   search, onOpenFilters, showCount = true, countNoun = 'file',
 }: {
@@ -253,7 +215,6 @@ export function SearchToolbar({
   const qc = useQueryClient();
   const toast = useToast();
 
-  // Live verification over the visible page (§10.5.2, &verify=live).
   const verifyPage = useMutation({
     mutationFn: () =>
       api<{ summary: Record<string, number> }>('/assets/verify-batch', {
@@ -274,10 +235,6 @@ export function SearchToolbar({
 
   const total = data?.total ?? 0;
 
-  // Whether the left-hand side has anything to say. When it does not, it is not rendered
-  // at all rather than rendered empty: an empty flex child still takes part in
-  // space-between, which silently shoves the whole control cluster to the far right of the
-  // row and away from the search bar it belongs to.
   const hasStatus = showCount || activeCount > 0 || (isFetching && !isLoading);
 
   return (
@@ -328,7 +285,6 @@ export function SearchToolbar({
   );
 }
 
-/* ── Results ───────────────────────────────────────────────────────────────── */
 
 export function SearchResults({
   search, openAsset, onOpen, emptyBody, paginated = false,
@@ -337,7 +293,6 @@ export function SearchResults({
   openAsset: string | null;
   onOpen: (asset: Asset) => void;
   emptyBody?: string;
-  /** A screen with numbered pages owns its own navigation; "Show more" would duplicate it. */
   paginated?: boolean;
 }) {
   const { data, isLoading, activeCount, clearAll, nextPage } = search;
@@ -374,7 +329,6 @@ export function SearchResults({
   );
 }
 
-/* ── Facets ────────────────────────────────────────────────────────────────── */
 
 function FacetGroup({
   facetKey, label, hint, values, selected, resolve, onToggle, resetKey,
@@ -386,8 +340,6 @@ function FacetGroup({
   selected: string[];
   resolve: (name: string) => string;
   onToggle: (value: string) => void;
-  // Changes whenever the query itself changes, so a half-typed filter from a previous
-  // search does not silently narrow this list.
   resetKey: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -401,8 +353,6 @@ function FacetGroup({
     ? values.filter((f) => String(f.value).toLowerCase().includes(filter.trim().toLowerCase()))
     : values;
 
-  // Whatever else happens — collapsed, or narrowed by the box above — an active filter
-  // always renders. A selection you cannot see is one you cannot switch off.
   const show = new Set<string>();
   for (const f of (expanded || filter.trim() ? matching : matching.slice(0, COLLAPSED))) {
     show.add(String(f.value));
@@ -432,8 +382,6 @@ function FacetGroup({
         />
       )}
 
-      {/* Values run across, not down: a wrapping row fits three times as many in the same
-          height, and the eye scans a line of labels faster than a column of rows. */}
       <div className="facet-chips">
         {visible.map((f) => {
           const name = String(f.value);
@@ -484,7 +432,6 @@ export function FiltersDialog({
 }: {
   search: AssetSearch;
   onClose: () => void;
-  /** Facet keys the page has already decided — the artist facet on an artist's page. */
   hide?: string[];
   resetKey: string;
 }) {

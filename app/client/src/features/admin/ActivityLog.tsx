@@ -1,6 +1,3 @@
-// The audit trail. Long by design and only useful if it can be narrowed, so it carries the
-// controls a log actually needs: a date range, an order, a search, and numbered pages
-// rather than a single truncated slice of the most recent hundred entries.
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, ScrollText, Search, Sheet, X } from 'lucide-react';
@@ -55,19 +52,10 @@ export function ActivityLog() {
 
   const filtered = Boolean(debounced || action || from || to);
 
-  // Any change to what is being asked for invalidates the page number: page 7 of a
-  // different filter is a different set of rows, and landing there is disorienting.
   const narrow = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(1); };
 
   const clear = () => { setQ(''); setAction(''); setFrom(''); setTo(''); setPage(1); };
 
-  // The export takes the filters, never the page. A page is a scrolling position — nobody
-  // wants rows 51 to 100 of an audit trail in a spreadsheet — whereas the filters are the
-  // question being asked, and they are exactly what should survive into the file.
-  //
-  // It also reaches past what this screen can see: the table is served from the most
-  // recent entries held in memory, and the export reads the full archive, so a date range
-  // months back returns rows that were never on screen.
   const exportXlsx = async (scope: 'filtered' | 'all') => {
     setExporting(scope);
     try {
@@ -145,8 +133,6 @@ export function ActivityLog() {
             />
           </div>
 
-          {/* A date range, because "what happened on the day the master went missing?" is
-              the question this screen exists to answer. `To` covers the whole of its day. */}
           <div className="toolbar">
             <label className="row-tight">
               <span className="t-small">From</span>

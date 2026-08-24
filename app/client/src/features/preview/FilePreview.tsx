@@ -1,11 +1,3 @@
-// One viewer for every file type the product stores, used identically inside the app and
-// on the public share page — so what a partner sees before downloading is exactly what the
-// person who sent it saw before sharing.
-//
-// Every byte here arrives over a short-lived signed URL. The
-// API never proxies content, and nothing is transcoded: audio and video seek with HTTP
-// Range, the PDF is handed to the browser's own viewer, and the office formats are
-// unpacked in the page by lib/ooxml.ts.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Film, Pause, Play, FileSpreadsheet, Presentation, FileArchive,
@@ -72,7 +64,6 @@ export function FilePreview({
   }
 }
 
-/* ── Shared shells ───────────────────────────────────────────────────────── */
 
 function Stage({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return <div className="preview-stage col" style={{ gap: 10, padding: 24, textAlign: 'center', ...style }}>{children}</div>;
@@ -103,8 +94,6 @@ function Unsupported({
   );
 }
 
-// Everything below fetches its own bytes. The signed URL is the same one the <img> or
-// <video> would use — the browser is talking to storage either way.
 function useFetched<T>(url: string, read: (buffer: ArrayBuffer) => Promise<T> | T, deps: unknown[] = []) {
   const [state, setState] = useState<{ data: T | null; error: string | null }>({ data: null, error: null });
   useEffect(() => {
@@ -119,12 +108,10 @@ function useFetched<T>(url: string, read: (buffer: ArrayBuffer) => Promise<T> | 
       .then((data) => alive && setState({ data, error: null }))
       .catch((e: Error) => alive && setState({ data: null, error: e.message }));
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, ...deps]);
   return state;
 }
 
-/* ── PDF ─────────────────────────────────────────────────────────────────── */
 
 function PdfPreview({
   url, file, height, onDownload,
@@ -155,7 +142,6 @@ function PdfPreview({
   );
 }
 
-/* ── Text, markdown, JSON ────────────────────────────────────────────────── */
 
 function TextPreview({ url, file, height }: { url: string; file: PreviewFile; height: number }) {
   const { data, error } = useFetched(url, (b) => new TextDecoder().decode(b).slice(0, 200_000));
@@ -180,7 +166,6 @@ function TextPreview({ url, file, height }: { url: string; file: PreviewFile; he
   );
 }
 
-/* ── Tables: CSV, TSV, and every sheet of an .xlsx ───────────────────────── */
 
 function Grid({ rows, height }: { rows: string[][]; height: number }) {
   if (rows.length === 0) return <div className="t-small" style={{ padding: 18 }}>This sheet is empty.</div>;
@@ -264,7 +249,6 @@ function SheetPreview({
   );
 }
 
-/* ── Word ────────────────────────────────────────────────────────────────── */
 
 function WordPreview({
   url, file, height, onDownload,
@@ -307,7 +291,6 @@ function WordPreview({
   );
 }
 
-/* ── Slides ──────────────────────────────────────────────────────────────── */
 
 function SlidesPreview({
   url, file, height, onDownload,
@@ -343,13 +326,10 @@ function SlidesPreview({
   );
 }
 
-/* ── Video ───────────────────────────────────────────────────────────────── */
 
 function VideoPreview({ url, file }: { url: string; file: PreviewFile }) {
   const [broken, setBroken] = useState(false);
 
-  // Real uploads play here. The seeded demo library carries placeholder payloads rather
-  // than encoded video, so the player reports it plainly instead of showing a black box.
   if (broken) {
     return (
       <Stage>
@@ -380,7 +360,6 @@ function VideoPreview({ url, file }: { url: string; file: PreviewFile }) {
   );
 }
 
-/* ── Audio ───────────────────────────────────────────────────────────────── */
 
 function AudioPreview({ url, file }: { url: string; file: PreviewFile }) {
   const ref = useRef<HTMLAudioElement>(null);
@@ -388,8 +367,6 @@ function AudioPreview({ url, file }: { url: string; file: PreviewFile }) {
   const [pos, setPos] = useState(0);
   const [len, setLen] = useState(file.durationSec ?? 0);
 
-  // A deterministic waveform drawn from the file identity — the real peaks would come from
-  // a stored peaks file in production, and the interaction is identical either way.
   const bars = useMemo(() => {
     const seed = file.seed ?? file.displayName;
     return Array.from({ length: 64 }, (_, i) => {

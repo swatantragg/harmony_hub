@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Component layer. Assembled from the brand book's "In context" section:
-   universal search, media-card grid, availability pills, button family.
-   ========================================================================== */
-
-/* ── Brandmark ─────────────────────────────────────────────────────────── */
 .tile {
   width: 36px; height: 36px; border-radius: 11px;
   background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
@@ -11,7 +5,7 @@
   flex: none;
 }
 .tile span { width: 3.5px; border-radius: 2px; background: var(--indigo); }
-.tile span.spark { background: var(--spark); }        /* the downbeat — always the centre bar */
+.tile span.spark { background: var(--spark); }
 .tile .b1 { height: 42%; } .tile .b2 { height: 78%; } .tile .b3 { height: 100%; }
 .tile .b4 { height: 58%; } .tile .b5 { height: 86%; }
 .tile.on-indigo { background: var(--surface); border-color: transparent; }
@@ -19,10 +13,8 @@
 .tile.sm span { width: 2.5px; }
 .tile.lg { width: 56px; height: 56px; border-radius: 16px; padding: 14px 12px; gap: 4px; }
 .tile.lg span { width: 5px; }
-
 .wordmark { font-family: var(--display); font-weight: 600; letter-spacing: -.02em; font-size: 24px; }
 
-/* ── Buttons ───────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-family: var(--sans); font-weight: 600; font-size: 17px; letter-spacing: -.005em;
@@ -33,14 +25,11 @@
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn svg { flex: none; }
-
 .btn-primary { background: var(--indigo); color: var(--on-accent); box-shadow: var(--shadow-indigo); }
 .btn-primary:hover:not(:disabled) { background: var(--indigo-deep); }
 
-/* Spark is the single most important next step on a screen. Never more than one. */
 .btn-spark { background: var(--spark); color: var(--spark-ink); box-shadow: var(--shadow-spark); }
 .btn-spark:hover:not(:disabled) { background: var(--spark-deep); color: var(--spark-ink); }
-
 .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-2); box-shadow: var(--shadow); }
 .btn-secondary:hover:not(:disabled) { border-color: var(--ink-3); background: var(--surface-2); }
 
@@ -51,13 +40,10 @@
 .btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
 .btn-danger-solid { background: var(--danger); color: var(--on-accent); }
 .btn-danger-solid:hover:not(:disabled) { background: var(--danger-ink); }
-
 .btn-sm { padding: 7px 13px; font-size: 16px; border-radius: var(--r-sm); gap: 6px; }
 .btn-lg { padding: 14px 24px; font-size: 18px; border-radius: var(--r-lg); }
 .btn-block { width: 100%; }
 .btn-icon { padding: 8px; border-radius: var(--r-sm); }
-
-/* ── Surfaces ──────────────────────────────────────────────────────────── */
 .panel {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
@@ -68,10 +54,8 @@
   padding: 16px 20px; border-bottom: 1px solid var(--line);
 }
 .panel-body { padding: 20px; }
-
 .stage { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 22px; }
 
-/* ── Pills, chips, badges ──────────────────────────────────────────────── */
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--mono); font-size: 15.5px; letter-spacing: .01em; font-variant-numeric: tabular-nums;
@@ -79,7 +63,6 @@
   border-radius: var(--r-pill); padding: 5px 11px;
 }
 .pill b { color: var(--indigo-deep); font-weight: 600; }
-
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 16px; font-weight: 500; padding: 7px 14px; border-radius: var(--r-pill);
@@ -92,8 +75,6 @@
 .chip .count { font-family: var(--mono); font-size: 14.5px; opacity: .7; }
 .chip-static { cursor: default; }
 .chip-static:hover { border-color: var(--line-2); color: var(--ink-2); }
-
-/* The availability badge — the single most important control in the product. */
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 15px; font-weight: 500; padding: 5px 12px; border-radius: var(--r-pill);
@@ -104,21 +85,17 @@
 .badge.lg .dot { width: 9px; height: 9px; }
 .badge[data-status="RESTORING"] .dot { animation: pulse 1.6s var(--ease) infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-
 .tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 15px; font-weight: 500; padding: 4px 10px; border-radius: 7px;
   background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line);
 }
 .tag.controlled { background: var(--indigo-soft); color: var(--indigo-deep); border-color: var(--indigo-edge); }
-
 .vchip {
   font-family: var(--mono); font-size: 14.5px; font-weight: 500;
   padding: 3px 8px; border-radius: 6px; background: var(--indigo-soft); color: var(--indigo-deep);
 }
 .vchip.current { background: var(--indigo); color: var(--on-accent); }
-
-/* ── Search bar ────────────────────────────────────────────────────────── */
 .searchbar {
   display: flex; align-items: center; gap: 12px;
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md);
@@ -132,18 +109,11 @@
 .searchbar input::placeholder { color: var(--ink-3); }
 .searchbar.lg { padding: 16px 20px; border-radius: var(--r-lg); }
 .searchbar.lg input { font-size: 20.5px; }
-
 .kbd {
   font-family: var(--mono); font-size: 14.5px; font-weight: 500; color: var(--ink-3);
   background: var(--surface-2); border: 1px solid var(--line-2); border-bottom-width: 2px;
   border-radius: 5px; padding: 2px 6px; white-space: nowrap;
 }
-
-/* ── App shell ─────────────────────────────────────────────────────────────
-   Heights are in dvh, with a vh line first for anything that predates it. On a phone,
-   100vh is the viewport with the address bar *hidden* — a height the page does not have
-   until you scroll — so a 100vh sidebar puts its own footer under the browser chrome and
-   a 100vh splash screen scrolls. dvh is the height the viewport actually has right now. */
 .shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; min-height: 100dvh; }
 
 .sidebar {
@@ -156,7 +126,6 @@
 .nav-group { margin-top: 18px; }
 .nav-group:first-child { margin-top: 0; }
 .nav-group-label { padding: 0 10px 8px; }
-
 .nav-item {
   display: flex; align-items: center; gap: 11px; width: 100%;
   padding: 9px 11px; border-radius: var(--r-sm); border: none; background: transparent;
@@ -172,13 +141,8 @@
   background: var(--danger-soft); color: var(--danger-ink); padding: 1px 7px; border-radius: var(--r-pill);
 }
 .nav-item .badge-count.neutral { background: var(--surface-2); color: var(--ink-3); }
-
 .sidebar-foot { padding: 12px; border-top: 1px solid var(--line); }
-
-/* Only exists once the sidebar is off-canvas. Tapping anywhere outside closes it, which
-   is what every phone user will try first. */
 .sidebar-scrim { display: none; }
-
 .topbar {
   position: sticky; top: 0; z-index: 20;
   height: var(--topbar-h); display: flex; align-items: center; gap: 16px;
@@ -187,15 +151,9 @@
 }
 .topbar-menu { display: none; flex: none; }
 .topbar-search { cursor: text; max-width: 520px; min-width: 0; }
-
 .main { min-width: 0; display: flex; flex-direction: column; }
 .page { padding: 26px; max-width: 1400px; width: 100%; }
 .page-head { margin-bottom: 22px; }
-
-/* The screens that render outside the shell — sign in, choose a password, a public share
-   link — and so get none of the shell's padding or safe-area handling. A share link is
-   opened on a phone more often than anywhere else in this product, so this is not a
-   fallback path. */
 .plain-page {
   min-height: 100vh;
   min-height: 100dvh;
@@ -212,10 +170,7 @@
     padding-right: max(14px, env(safe-area-inset-right));
   }
 }
-
-/* ── Media card grid ───────────────────────────────────────────────────── */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; }
-
 .card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
   overflow: hidden; box-shadow: var(--shadow); cursor: pointer; text-align: left; padding: 0;
@@ -225,7 +180,6 @@
 .card:hover { border-color: var(--line-2); box-shadow: var(--shadow-lg); transform: translateY(-2px); }
 .card:focus-visible { border-color: var(--indigo); }
 .card.selected { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
-
 .card-art {
   height: 126px; position: relative; overflow: hidden;
   display: flex; align-items: flex-end; padding: 12px;
@@ -253,18 +207,12 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .card-foot { margin-top: auto; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-
-/* ── List (table) view ─────────────────────────────────────────────────── */
-/* A table with six columns cannot shrink to a phone, and clipping it hides the actions
-   at the right-hand end entirely. It scrolls sideways inside its own container instead —
-   the panel around it keeps its rounded corners, and nothing is unreachable. */
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
 .table-scroll > .tbl { min-width: max-content; }
-
 .tbl { width: 100%; border-collapse: collapse; font-size: 17px; }
 .tbl th {
   text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -277,13 +225,10 @@
 .tbl tbody tr:hover { background: var(--surface-2); }
 .tbl tbody tr.selected { background: var(--indigo-soft); }
 
-/* ── Forms ─────────────────────────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .label { font-size: 16.5px; font-weight: 600; color: var(--ink); }
 .hint { font-size: 15.5px; color: var(--ink-3); line-height: 1.55; }
-
 .input, .select, .textarea {
-  /* 16px is the threshold below which iOS Safari zooms the page on focus. */
   width: 100%; font-family: var(--sans); font-size: 18px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-sm);
   padding: 9px 12px; outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast);
@@ -295,13 +240,6 @@
 .input.valid { border-color: var(--ok); }
 .textarea { resize: vertical; min-height: 74px; line-height: 1.55; }
 .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8C9E' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 32px; }
-
-/* ── Select ────────────────────────────────────────────────────────────────
-   The trigger is a button wearing `.select`, so a closed dropdown is identical to the
-   native one it replaced and no layout moved when they were swapped. The list below is
-   ours — a native select's popup is painted by the operating system and no stylesheet
-   reaches inside it, which on the dark theme meant a grey OS list with square corners
-   over a product made of rounded panels. */
 .select-trigger {
   display: flex; align-items: center; gap: 8px;
   text-align: left; cursor: pointer; line-height: 1.45; min-width: 0;
@@ -309,14 +247,10 @@
 .select-trigger .select-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-trigger.placeholder .select-value { color: var(--ink-3); }
 .select-trigger:hover:not(:disabled) { border-color: var(--line-2); }
-/* Open reads the same as focused. They are the same state to the reader. */
 .select-trigger[aria-expanded="true"] { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
 .select-trigger:disabled { opacity: .55; cursor: not-allowed; }
-
 .select-menu {
   position: fixed; z-index: 220; padding: 6px;
-  /* Long lists — every artist, every action, every folder — scroll inside the panel
-     rather than running off the fold. */
   max-height: min(360px, 60vh); overflow-y: auto; overscroll-behavior: contain;
   box-shadow: var(--shadow-lg); animation: rise var(--t-fast);
 }
@@ -331,28 +265,19 @@
 .select-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-option-hint { font-size: 14.5px; color: var(--ink-3); font-weight: 400; }
 .select-option-meta { flex: none; font-size: 14.5px; color: var(--ink-3); font-family: var(--mono); }
-/* The keyboard cursor and the mouse hover are one thing, so the two never disagree about
-   which row Enter would take. */
+
 .select-option.active:not(:disabled) { background: var(--surface-2); color: var(--ink); }
 .select-option.on { color: var(--indigo-deep); font-weight: 600; }
 .select-option.on.active { background: var(--indigo-soft); }
 .select-option:disabled { opacity: .45; cursor: not-allowed; }
-/* Held in the layout rather than added on selection, so the label does not shift by 15px
-   when a row becomes the chosen one. */
 .select-tick { flex: none; opacity: 0; color: var(--indigo); }
 .select-option.on .select-tick { opacity: 1; }
-
 .select-group {
   padding: 9px 10px 5px; font-size: 13.5px; font-weight: 700;
   letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3);
 }
 .select-group:not(:first-child) { margin-top: 3px; border-top: 1px solid var(--line); padding-top: 11px; }
 .select-empty { padding: 12px 10px; font-size: 16px; color: var(--ink-3); }
-
-/* ── Date field and calendar ───────────────────────────────────────────────
-   Same reasoning as the select: `<input type="date">` has its picker drawn by the browser,
-   which paints a different widget per engine and reads none of these tokens. The trigger
-   keeps `.input`, so a closed date field still matches every other control on the row. */
 .date-trigger {
   display: flex; align-items: center; gap: 8px;
   text-align: left; cursor: pointer; line-height: 1.45; min-width: 0;
@@ -367,7 +292,6 @@
   transition: background var(--t-fast), color var(--t-fast);
 }
 .date-clear:hover { background: var(--surface-2); color: var(--ink); }
-
 .calendar { position: fixed; z-index: 220; padding: 10px; width: 292px; box-shadow: var(--shadow-lg); animation: rise var(--t-fast); }
 .calendar-head { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
 .calendar-title {
@@ -387,11 +311,8 @@
   transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
 }
 .calendar-day:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
-/* Days from the neighbouring months are kept rather than blanked: a grid with holes in it
-   is harder to read than one that is quietly continuous. */
 .calendar-day.outside { color: var(--ink-3); opacity: .55; }
 .calendar-day:disabled { opacity: .3; cursor: not-allowed; }
-/* Today is an outline, the chosen day is a fill — so a chosen today reads as both. */
 .calendar-day.today { border-color: var(--line-2); font-weight: 700; color: var(--ink); }
 .calendar-day.cursor:not(.on) { border-color: var(--indigo); }
 .calendar-day.on {
@@ -401,36 +322,15 @@
   display: flex; justify-content: space-between; gap: 8px;
   margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line);
 }
-
-/* ── Label / figure rows ───────────────────────────────────────────────────
-   A name on the left, its figure on the right. `.spread` alone is not enough: it lets
-   both sides shrink, so a long folder name squeezes the figure until "365 KB" breaks
-   across two lines — at which point it has stopped being a number. The figure is fixed
-   and never wraps; the name is what gives way, with an ellipsis. */
 .kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
 .kv-row > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kv-row > :last-child { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-
-/* ── Status tiles ──────────────────────────────────────────────────────────
-   The six availability counts. Narrower than a general stat tile so all six fit one row
-   at desk width instead of five-plus-an-orphan, and the caption is pinned to the bottom
-   so a one-line and a two-line caption still leave the tiles the same shape. */
-/* There are exactly six availability statuses, so the column count is chosen rather than
-   fitted: auto-fit gave five across and left the sixth alone on its own row, which reads
-   as a mistake. 6, 3 and 2 all divide six evenly, so no width produces an orphan.
-
-   `.tiles.status-tiles`, not `.status-tiles` — the generic .tiles rule is declared later
-   in this file, and at equal specificity the later one wins. */
 .tiles.status-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 @media (max-width: 1000px) { .tiles.status-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 430px)  { .tiles.status-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-/* Equal-height tiles with the caption pinned to the bottom, so a one-line and a two-line
-   caption still leave the row of figures on one baseline. */
 .tiles.status-tiles .stat { display: flex; flex-direction: column; gap: 7px; }
 .tiles.status-tiles .stat .stat-v { margin-top: 0; }
 .tiles.status-tiles .stat .stat-n { margin-top: auto; padding-top: 2px; }
-
-/* ── Profile ───────────────────────────────────────────────────────────── */
 .profile-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .profile-avatar {
   width: 62px; height: 62px; border-radius: 18px; flex: none;
@@ -439,9 +339,6 @@
   font-family: var(--display); font-weight: 600; font-size: 24px;
 }
 
-/* Password field with a reveal toggle. The input reserves room for the button rather than
-   letting it sit over the text — a 40-character password ending under an eye icon is
-   exactly the case the toggle exists to help with. */
 .password-field { position: relative; display: flex; }
 .password-field .input { padding-right: 46px; }
 .password-toggle {
@@ -452,16 +349,11 @@
 }
 .password-toggle:hover { color: var(--ink); }
 .password-toggle:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
-
 .check { display: flex; align-items: flex-start; gap: 11px; cursor: pointer; }
-/* The caption belongs under its label, not welded to the end of it. */
 .check > span { display: block; }
 .check .label, .check .hint { display: block; }
 .check .hint { margin-top: 2px; }
 .check input { margin-top: 3px; accent-color: var(--indigo); width: 15px; height: 15px; flex: none; }
-
-/* Radio cards — used where the choice itself needs explaining, as with the three kinds
-   of share link. The description is part of the control, not a footnote under it. */
 .choice {
   display: flex; gap: 11px; align-items: flex-start; width: 100%; text-align: left;
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md);
@@ -479,13 +371,8 @@
 }
 .choice.on .choice-mark { background: var(--indigo); color: var(--on-accent); }
 
-/* A list beside a viewer — the folder share page, and anywhere else that pattern recurs. */
 .split { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; align-items: start; }
 @media (max-width: 780px) { .split { grid-template-columns: 1fr; } }
-
-/* Panels that sit side by side until they cannot. The `min(…, 100%)` is the whole point:
-   a bare minmax(290px, 1fr) track is still 290px wide in a 260px container, and the page
-   grows a horizontal scrollbar rather than the column shrinking. Set --min to override. */
 .auto-grid {
   --min: 280px;
   display: grid;
@@ -493,47 +380,27 @@
   gap: 18px;
   align-items: start;
 }
-
-/* The segmented switch: a small set of mutually exclusive options, one of which is always
-   on. It reads as a single object with a highlight sliding inside it, which is what makes
-   it different from a row of buttons where any number could be pressed. */
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px; }
 .seg button {
   border: none; background: transparent; padding: 5px 11px; border-radius: 6px;
   font-size: 16px; font-weight: 500; color: var(--ink-3); cursor: pointer; transition: all var(--t-fast);
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
 }
-/* Unselected options were previously inert on hover, which left no signal that they could
-   be clicked at all — the control looked like a label until you guessed. */
 .seg button:hover:not(.on) { color: var(--ink-2); background: var(--surface); }
 .seg button:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
 .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
-
-/* ── Toolbar ───────────────────────────────────────────────────────────── */
-/* A row of mixed controls — buttons, a select, a segmented switch — that has to read as
-   one strip. Each of those has a different natural height (padding and font-size are set
-   per component, not per row), so left alone they sit on three baselines and the row looks
-   accidental. The row declares one height and every control in it is held to that. */
 .toolbar {
   --control-h: 34px;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   min-width: 0;
 }
-/* A control in this row can declare a preferred width — the search bars all carry a
-   max-width in the 320–400px range — and on a phone the row itself is narrower than that.
-   A flex item is not clamped by its parent, so it simply hangs off the right of the page
-   and takes the whole document's scroll width with it. Capping every child here fixes the
-   two that did it and the next one that would. */
 .toolbar > * { min-width: 0; max-width: 100%; }
 .toolbar > .btn,
 .toolbar > .select,
 .toolbar > .seg { height: var(--control-h); }
-/* Vertical padding is what makes these three differ; the row's height replaces it. */
 .toolbar > .select { padding-top: 0; padding-bottom: 0; line-height: 1; }
 .toolbar > .seg { padding: 3px; }
 .toolbar > .seg button { height: 100%; }
-
-/* ── Pagination ────────────────────────────────────────────────────────── */
 .pagination {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 14px; padding: 14px 4px 2px;
@@ -555,8 +422,6 @@
   .pagination { flex-direction: column; align-items: stretch; }
   .pagination-jump { margin-left: 0; }
 }
-
-/* ── Notes / callouts ──────────────────────────────────────────────────── */
 .note {
   background: var(--spark-soft); border: 1px solid var(--spark-edge); border-radius: var(--r-md);
   padding: 15px 17px; font-size: 16.5px; color: var(--ink-2); line-height: 1.6;
@@ -572,8 +437,6 @@
 .note.ok b, .note.ok svg { color: var(--ok-ink); }
 .note.neutral { background: var(--surface-2); border-color: var(--line); }
 .note.neutral b, .note.neutral svg { color: var(--ink-2); }
-
-/* ── Stat tiles ────────────────────────────────────────────────────────── */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 14px; }
 .stat {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -588,15 +451,8 @@
 .stat-n { font-size: 15.5px; color: var(--ink-3); margin-top: 3px; }
 .stat-v.ok { color: var(--ok-ink); } .stat-v.danger { color: var(--danger-ink); }
 .stat-v.warn { color: var(--warn-ink); } .stat-v.indigo { color: var(--indigo-deep); }
-
 .meter { height: 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; display: flex; }
 .meter i { height: 100%; display: block; transition: width var(--t-med); }
-
-/* Stat tiles, stacked as one list instead of a grid of boxes.
-   A 2×2 grid of tiles on a phone gives each one about 150px, which is where the captions
-   start wrapping to three lines and the whole block costs half a screen. As rows, the
-   label and the figure share a line, the caption sits under the label, and four stats
-   read in the height two tiles used to take. */
 .tiles.as-list {
   display: flex; flex-direction: column; gap: 0;
   background: var(--surface); border: 1px solid var(--line);
@@ -609,19 +465,11 @@
   box-shadow: none; padding: 12px 16px;
 }
 .tiles.as-list .stat:first-child { border-top: none; }
-/* The lift-on-hover of a card makes no sense in a list; the row highlights instead. */
 .tiles.as-list .stat:hover { transform: none; box-shadow: none; background: var(--surface-2); }
 .tiles.as-list .stat.plain:hover { background: transparent; }
 .tiles.as-list .stat-k { grid-column: 1; grid-row: 1; }
 .tiles.as-list .stat-n { grid-column: 1; grid-row: 2; margin-top: 2px; white-space: normal; }
-/* Spans both rows when there is a caption, and the only row when there is not. */
 .tiles.as-list .stat-v { grid-column: 2; grid-row: 1 / -1; margin-top: 0; font-size: 27px; }
-
-/* ── List rows ─────────────────────────────────────────────────────────────
-   The same records a card grid would show, as one scannable column: an icon, a title with
-   its subtitle, and the figures held to the right. A card grid spends most of its area on
-   artwork, which is worth it for a file — you recognise a thumbnail — and worth nothing
-   for a folder or an artist, where the name is the whole of what you are looking for. */
 .rows { overflow: hidden; }
 .row-item {
   display: flex; align-items: center; gap: 13px; width: 100%;
@@ -639,8 +487,6 @@
 }
 .row-icon.info { background: var(--info-soft); color: var(--info); }
 .row-main { flex: 1; min-width: 0; }
-/* overflow-wrap, not word-break: a long name breaks only where it must, and ordinary
-   words still break at their spaces. File and folder names run long and have no spaces. */
 .row-title { display: block; font-weight: 600; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
 .row-sub { display: block; font-size: 15.5px; color: var(--ink-3); line-height: 1.45; overflow-wrap: anywhere; }
 .row-meta {
@@ -648,22 +494,12 @@
   font-size: 15px; color: var(--ink-3); text-align: right; white-space: nowrap;
 }
 .row-meta b { font-family: var(--mono); font-size: 13.5px; font-weight: 400; }
-
-/* ── Move destination list ─────────────────────────────────────────────────
-   A scrolling list of every folder, indented by depth. Capped in height so the dialog's
-   own buttons stay on screen with fifty folders in the library. */
 .move-list { max-height: 46vh; max-height: 46dvh; overflow-y: auto; }
 .move-option.on { background: var(--indigo-soft); }
 .move-option.on .row-title { color: var(--indigo-deep); }
 .move-option.on:hover { background: var(--indigo-soft); }
 .move-tick { flex: none; color: var(--indigo); }
-/* Depth indentation is applied inline; on a phone it would eat the name, so it stops. */
 @media (max-width: 560px) { .move-option { padding-left: 14px !important; } }
-
-/* ── Row action menu ───────────────────────────────────────────────────────
-   Portalled and fixed, so it escapes the panel's overflow:hidden and the table's
-   horizontal scroll container. Above the drawer and modal stack, because it is opened
-   from inside both. */
 .row-menu {
   position: fixed; z-index: 210; width: 226px; padding: 6px;
   box-shadow: var(--shadow-lg); animation: rise var(--t-fast);
@@ -681,9 +517,6 @@
 .row-menu-item.danger svg { color: var(--danger); }
 .row-menu-item.danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger-ink); }
 .row-menu-item.separated { margin-top: 5px; border-top: 1px solid var(--line); padding-top: 11px; border-radius: 0 0 var(--r-sm) var(--r-sm); }
-
-/* The trigger is quiet until the row is hovered — a column of dots down a list is noise.
-   It stays permanently visible on touch, where there is no hover to reveal it. */
 .row-menu-trigger { flex: none; opacity: .55; transition: opacity var(--t-fast); }
 .row-item:hover .row-menu-trigger,
 .tbl tr:hover .row-menu-trigger,
@@ -691,33 +524,20 @@
 .row-menu-trigger:hover,
 .row-menu-trigger[aria-expanded="true"] { opacity: 1; }
 @media (pointer: coarse) { .row-menu-trigger { opacity: 1; } }
-
-/* An account. Same anatomy as a row, but it holds a control rather than a figure, so it
-   is not clickable itself and the role select sits under the name where there is room for
-   it at any width. */
 .person-row {
   display: flex; align-items: flex-start; gap: 13px;
   padding: 14px 16px; border-top: 1px solid var(--line);
-  /* The action menu pins to this corner on a narrow screen, as it does on a file row. */
   position: relative;
 }
 .person-row:first-child { border-top: none; }
 .person-row .row-icon { margin-top: 2px; }
 .person-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 9px; }
 .person-controls .select { width: auto; min-width: 116px; padding-top: 6px; padding-bottom: 6px; }
-
 @media (max-width: 560px) {
   .person-row { padding: 14px; }
-  /* Icon and title keep their line; the figures drop below and run across it, rather than
-     squeezing the title down to one word a line. Indented to sit under the title, not
-     under the icon. */
   .row-item { flex-wrap: wrap; row-gap: 5px; padding: 12px 14px; position: relative; }
   .row-icon { order: 1; }
   .row-main { order: 2; flex: 1 1 auto; padding-right: 40px; }
-  /* Out of the flow entirely. In it, the trigger is the one child with no order of its
-     own — it defaulted ahead of the icon — and once ordered last it was pushed onto a
-     line of its own by a full-width title. Pinned to the corner it is always in the same
-     place, which is what a per-row menu has to be. */
   .row-item .row-menu-trigger,
   .person-row .row-menu-trigger { position: absolute; top: 8px; right: 8px; }
   .person-row .row-main { padding-right: 40px; }
@@ -727,18 +547,12 @@
     gap: 10px; text-align: left; white-space: normal;
   }
 }
-
-/* ── Overlays ──────────────────────────────────────────────────────────────
-   Every overlay in the product is the same object: centred on the screen, 80% of it,
-   scrolling inside itself rather than moving the page. Nothing slides in from an edge —
-   a panel anchored to one side reads as secondary, and none of these are. */
 .scrim {
   position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(3px);
   z-index: 100; display: flex; align-items: center; justify-content: center;
   padding: 4vh 4vw; animation: fade var(--t-med);
 }
 @keyframes fade { from { opacity: 0; } }
-
 .modal {
   background: var(--surface); border-radius: var(--r-xl); box-shadow: var(--shadow-lg);
   width: 80vw; max-width: 1500px; max-height: 88vh; max-height: 88dvh;
@@ -753,9 +567,6 @@
   padding: 16px 26px; border-top: 1px solid var(--line); background: var(--surface-2);
   display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: none; flex-wrap: wrap;
 }
-
-/* The asset panel. Same geometry as a modal — it simply carries its own header, tab
-   strip and action bar, so it keeps its own class names. */
 .drawer-scrim {
   position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(3px);
   z-index: 90; display: flex; align-items: center; justify-content: center;
@@ -771,7 +582,6 @@
 .drawer-body { flex: 1; overflow-y: auto; padding: 24px 26px; min-height: 0; }
 .drawer-foot { padding: 16px 26px; border-top: 1px solid var(--line); background: var(--surface-2); flex: none; }
 
-/* ── Tabs ──────────────────────────────────────────────────────────────── */
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .tab {
   border: none; background: transparent; padding: 10px 14px; cursor: pointer;
@@ -780,18 +590,10 @@
 }
 .tab:hover { color: var(--ink); }
 .tab.on { color: var(--indigo-deep); border-bottom-color: var(--indigo); }
-
-/* ── Definition rows (asset metadata, Drive binding) ───────────────────── */
 .def { display: grid; grid-template-columns: 138px 1fr; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); align-items: start; }
 .def:first-child { border-top: none; }
 .def dt { font-size: 16px; color: var(--ink-3); font-weight: 500; }
 .def dd { margin: 0; font-size: 17px; word-break: break-word; }
-
-/* ── Toasts ────────────────────────────────────────────────────────────── */
-/* Anchored to the bottom-left of the content area, clear of the detail drawer on the
-   right. Nothing inside a toast is interactive except its dismiss button, so the entire
-   surface is click-through: a confirmation can never swallow a click meant for whatever
-   sits underneath it, wherever it happens to land. */
 .toasts {
   position: fixed; bottom: 20px; left: calc(var(--sidebar-w) + 20px); z-index: 200;
   display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - var(--sidebar-w) - 40px));
@@ -811,8 +613,6 @@
 .toast button { pointer-events: auto; }
 .toast-title { font-weight: 600; font-size: 17px; }
 .toast-body { font-size: 16px; color: var(--ink-2); line-height: 1.5; margin-top: 2px; }
-
-/* ── Empty states — display face, generous space, one clear next step ───── */
 .empty { text-align: center; padding: 56px 24px; }
 .empty .glyph {
   width: 62px; height: 62px; margin: 0 auto 18px; border-radius: var(--r-lg);
@@ -821,31 +621,23 @@
 .empty h3 { font-family: var(--display); font-weight: 600; font-size: 23px; letter-spacing: -.025em; margin-bottom: 7px; }
 .empty p { color: var(--ink-3); font-size: 16px; max-width: 46ch; margin: 0 auto 20px; line-height: 1.6; }
 
-/* ── Skeletons ─────────────────────────────────────────────────────────── */
 .skel { background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%); background-size: 400% 100%; animation: shimmer 1.3s ease-in-out infinite; border-radius: var(--r-sm); }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-
-/* ── Progress ──────────────────────────────────────────────────────────── */
 .bar { height: 6px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--indigo); border-radius: 4px; transition: width 180ms linear; }
 .bar i.ok { background: var(--ok); }
 .bar i.danger { background: var(--danger); }
-
 .parts { display: flex; gap: 2px; flex-wrap: wrap; }
 .parts i { width: 12px; height: 5px; border-radius: 2px; background: var(--line); transition: background var(--t-fast); }
 .parts i.doing { background: var(--indigo); opacity: .45; }
 .parts i.done { background: var(--indigo); }
 .parts i.failed { background: var(--danger); }
-
-/* ── Dropzone ──────────────────────────────────────────────────────────── */
 .dropzone {
   border: 2px dashed var(--line-2); border-radius: var(--r-xl); padding: 42px 24px;
   text-align: center; background: var(--surface); transition: all var(--t-med); cursor: pointer;
 }
 .dropzone:hover { border-color: var(--indigo); background: var(--indigo-soft); }
 .dropzone.over { border-color: var(--spark); background: var(--spark-soft); transform: scale(1.005); }
-
-/* ── Command palette ───────────────────────────────────────────────────── */
 .palette { width: 100%; max-width: 620px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; animation: rise var(--t-med); }
 .palette-input { display: flex; align-items: center; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
 .palette-input input { flex: 1; border: none; outline: none; font-size: 18px; font-family: var(--sans); background: transparent; }
@@ -858,17 +650,12 @@
 }
 .palette-item:hover, .palette-item.cursor { background: var(--indigo-soft); }
 .palette-foot { padding: 10px 16px; border-top: 1px solid var(--line); background: var(--surface-2); display: flex; gap: 14px; flex-wrap: wrap; }
-
-/* ── Tooltip / help ────────────────────────────────────────────────────── */
 .help {
   display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
   border-radius: 50%; background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line);
   font-size: 14px; font-weight: 600; cursor: help; position: relative; flex: none;
 }
 .help:hover { background: var(--indigo-soft); color: var(--indigo-deep); border-color: var(--indigo-edge); }
-/* Hidden with `display` rather than `opacity`: an absolutely-positioned bubble near the
-   right edge still contributes to the document's scroll width while merely transparent,
-   which is enough to give the whole page a horizontal scrollbar on a phone. */
 .help .bubble {
   display: none;
   position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
@@ -877,8 +664,6 @@
   pointer-events: none; z-index: 60; text-align: left;
 }
 .help:hover .bubble, .help:focus-visible .bubble { display: block; }
-
-/* ── Guided tour ───────────────────────────────────────────────────────── */
 .tour-card {
   position: fixed; z-index: 300; width: min(340px, calc(100vw - 28px)); background: var(--surface);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--line);
@@ -887,8 +672,6 @@
 .tour-dots { display: flex; gap: 5px; }
 .tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }
 .tour-dots i.on { background: var(--indigo); width: 18px; border-radius: 3px; }
-
-/* ── Waveform / preview stage ──────────────────────────────────────────── */
 .preview-stage {
   border-radius: var(--r-lg); overflow: hidden; background: var(--surface-2);
   border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
@@ -898,8 +681,6 @@
 .wavebars { display: flex; align-items: center; gap: 2px; height: 62px; padding: 0 16px; width: 100%; }
 .wavebars i { flex: 1; background: var(--line-2); border-radius: 2px; min-height: 3px; transition: background var(--t-fast); }
 .wavebars i.played { background: var(--indigo); }
-
-/* ── Timeline ──────────────────────────────────────────────────────────── */
 .timeline { position: relative; padding-left: 22px; }
 .timeline::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
 .tl-item { position: relative; padding: 8px 0; }
@@ -909,29 +690,15 @@
 }
 .tl-item.on::before { border-color: var(--indigo); background: var(--indigo); }
 
-/* ── Theme toggle ──────────────────────────────────────────────────────── */
 .theme-toggle svg { transition: transform var(--t-med); }
 .theme-toggle:hover svg { transform: rotate(-18deg) scale(1.06); }
-
-/* Sits over the sign-in and share pages, which have no top bar of their own. */
 .theme-toggle-float { position: fixed; top: 14px; right: 16px; z-index: 30; }
-
-/* ── PWA dock ──────────────────────────────────────────────────────────────
-   Offline notice, update prompt, install offer. Centred over the content area rather than
-   pinned to a corner: all three are about the app itself rather than about the screen
-   under them, and one of the three is the reason nothing on that screen is loading.
-
-   Below the overlay stack (100/90) on purpose — a modal is a task in progress, and an
-   install offer does not interrupt one. */
 .pwa-dock {
   position: fixed; z-index: 60; pointer-events: none;
   left: 16px; right: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom));
   display: flex; justify-content: center;
 }
-/* Centred on the content area when there is a shell, and on the whole viewport when there
-   is not — sign-in and a public share link render outside it, and losing the network on
-   the sign-in screen is one of the likelier ways to meet this component. */
 body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
 .pwa-card {
   pointer-events: auto;
@@ -946,22 +713,10 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
 .pwa-card .btn { flex: none; align-self: center; }
 .pwa-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
 .pwa-body { font-size: 15.5px; color: var(--ink-2); line-height: 1.5; margin-top: 1px; }
-/* Offline is a state, not an event: it stays until it is fixed, so it is coloured as a
-   condition rather than as an alarm. */
 .pwa-card.offline { border-color: var(--warn); background: var(--warn-soft); }
 .pwa-card.offline > svg { color: var(--warn-ink); }
 .pwa-card.offline .pwa-title { color: var(--warn-ink); }
 
-/* ── Build marker ──────────────────────────────────────────────────────────
-   A real footer at the end of the document, not an overlay pinned to the corner.
-   Fixed, it sat on top of whatever was underneath it on every screen and had to be hidden
-   on phones entirely to stop it covering content. In the flow it is simply the last thing
-   on the page: you reach it by scrolling to the bottom, which is where a version number
-   belongs, and it can never obscure anything.
-
-   `margin-top: auto` is what makes a short page still put it at the foot of the window
-   rather than immediately under the content — .main is a full-height flex column, so the
-   last child takes up the slack. */
 .build-tag {
   margin-top: auto;
   padding: 18px 26px calc(18px + env(safe-area-inset-bottom));
@@ -970,38 +725,20 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   font-family: var(--mono); font-size: 14px; letter-spacing: .1em; font-weight: 500;
   color: var(--ink-3); opacity: .62;
 }
-
-/* ── Search layout ─────────────────────────────────────────────────────── */
-/* Results own the full width. Facets live in the Filters dialog, laid out in columns so
-   a tab holding three facets reads as three lists rather than one long scroll. */
 .search-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
-
-/* The controls that belong to the search bar — verify, sort, view, filters. They sit
-   directly under the input on Home and under the in-artist input on an artist's page, so
-   they need to wrap onto their own line on a narrow screen rather than squeezing the
-   count out of view. */
 .search-toolbar { align-items: center; row-gap: 10px; }
-/* With nothing to report on the left, the status side is not rendered at all, so the lone
-   control cluster lands at flex-start and sits under the search bar's left edge. */
 @media (max-width: 560px) {
   .search-toolbar { flex-direction: column; align-items: stretch; }
   .search-toolbar > .row-tight,
   .search-toolbar > .toolbar { justify-content: flex-start; }
 }
-
-/* Artists beside activity on Home. One column once there is no room for two, because a
-   pair of 300px panels side by side is worse than either of them full width. */
 .home-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 900px) {
   .home-split { grid-template-columns: minmax(0, 1fr); }
 }
-/* Facet groups stack; their values run across. A chip row wraps to fit the dialog, so a
-   tab with 40 tags stays one screen rather than one scroll. */
+
 .facet-grid { display: flex; flex-direction: column; gap: 24px; }
 .facet-chips { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
-
-/* Frosted, not flat: each chip sits on a translucent pane with the surface blurred
-   behind it, so a dense row still separates into individual objects. */
 .facet-chip {
   display: inline-flex; align-items: center; gap: 9px;
   padding: 8px 15px; border-radius: var(--r-pill); cursor: pointer;
@@ -1026,11 +763,9 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   color: var(--ink-3); flex: none;
 }
 .facet-chip.on .facet-chip-count { color: var(--on-accent); opacity: .75; }
-/* The availability chips carry their own status colour, so the pane underneath steps back. */
 .facet-chip .badge { background: transparent; padding: 0; font-size: 16.5px; font-weight: 500; }
 .facet-chip.on .badge { color: var(--on-accent); }
 
-/* ── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
   .topbar-menu { display: inline-flex; }
   .shell { grid-template-columns: 1fr; }
@@ -1042,14 +777,8 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   .sidebar.open { transform: none; box-shadow: var(--shadow-lg); }
   .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 79; background: var(--scrim-soft); animation: fade var(--t-fast); }
   .toasts { left: 20px; width: min(380px, calc(100vw - 40px)); }
-  /* No sidebar to sit beside once it is off-canvas. */
   body:has(.shell) .pwa-dock { left: 16px; }
 }
-
-/* ── Phones ────────────────────────────────────────────────────────────────
-   The desktop type scale is set for a screen at arm's length. On a phone the same sizes
-   push four words to a line, so the whole scale steps back down — proportionally, not
-   below where it started. */
 @media (max-width: 720px) {
   body { font-size: 17.5px; }
   .t-h1 { font-size: 28px; }
@@ -1066,18 +795,11 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   .panel-body, .panel-head { padding: 15px 16px; }
   .note { padding: 13px 14px; font-size: 16px; }
   .build-tag { padding: 15px 14px calc(15px + env(safe-area-inset-bottom)); }
-  /* A tall preview inside an 88vh dialog leaves no room for anything else. */
   .preview-stage { min-height: 150px; }
   .preview-stage img { max-height: 240px; }
-  /* Seven actions at full width would leave the file itself a sliver of the screen, so
-     they pack tightly and the bar scrolls if a role really has all of them. */
   .drawer-foot { max-height: 24vh; overflow-y: auto; padding-top: 12px; padding-bottom: 12px; }
   .drawer-foot .btn { flex: 0 1 auto; padding: 9px 13px; font-size: 16px; min-height: 40px; gap: 6px; }
 }
-
-/* ── Touch ─────────────────────────────────────────────────────────────────
-   Keyed on the pointer, not the width: a small tablet with a mouse does not need
-   44px targets, and a large phone does. */
 @media (pointer: coarse) {
   .btn { min-height: 44px; }
   .btn-sm { min-height: 38px; padding: 8px 14px; }
@@ -1087,10 +809,8 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   .chip, .facet-chip { min-height: 40px; }
   .check input { width: 20px; height: 20px; }
   .help { width: 22px; height: 22px; font-size: 14.5px; }
-  /* Hover tooltips never fire on touch; tapping the marker has to work instead. */
   .help:focus .bubble { display: block; }
 }
-
 @media (max-width: 900px) {
   .facet-grid { gap: 20px; }
   .facet-chip { padding: 7px 13px; font-size: 15.5px; }
@@ -1099,25 +819,14 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   .page { padding: 16px 14px calc(24px + env(safe-area-inset-bottom)); }
   .page-head { margin-bottom: 16px; }
   .topbar { padding: 0 12px; gap: 8px; }
-  /* A clipped word reads as broken; below this width the search control is icon-only. */
   .topbar-search { flex: none; }
   .topbar-search .kbd, .topbar-search > .grow { display: none; }
-  /* Label drops, icon and target stay — the top bar has five controls and 390px. */
   .hide-on-phone { display: none; }
-  /* A button label is the one thing in this layout that can still force the page wide:
-     .btn sets white-space: nowrap, so a long label ("See all image for this artist")
-     pushes past the viewport. On a phone labels wrap instead — applied to the class, so
-     no individual string can reintroduce the problem later. */
+
   .btn { white-space: normal; max-width: 100%; }
-  /* Long names — files, folders, artists, emails — break rather than run off the edge.
-     `anywhere` and not `break-all`: ordinary prose still breaks at its spaces. */
   .card-title, .row-title, .row-sub, .t-h1, .t-h2, .t-h3, .stat-k,
   .def dd, .toast-title, .pwa-title { overflow-wrap: anywhere; }
-  /* A segmented switch is sized by its longest label, and three of those do not fit in
-     360px. It scrolls inside itself rather than pushing the page wide. */
   .seg { max-width: 100%; overflow-x: auto; }
-  /* Table cells default to squeezing every column equally, which turns a name into a
-     column of single letters. They keep their content's width and the table scrolls. */
   .tbl td, .tbl th { white-space: nowrap; }
   .tbl td.wrap, .tbl th.wrap { white-space: normal; overflow-wrap: anywhere; }
   .searchbar { padding: 11px 13px; gap: 9px; }
@@ -1129,7 +838,6 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   .cards { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
   .card-art { height: 96px; }
   .def { grid-template-columns: 1fr; gap: 3px; }
-  /* 80% of a phone is not a usable dialog — overlays take the screen instead. */
   .scrim, .drawer-scrim { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .modal, .modal.narrow, .modal.wide { width: 100%; max-width: none; max-height: 94vh; max-height: 94dvh; }
   .drawer { width: 100%; max-width: none; height: 94vh; height: 94dvh; }
@@ -1144,13 +852,9 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   .timeline { padding-left: 18px; }
   .palette { max-height: 84vh; max-height: 84dvh; }
   .palette-list { max-height: 60vh; max-height: 60dvh; }
-  /* Three keyboard hints, on a device with no keyboard, eating a row of results. */
   .palette-foot { display: none; }
   .toasts { left: 12px; right: 12px; width: auto; }
   .theme-toggle-float { top: calc(10px + env(safe-area-inset-top)); right: 10px; }
-  /* The card is anchored to whatever it is explaining, which on a phone leaves it half
-     off the bottom as often as not. It docks instead, and the spotlight ring — which is
-     positioned separately — goes on doing the pointing. */
   .tour-card {
     top: auto !important; left: 10px !important; right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
@@ -1158,26 +862,15 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   }
   .pwa-dock, body:has(.shell) .pwa-dock { left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); }
   .pwa-card { padding: 12px 13px; gap: 10px; flex-wrap: wrap; }
-  /* The label and the button both want the full width once there is 320px to share. */
   .pwa-card .grow { flex: 1 1 100%; }
   .pwa-card .btn { flex: 1 1 auto; align-self: stretch; }
   .pwa-card .btn-icon { flex: 0 0 auto; }
 }
-
-/* Very narrow — a single column of cards beats two squeezed ones. */
 @media (max-width: 380px) {
   .cards { grid-template-columns: minmax(0, 1fr); }
   .tiles { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ── Installed ─────────────────────────────────────────────────────────────
-   Launched from a home screen there is no browser chrome: no address bar to scroll away,
-   no back gesture that leaves the app, and on a notched phone nothing between the top of
-   the app and the status bar but whatever this stylesheet puts there.
-
-   The width-keyed rules above already pay the safe-area insets on a phone. These repeat it
-   for the standalone case at any width — an installed app on a tablet in landscape has an
-   inset on the left or the right, and no max-width rule would have caught it. */
 @media (display-mode: standalone), (display-mode: window-controls-overlay), (display-mode: fullscreen) {
   .topbar {
     padding-top: env(safe-area-inset-top);
@@ -1195,7 +888,6 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
     padding-left: max(26px, env(safe-area-inset-left));
     padding-right: max(26px, env(safe-area-inset-right));
   }
-
   @media (max-width: 720px) {
     .topbar { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
     .page {
@@ -1205,28 +897,14 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   }
 }
 
-/* ── Master log ────────────────────────────────────────────────────────────
-   The register of record, as a real spreadsheet: sixty-nine available columns, a header
-   that stays put while the rows scroll under it, and the three leftmost columns — the
-   tick box, the row number and the title — pinned to the left edge so a row scrolled
-   forty columns sideways still says which file it is about. Without the pin, the SHA-256
-   column is an anonymous wall of hex.
-
-   Below 900px the pinning is dropped: 340px of frozen columns on a 390px screen leaves
-   nothing to scroll into. */
-
 .mlog-filters { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; }
 .mlog-filter { display: flex; flex-direction: column; gap: 5px; flex: 1 1 168px; min-width: 0; }
-/* One height across the strip. A select, a date input and a search bar each set their own
-   vertical padding, and left alone the row sits on three baselines. */
 .mlog-filter > .select,
 .mlog-filter > .input { height: 36px; padding-top: 0; padding-bottom: 0; line-height: 1; }
 .mlog-filter .searchbar { height: 36px; padding: 0 12px; box-shadow: none; }
 .mlog-filter .searchbar input { font-size: 16.5px; }
 .mlog-filter .eyebrow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mlog-more { border-top: 1px dashed var(--line); padding-top: 13px; }
-
-/* Both axes scroll inside the panel, so the page itself never grows a horizontal bar. */
 .mlog-scroll {
   overflow: auto;
   max-height: min(70vh, 780px);
@@ -1234,34 +912,22 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   -webkit-overflow-scrolling: touch;
 }
 .mlog-scroll > .tbl { min-width: max-content; }
-
-/* A register cell never wraps: a wrapping cell makes every row a different height and the
-   eye loses the line it was reading. The value is elided, and the full text is in the
-   title attribute. */
 .tbl.mlog th, .tbl.mlog td {
   white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis;
 }
 .tbl.mlog.dense td { padding: 7px 12px; font-size: 15.5px; }
 .tbl.mlog.dense th { padding: 7px 12px; }
 .tbl.mlog input[type="checkbox"] { accent-color: var(--indigo); width: 15px; height: 15px; cursor: pointer; }
-
 .tbl.mlog .mlog-pin { position: sticky; background: var(--surface); z-index: 2; }
 .tbl.mlog thead .mlog-pin { z-index: 4; }
-/* The three offsets have to be exact, or the pinned block overlaps itself as it scrolls.
-   Each cell is therefore pinned to a fixed width rather than left to the table's own
-   layout algorithm, and the next one starts where the last one ends. The row-number
-   column is sized for five figures — a library of ten thousand files is not unusual. */
 .tbl.mlog .mlog-pin-check { left: 0; width: 42px; min-width: 42px; max-width: 42px; padding-left: 14px; padding-right: 0; }
 .tbl.mlog .mlog-pin-no { left: 42px; width: 70px; min-width: 70px; max-width: 70px; }
 .tbl.mlog .mlog-pin-title { left: 112px; min-width: 230px; box-shadow: 1px 0 0 var(--line); }
-/* The pinned cells have their own background, so they need the row's hover and selection
-   states repeated or they sit as three opaque squares over a highlighted row. */
 .tbl.mlog tbody tr:hover .mlog-pin { background: var(--surface-2); }
 .tbl.mlog tbody tr.selected .mlog-pin { background: var(--indigo-soft); }
 @media (max-width: 900px) {
   .tbl.mlog .mlog-pin { position: static; box-shadow: none; }
 }
-
 .mlog-sort {
   display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
   background: none; border: none; padding: 0; cursor: pointer;
@@ -1271,7 +937,6 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
 .mlog-sort svg { flex: none; opacity: .55; }
 .mlog-h.on, .mlog-h.on .mlog-sort { color: var(--indigo-deep); }
 .mlog-h.on .mlog-sort svg { opacity: 1; }
-
 .mlog-title { font-weight: 600; color: var(--ink); }
 .mlog-flag {
   margin-left: 7px; padding: 1px 7px; border-radius: var(--r-pill);
@@ -1280,9 +945,6 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
 .mlog-mono { font-family: var(--mono); font-size: 14.5px; color: var(--ink-2); letter-spacing: .01em; }
 .mlog-num { font-variant-numeric: tabular-nums; }
 .tbl.mlog .tag { font-size: 13px; padding: 1px 8px; }
-
-/* The column picker. Sixty-nine checkboxes in a list is a scroll nobody finishes, so they
-   are laid out in their groups as a grid of togglable pills. */
 .mlog-column-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); gap: 6px; }
 .mlog-column {
   display: flex; align-items: center; gap: 8px; padding: 7px 10px; min-width: 0;
@@ -1299,21 +961,14 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   display: inline-flex; align-items: center; justify-content: center;
 }
 .mlog-column.on .mlog-tick { background: var(--indigo); border-color: var(--indigo); color: var(--on-accent); }
-
-/* A count carried on a button rather than a nav row — same shape, neutral by default. */
 .btn .badge-count {
   font-family: var(--mono); font-size: 14px; font-weight: 600;
   background: var(--surface-2); color: var(--ink-3); padding: 1px 7px; border-radius: var(--r-pill);
 }
-
-/* A spinner for the buttons that are waiting on a file being built. */
 .spin { animation: spin 900ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
-/* An inherited value, marked in the cell rather than in a column of its own. Quiet enough
-   that a column of them does not read as a column of warnings, loud enough that nobody
-   mistakes the release's answer for one somebody gave about this file. */
 .mlog-inherited {
   margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill);
   font-size: 12.5px; font-weight: 600; letter-spacing: .02em;

@@ -11,8 +11,6 @@ import type { Share } from '../../lib/types';
 import { useMemo, useState } from 'react';
 import { useSession } from '../../app/session';
 
-// What a link points at, as a person would group them. A folder link is its own category
-// because it behaves differently from every file link — it carries many files at once.
 const CATEGORIES = [
   { id: 'all', label: 'All', match: () => true },
   { id: 'folders', label: 'Folders', match: (s: Share) => s.target === 'FOLDER' },
@@ -59,15 +57,9 @@ export function ShareManager() {
       qc.invalidateQueries();
       toast({ kind: 'ok', title: 'Link revoked', body: 'It stopped working immediately, everywhere.' });
     },
-    // Without this a failed revoke closed the dialog and said nothing, which reads exactly
-    // like a successful one — the worst possible outcome for the one action people take
-    // when a link has gone somewhere it should not.
     onError: (e: Error) => toast({ kind: 'danger', title: 'The link was not revoked', body: e.message }),
   });
 
-  // Withdraw one addressee. No confirmation dialog: it affects exactly one person, it is
-  // the small remedy the big one exists to avoid, and it can be undone by re-adding them
-  // (which issues a fresh link, not the old one).
   const withdraw = useMutation({
     mutationFn: ({ shareId, recipientId }: { shareId: string; recipientId: string }) =>
       api(`/shares/${shareId}/recipients/${recipientId}`, { method: 'DELETE' }),
@@ -94,8 +86,6 @@ export function ShareManager() {
 
   const isLive = (s: Share) => !s.revokedAt && !s.expired && !s.exhausted;
 
-  // Counts sit on the tabs themselves, so an empty category is visible before it is opened
-  // rather than after — the same reason the artist page counts its tabs.
   const countFor = (id: string) =>
     (data?.data ?? []).filter(CATEGORIES.find((c) => c.id === id)!.match).length;
 
@@ -240,9 +230,6 @@ export function ShareManager() {
                       </td>
                       <td className="t-small">
                         <span className="row-tight"><Audience size={12} /> {s.audienceLabel ?? 'Open to all'}</span>
-                        {/* Each addressee holds a different URL, so each is listed with its
-                            own state and its own withdraw button — one leaked address does
-                            not cost everybody else their link. */}
                         {s.recipients && s.recipients.length > 0 ? (
                           <div className="stack-1" style={{ marginTop: 6 }}>
                             {s.recipients.map((r) => (

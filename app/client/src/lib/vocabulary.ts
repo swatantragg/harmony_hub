@@ -1,6 +1,3 @@
-// Shared hooks for the two vocabularies a person can extend: asset types and tags.
-// Both go through the server's similarity check before anything new is created, so the
-// library never quietly ends up with "Press Kit", "Presskit" and "press-kit".
 import { useQuery } from '@tanstack/react-query';
 import { api, qs } from './api';
 import type { AssetTypeDef, Family, FolderOption, TagSuggestion } from './types';
@@ -24,16 +21,9 @@ export function useFolderOptions() {
 export const fetchSimilarTags = (name: string) =>
   api<{ exact: TagSuggestion | null; suggestions: TagSuggestion[] }>(`/tags/similar${qs({ name })}`);
 
-// Registers a custom tag in the shared vocabulary the moment it is added, rather than
-// waiting for the upload to finish. Without this, a tag typed on one file is invisible to
-// the duplicate check on the next one — which is exactly how "aloo wada" and "Aloo Wada"
-// end up as two tags in the same session.
 export const registerTag = (name: string, force = false) =>
   api<TagSuggestion>('/tags', { method: 'POST', body: { name, force } }).catch(() => null);
 
-// ── Duplicate detection, mirrored from the server ───────────────────────────
-// The same normalisation and edit distance run here so tags that exist only in the
-// current session — typed a minute ago, not yet uploaded — are caught too.
 
 export const normaliseTag = (s: string) =>
   String(s ?? '')
@@ -65,17 +55,14 @@ export interface TagMatch {
   confidence: number;
 }
 
-/** True when two tag names are the same idea spelled differently. */
 export function isSameTag(a: string, b: string): boolean {
   return normaliseTag(a) === normaliseTag(b);
 }
 
-/** True when `other` is close enough to `candidate` to be worth offering instead. */
 export function isNearTag(candidate: string, other: string): boolean {
   const x = normaliseTag(candidate);
   const y = normaliseTag(other);
   if (!x || !y || x === y) return false;
-  // One name containing the other is the common real-world case: "aloo" vs "aloo wada".
   if (y.includes(x) || x.includes(y)) return true;
   const longest = Math.max(x.length, y.length);
   return levenshtein(x, y) <= Math.max(1, Math.round(longest * 0.28));
@@ -91,8 +78,6 @@ export function nearTagConfidence(candidate: string, other: string): number {
 export const fetchSimilarTypes = (type: string) =>
   api<{ exact: AssetTypeDef | null; suggestions: AssetTypeDef[] }>(`/asset-types/similar${qs({ type })}`);
 
-// Groups a flat type list by family, custom types last inside each group so the
-// familiar catalogue stays where people expect it.
 export function groupTypes(types: AssetTypeDef[]): [Family, AssetTypeDef[]][] {
   const families: Family[] = ['Audio', 'Video', 'Image', 'Document'];
   return families
@@ -100,12 +85,6 @@ export function groupTypes(types: AssetTypeDef[]): [Family, AssetTypeDef[]][] {
     .filter(([, list]) => list.length > 0);
 }
 
-// ── Languages ───────────────────────────────────────────────────────────────
-//
-// The controlled list is a set of suggestions, not a constraint: the server bounds the
-// field at 60 characters and otherwise accepts what it is given, because a library that
-// refuses an unlisted language is a library somebody works around. So the picker offers
-// the list and still lets a name be typed.
 export function useLanguages() {
   return useQuery({
     queryKey: ['vocabulary-languages'],

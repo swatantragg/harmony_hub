@@ -1,13 +1,3 @@
-// Reading .xlsx / .docx / .pptx in the browser, with no library.
-//
-// An Office file is a ZIP of XML parts. The browser already ships both halves of what is
-// needed to open one — DecompressionStream for the deflate payloads and DOMParser for the
-// XML — so the preview panel renders a spreadsheet or a document without adding a
-// megabyte of parser to the bundle, in the same spirit as the hand-rolled Drive and JWT
-// layers on the server.
-//
-// What this does NOT do: styling, formulas, merged cells, images, charts. It recovers the
-// content, which is what a preview is for. Anything it cannot read falls back to download.
 
 interface ZipEntry { name: string; data: Uint8Array }
 
@@ -20,8 +10,6 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
 
 export const canReadOoxml = () => typeof DecompressionStream !== 'undefined';
 
-// Walks the central directory backwards from the end-of-central-directory record, which
-// is the only reliable way to enumerate a ZIP — local headers may carry deferred sizes.
 export async function unzip(buffer: ArrayBuffer): Promise<Map<string, Uint8Array>> {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
@@ -67,7 +55,6 @@ const parseXml = (data: Uint8Array | undefined) =>
 const textOf = (node: Element | null, selector: string) =>
   Array.from(node?.getElementsByTagName(selector) ?? []).map((n) => n.textContent ?? '').join('');
 
-/* ── Spreadsheets ────────────────────────────────────────────────────────── */
 
 export interface SheetData { name: string; rows: string[][] }
 
@@ -81,8 +68,6 @@ const columnIndex = (ref: string) => {
 export async function readXlsx(buffer: ArrayBuffer): Promise<SheetData[]> {
   const files = await unzip(buffer);
 
-  // Shared strings are the common case in files Excel itself writes; inline strings are
-  // what most exporters emit. Both are handled.
   const sharedDoc = parseXml(files.get('xl/sharedStrings.xml'));
   const shared = Array.from(sharedDoc?.getElementsByTagName('si') ?? []).map((si) => textOf(si, 't'));
 
@@ -115,7 +100,6 @@ export async function readXlsx(buffer: ArrayBuffer): Promise<SheetData[]> {
   });
 }
 
-/* ── Word ────────────────────────────────────────────────────────────────── */
 
 export interface DocBlock { text: string; heading: boolean }
 
@@ -134,7 +118,6 @@ export async function readDocx(buffer: ArrayBuffer): Promise<DocBlock[]> {
   });
 }
 
-/* ── PowerPoint ──────────────────────────────────────────────────────────── */
 
 export interface Slide { index: number; lines: string[] }
 
@@ -153,7 +136,6 @@ export async function readPptx(buffer: ArrayBuffer): Promise<Slide[]> {
   });
 }
 
-/* ── CSV / TSV — same table view, no ZIP involved ────────────────────────── */
 
 export function readDelimited(text: string, delimiter = ','): string[][] {
   const rows: string[][] = [];

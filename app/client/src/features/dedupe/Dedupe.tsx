@@ -1,22 +1,3 @@
-// De-duplication (§10.12).
-//
-// The screen exists for one complaint: "the same video is in four folders and I daren't
-// delete any of them because I can't tell if they're actually the same." So the page is
-// built around removing that doubt, not around a number.
-//
-// Two design decisions do most of the work:
-//
-//   Certainty is visible, and it comes first. A checksum match is a fact — Google computed
-//   it, we did not, and it cannot be a coincidence. A name match is a hunch. Those two
-//   things are labelled completely differently, coloured differently, and the destructive
-//   action is only offered by default on the first. A tool that presents a guess with the
-//   same confidence as a fact gets used once and then distrusted forever.
-//
-//   Deleting is not the only answer, or even the first one. "Link" keeps every catalogue
-//   entry exactly where it is — the video still appears in all four folders, because it
-//   genuinely belongs in all four — and points them at one Drive file so the bytes exist
-//   once. That is usually what somebody actually wants, and no filesystem-shaped tool
-//   offers it.
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -31,12 +12,6 @@ import { useSession } from '../../app/session';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import type { DuplicateGroup, DuplicateMember, DuplicateReport } from '../../lib/types';
 
-// What the scan found, said plainly once it has finished.
-//
-// The interesting case is the boring one. When a re-scan changes nothing the page looks
-// exactly as it did before it was pressed, and without this the only honest reading is
-// "the button did not work" — so "nothing to clean up" is stated as a result in its own
-// right rather than left to be inferred from an unchanged screen.
 function ScanResultDialog({ report, onClose }: { report: DuplicateReport; onClose: () => void }) {
   const certain = report.groups.filter((g) => g.kind === 'IDENTICAL').length;
   const suspected = report.groups.length - certain;
@@ -81,8 +56,6 @@ function ScanResultDialog({ report, onClose }: { report: DuplicateReport; onClos
   );
 }
 
-// The language each tier is allowed to use. Getting this right is most of the feature:
-// "identical" is a statement of fact, "worth a look" is an invitation to check.
 const KIND: Record<string, {
   label: string;
   certainty: string;
@@ -139,10 +112,6 @@ export function Dedupe() {
     queryFn: () => api<DuplicateReport>(`/dedupe/scan${qs({ level, family })}`),
   });
 
-  // "Scan again" used to fire an invalidation and return nothing: the table might not
-  // change, and a button that looks identical before and after reads as broken. So the
-  // scan is awaited, the button says it is working, and the result is stated outright —
-  // including, especially, the result "nothing changed", which is the common one.
   const [scanning, setScanning] = useState(false);
   const [scanReport, setScanReport] = useState<DuplicateReport | null>(null);
 
@@ -183,8 +152,6 @@ export function Dedupe() {
         </button>
       </div>
 
-      {/* Headline. Only the certain tier is counted, because an overstated number that
-          under-delivers is how a cleanup tool loses its user's trust permanently. */}
       <div className={`note ${certain.length ? 'warn' : 'ok'}`}>
         {certain.length ? <Copy size={16} /> : <CheckCircle2 size={16} />}
         <div>
@@ -213,10 +180,6 @@ export function Dedupe() {
         </div>
       </div>
 
-      {/* Filters */}
-      {/* `.seg` is the product's segmented switch. This row used to ask for `.segmented`
-          with an `.active` child, neither of which the stylesheet defines — so these three
-          rendered as bare unstyled buttons next to a properly styled select. */}
       <div className="toolbar">
         <div className="seg">
           {([['all', 'Everything'], ['exact', 'Identical only'], ['near', 'Identical + same media']] as const).map(([v, label]) => (
@@ -235,7 +198,6 @@ export function Dedupe() {
         />
       </div>
 
-      {/* Summary tiles */}
       {data.groups.length > 0 && (
         <div className="tiles as-list">
           {Object.entries(data.byKind).map(([kind, v]) => {
@@ -274,7 +236,6 @@ export function Dedupe() {
         </div>
       )}
 
-      {/* Perceptual tier — opt-in, and honest about what it costs. */}
       <section className="panel">
         <div className="panel-head"><span className="t-h3 row-tight"><Sparkles size={15} color="var(--ink-3)" /> Find the same footage at different resolutions</span></div>
         <div className="panel-body stack-3">
@@ -319,7 +280,6 @@ export function Dedupe() {
   );
 }
 
-// ── One group ───────────────────────────────────────────────────────────────
 
 function GroupCard({
   group, canResolve, onResolve, onOpenAsset,
@@ -346,8 +306,6 @@ function GroupCard({
               )}
             </div>
             <div style={{ fontWeight: 700, fontSize: 17 }}>{meta.label}</div>
-            {/* The reason, in full. Never a score, never a percentage — a sentence saying
-                what was compared and what it found. */}
             <p className="t-body" style={{ fontSize: 15, margin: '6px 0 0', maxWidth: '72ch' }}>{group.reason}</p>
           </div>
 
@@ -434,7 +392,6 @@ function MemberRow({ member, isKeeper, onOpen }: { member: DuplicateMember; isKe
   );
 }
 
-// ── Resolution ──────────────────────────────────────────────────────────────
 
 function ResolveDialog({ group, onClose }: { group: DuplicateGroup; onClose: () => void }) {
   const meta = KIND[group.kind] ?? KIND.SAME_NAME;
@@ -601,9 +558,6 @@ function ResolveDialog({ group, onClose }: { group: DuplicateGroup; onClose: () 
   );
 }
 
-// Emptying the bin is the only way to actually get the space back before Google's own
-// 30-day sweep — and the only place in the product that touches files GCloud never
-// uploaded, which is why it says so and asks for a typed confirmation.
 function EmptyTrashPanel() {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
@@ -664,9 +618,6 @@ function EmptyTrashPanel() {
                 className="btn btn-danger"
                 disabled={typed !== 'EMPTY TRASH' || (needsPassword && !password) || empty.isPending}
                 onClick={async () => {
-                  // Re-authentication first: this reaches files the library never touched
-                  // and there is nothing behind it. A live session is not sufficient
-                  // evidence that the person at the keyboard meant this.
                   if (needsPassword && !(await stepUp(password))) { setWrong(true); setPassword(''); return; }
                   empty.mutate();
                 }}

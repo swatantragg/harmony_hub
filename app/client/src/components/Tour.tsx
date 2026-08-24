@@ -1,6 +1,3 @@
-// First-run tour. Five cards, skippable, never shown twice. It exists to compress the
-// learning curve: the goal is that someone who has never seen GCloud can find a file,
-// prove it is really in storage, rename it and share it inside their first session.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ArrowRight } from 'lucide-react';
@@ -40,10 +37,6 @@ export function Tour({ onDone }: { onDone: () => void }) {
   const [box, setBox] = useState<DOMRect | null>(null);
   const current = STEPS[step];
 
-  // An anchor that is not actually on the screen gets no ring and no anchored card. The
-  // sidebar is the case that matters: below 1080px it is translated off-canvas, so it
-  // still has a bounding box — one sitting entirely to the left of the viewport. Ringing
-  // it would cut the spotlight hole out of thin air and leave the card pointing nowhere.
   const onScreen = (el: Element) => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0
@@ -63,7 +56,6 @@ export function Tour({ onDone }: { onDone: () => void }) {
 
   const finish = () => { tour.finish(); onDone(); };
 
-  // Position the card near its anchor, clamped to the viewport.
   const style: React.CSSProperties = box
     ? {
         top: Math.min(window.innerHeight - 250, box.bottom + 14),

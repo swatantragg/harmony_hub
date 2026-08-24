@@ -1,9 +1,3 @@
-// Share, move, rename, edit, delete — the verbs that belong to a file, in one place.
-//
-// The counterpart to useFolderActions in features/folders/Folders.tsx, and the same
-// reasoning: a file is met in a list, in a folder, in a search result and in its own
-// detail panel, and it has to offer the same things in all four. Wiring five dialogs into
-// each of those screens separately is how they drift.
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FolderInput, Pencil, Share2, SlidersHorizontal, Trash2 } from 'lucide-react';
