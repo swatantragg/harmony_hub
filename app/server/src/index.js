@@ -286,8 +286,16 @@ async function main() {
 
   let seeded = false;
   if (isEmpty() && (SEED_ON_BOOT || process.argv.includes('--seed'))) {
-    await seed();
-    seeded = true;
+    // The seed uploads its sample assets to Drive, so it cannot run while Drive is
+    // unreachable. Degraded means serving, not dying: skip the seed and boot empty
+    // rather than throwing past the warning printed just above.
+    if (boot.ok) {
+      await seed();
+      seeded = true;
+    } else {
+      console.error('  Skipping the boot seed — it uploads to Drive, which is unreachable.');
+      console.error('  Fix the credential, then restart or POST /api/demo/reset.\n');
+    }
   }
 
   const accountChanges = await ensureAccounts({ log: () => {} });
