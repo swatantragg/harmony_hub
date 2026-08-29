@@ -1,0 +1,58 @@
+# TLS termination for GCloud.
+#
+# Caddy obtains and renews a certificate on its own, redirects HTTP to HTTPS by
+# default, and speaks HTTP/2 and HTTP/3. The application behind it keeps
+# listening on plain HTTP, on the loopback interface, and never sees a
+# certificate.
+#
+#   PROXY_DOMAIN=library.example.com docker compose --profile tls up -d
+#
+# `localhost` is a valid value: Caddy then issues an internal certificate, which
+# is enough to exercise the Secure-cookie path without a public hostname.
+
+{
+	# The admin API is what the health check talks to. It is not published.
+	admin :2019
+}
+
+{$PROXY_DOMAIN} {
+	encode zstd gzip
+
+	# One hop. The application must be told the same thing — TRUST_PROXY=1 —
+	# or it will either ignore the header (and record this container's address
+	# for every request) or believe it from anybody (and let every client forge
+	# the address the rate limiter counts and the audit trail records).
+	reverse_proxy {$PROXY_UPSTREAM} {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+
+		# Uploads stream through to Google, and downloads stream back through
+		# this process. Neither should be buffered here, and a large master must
+		# not time out mid-transfer.
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+			dial_timeout 10s
+		}
+	}
+
+	# The application sets its own full CSP, HSTS, COOP, CORP and
+	# Permissions-Policy per response — including a different, stricter set on
+	# the byte-serving route. Nothing is added here that would override those.
+	# Only the one header a proxy is better placed to remove:
+	header {
+		-Server
+	}
+
+	request_body {
+		# The JSON API caps itself at 1 MB. File bytes never come through here:
+		# the browser PUTs them straight to Google's resumable session URI.
+		max_size 8MB
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

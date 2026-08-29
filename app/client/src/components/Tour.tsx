@@ -45,13 +45,28 @@ export function Tour({ onDone }: { onDone: () => void }) {
   };
 
   useEffect(() => {
+    const measure = () => {
+      const el = document.querySelector(current.anchor);
+      setBox(el && onScreen(el) ? el.getBoundingClientRect() : null);
+    };
+
     const el = document.querySelector(current.anchor);
-    if (el) {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      setTimeout(() => setBox(onScreen(el) ? el.getBoundingClientRect() : null), 240);
-    } else {
-      setBox(null);
-    }
+    if (!el) { setBox(null); return undefined; }
+
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const t = setTimeout(measure, 240);
+
+    // The anchor moves whenever the layout does — a rotation, a resized window,
+    // the sidebar collapsing at a breakpoint. Measuring once left the spotlight
+    // ringing empty space at the target's old desktop coordinates, which on a
+    // phone is a highlight sitting outside the screen entirely.
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+    };
   }, [step, current.anchor]);
 
   const finish = () => { tour.finish(); onDone(); };
@@ -66,16 +81,28 @@ export function Tour({ onDone }: { onDone: () => void }) {
   return createPortal(
     <>
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(23,23,35,.42)', zIndex: 290 }} onClick={finish} />
-      {box && (
-        <div
-          style={{
-            position: 'fixed', zIndex: 295, pointerEvents: 'none',
-            top: box.top - 6, left: box.left - 6, width: box.width + 12, height: box.height + 12,
-            border: '2px solid var(--spark)', borderRadius: 14,
-            boxShadow: '0 0 0 9999px rgba(23,23,35,.42)', background: 'transparent',
-          }}
-        />
-      )}
+      {box && (() => {
+        // Clamp the spotlight to the viewport. `onScreen` accepts an element
+        // that merely *intersects* the screen, so on a phone the anchor can
+        // start near the right edge and run well past it — the ring then sits
+        // outside the viewport and drags the whole document sideways, which is
+        // a horizontal scrollbar on every page until the tour is dismissed.
+        const pad = 6;
+        const left = Math.max(0, box.left - pad);
+        const top = Math.max(0, box.top - pad);
+        const width = Math.min(box.width + pad * 2, window.innerWidth - left);
+        const height = Math.min(box.height + pad * 2, window.innerHeight - top);
+        return (
+          <div
+            style={{
+              position: 'fixed', zIndex: 295, pointerEvents: 'none',
+              top, left, width, height,
+              border: '2px solid var(--spark)', borderRadius: 14,
+              boxShadow: '0 0 0 9999px rgba(23,23,35,.42)', background: 'transparent',
+            }}
+          />
+        );
+      })()}
       <div className="tour-card" style={style} role="dialog" aria-label={current.title}>
         <div className="spread" style={{ marginBottom: 12 }}>
           <div className="row-tight"><Tile size="sm" /><span className="eyebrow">Step {step + 1} of {STEPS.length}</span></div>

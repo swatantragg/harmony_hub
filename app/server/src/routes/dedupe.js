@@ -202,6 +202,8 @@ dedupeRouter.post('/resolve', requires('asset:delete'), async (req, res) => {
   });
   if (group.reclaimableBytes > 0) {
     notify({
+      audience: 'all',
+      category: 'activity',
       level: 'ok',
       title: `${trashed.length} duplicate${trashed.length === 1 ? '' : 's'} removed`,
       body: `Google Drive will free the space when the trash empties, ${TRASH_DAYS} days from now — or immediately if you empty it yourself.`,

@@ -9,8 +9,9 @@ import fs from 'node:fs';
 
 import {
   ALLOW_DESTRUCTIVE_DEMO, APP_ORIGIN, AUDIT_RETENTION_DAYS, CORS_ORIGINS, DRIVE_ID, ENV,
-  FOUNDING_ADMIN, GOOGLE, GOOGLE_CONFIGURED, NODE_ENV, ORIGIN, PORT, RECONCILE_CRON,
-  RECONCILE_ENABLED, ROOT as SERVER_ROOT, ROOTS, SEED_ON_BOOT, SEED_PASSWORD, TRUST_PROXY, env,
+  FOUNDING_ADMIN, GOOGLE, GOOGLE_CONFIGURED, MAIL_CONFIGURED, NODE_ENV, ORIGIN, OTP, PORT,
+  RATE_LIMIT_STORE, RECONCILE_CRON, RECONCILE_ENABLED, RESET_MAX_PER_HOUR,
+  ROOT as SERVER_ROOT, ROOTS, SEED_ON_BOOT, SEED_PASSWORD, SHARE_PASSCODE, TRUST_PROXY, env,
 } from './config.js';
 import { connect, connectionInfo, disconnect } from './db/mongo.js';
 import { ensureIndexes } from './db/models.js';
@@ -20,9 +21,16 @@ import { ensureAccounts } from './services/accounts.js';
 import * as storage from './services/storage.js';
 import { runReconciliation } from './services/reconcile.js';
 
-import { authenticate, clientAddress, problem, requires } from './middleware/auth.js';
+import {
+  authenticate, clientAddress, identifyForRateLimit, problem, requires,
+} from './middleware/auth.js';
+import { requireCsrf, seedCsrf } from './middleware/csrf.js';
 import { notify, sweepAudit } from './services/audit.js';
 import { sweep as sweepSessions } from './services/sessions.js';
+import { MongoRateLimitStore, sweep as sweepRateLimits } from './services/ratelimit-store.js';
+import { sweep as sweepOtp } from './services/otp.js';
+import * as mailer from './services/mailer.js';
+import * as keepalive from './services/keepalive.js';
 
 import { authRouter, meRouter } from './routes/auth.js';
 import { assetsRouter } from './routes/assets.js';
@@ -45,13 +53,37 @@ app.locals.corsOrigins = CORS_ORIGINS;
 
 app.use(clientAddress);
 
+// A fresh nonce per response, so the style-src directive below can name it
+// instead of allowing every inline style on the page. `'unsafe-inline'` in
+// style-src is not the hole script-src would be, but it is what lets an
+// injected attribute restyle the page — a login form repainted over the real
+// one is a style-only attack.
+app.use((_req, res, next) => {
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      // Split deliberately, because the two halves of style-src carry very
+      // different risk and only one of them can be tightened here.
+      //
+      //   styleSrcElem — <style> blocks and stylesheet links. This is the half
+      //     an injected <style> would use to repaint the page, so it is nonced:
+      //     nothing the server did not stamp can define styles.
+      //
+      //   styleSrcAttr — style="" attributes. React writes one for every
+      //     `style={{…}}` prop, and this application uses them throughout, so
+      //     'unsafe-inline' has to stay. Removing it does not harden anything;
+      //     it blanks the interface. The exposure is restyling, not execution —
+      //     script-src is unaffected and carries no 'unsafe-inline'.
+      styleSrc: ["'self'"],
+      styleSrcElem: ["'self'", (_req, res) => `'nonce-${res.locals.nonce}'`],
+      styleSrcAttr: ["'unsafe-inline'"],
       fontSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'blob:', 'https://lh3.googleusercontent.com'],
       mediaSrc: ["'self'", 'blob:'],
@@ -100,13 +132,25 @@ const tooMany = (detail) => ({
   detail,
 });
 
+// Counters live in MongoDB, not in this process. A per-process Map is not a
+// rate limiter as soon as a second task exists — it is two limiters with the
+// full budget each, and the degradation is silent. It also resets on every
+// deploy, which is exactly when it should not.
+const store = () => (RATE_LIMIT_STORE === 'mongo' ? { store: new MongoRateLimitStore() } : {});
+
 const limiter = (max, detail = 'Slow down — this endpoint is rate limited.') =>
   rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_SEC * 1000,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.user?.sub || req.ip,
+    // `req.rateKey` is set by identifyForRateLimit, mounted ahead of every
+    // limiter. Reading `req.user` here — as this did — runs before any router's
+    // `authenticate`, so it is always undefined and every signed-in person
+    // silently shares one per-address bucket with everybody else behind the
+    // same NAT.
+    keyGenerator: (req) => req.rateKey || `ip:${req.ip}`,
+    ...store(),
     message: tooMany(detail),
   });
 
@@ -117,6 +161,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   keyGenerator: (req) => `ip:${req.ip}`,
+  ...store(),
   message: tooMany('Too many failed sign-in attempts from this address. Wait a few minutes and try again.'),
 });
 
@@ -127,11 +172,63 @@ const accountLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   keyGenerator: (req) => `account:${String(req.body?.email || req.user?.sub || 'unknown').toLowerCase()}`,
+  ...store(),
   message: tooMany('Too many attempts against this account. Wait a few minutes and try again.'),
+});
+
+// A passcode-protected link had nothing but the global 600/min ceiling in front
+// of it. Two counters now: one per address, and one per link — because the
+// second is what a distributed guess runs into.
+const sharePasscodeIpLimiter = rateLimit({
+  windowMs: SHARE_PASSCODE.windowSec * 1000,
+  max: SHARE_PASSCODE.maxAttempts,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `share:${req.params.token ?? 'none'}:${req.ip}`,
+  ...store(),
+  message: tooMany('Too many passcode attempts on this link from this address. Wait a few minutes.'),
+});
+
+const shareTokenLimiter = rateLimit({
+  windowMs: SHARE_PASSCODE.windowSec * 1000,
+  max: SHARE_PASSCODE.maxAttempts * 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `sharetoken:${req.params.token ?? 'none'}`,
+  ...store(),
+  message: tooMany('Too many passcode attempts on this link. Wait a few minutes.'),
+});
+
+// Self-service reset is a mail-sending endpoint keyed by an address somebody
+// else owns, so it is a spam cannon unless it is metered hard.
+const resetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: RESET_MAX_PER_HOUR,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `reset:${String(req.body?.email || req.ip).toLowerCase()}`,
+  ...store(),
+  message: tooMany('Too many reset requests for that address. Try again in an hour.'),
+});
+
+const otpLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_AUTH_WINDOW_SEC * 1000,
+  max: env.RATE_LIMIT_AUTH_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `otp:${req.ip}`,
+  ...store(),
+  message: tooMany('Too many passcode attempts from this address. Wait a few minutes and try again.'),
 });
 
 app.use('/api/files', limiter(env.RATE_LIMIT_FILES_MAX, 'Too many file requests. Slow down.'), filesRouter);
 
+// Must precede every limiter below: it is what puts a per-account key on the
+// request instead of falling back to the address for everybody.
+app.use('/api', identifyForRateLimit);
 app.use('/api', limiter(env.RATE_LIMIT_MAX));
 
 app.get('/healthz', (_req, res) => {
@@ -151,6 +248,20 @@ app.use('/api/auth/login', authLimiter, accountLimiter);
 app.use('/api/auth/password', authLimiter, accountLimiter);
 app.use('/api/auth/step-up', authLimiter, accountLimiter);
 app.use('/api/auth/refresh', authLimiter);
+app.use('/api/auth/otp', otpLimiter);
+app.use('/api/auth/forgot', resetLimiter);
+app.use('/api/auth/reset', otpLimiter);
+
+// Seed the token on any safe request, then require it on exactly the routes
+// that are authorised by the refresh *cookie* — the only ambient authority a
+// cross-site request could borrow. Sign-in, passcode and reset are deliberately
+// not in this list: they carry no ambient authority to abuse, and requiring a
+// token on the very first request a browser makes would mean nobody could ever
+// get one.
+app.use('/api', seedCsrf);
+for (const route of ['/api/auth/refresh', '/api/auth/otp/resume', '/api/auth/logout', '/api/auth/logout-all']) {
+  app.use(route, requireCsrf);
+}
 
 app.use('/api/auth/google', rateLimit({
   windowMs: env.RATE_LIMIT_AUTH_WINDOW_SEC * 1000,
@@ -177,6 +288,7 @@ app.use('/api/tags', tagsRouter);
 app.use('/api/asset-types', typesRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/shares', sharesRouter);
+app.use('/api/s/:token', sharePasscodeIpLimiter, shareTokenLimiter);
 app.use('/api/s', publicShareRouter);
 app.use('/api/dedupe', dedupeRouter);
 app.use('/api/master-log', masterLogRouter);
@@ -329,6 +441,8 @@ async function main() {
       if (space.usageInTrash > 0) console.log(`               ${gb(space.usageInTrash)} of that is in the trash and still counts`);
     }
     console.log(`  MongoDB      ${connectionInfo().db} @ ${connectionInfo().host}`);
+    console.log(`  Passcode     ${OTP.enabled ? `daily, ${OTP.timezone} midnight · ${mailer.configured() ? 'Brevo' : 'NOT DELIVERABLE — set BREVO_API_KEY'}` : 'off'}`);
+    console.log(`  Rate limits  ${RATE_LIMIT_STORE === 'mongo' ? 'shared (MongoDB)' : 'per process (memory)'}`);
     console.log(`  Library      ${db.artists.length} artists · ${db.songs.length} songs · ${db.folders.length} folders · ${assetCount} assets`);
     console.log(`  Loaded       ${loaded.total} documents${seeded ? ' (freshly seeded)' : ''}`);
     if (meta?.seededAt) console.log(`  Seeded at    ${meta.seededAt}`);
@@ -359,6 +473,8 @@ async function main() {
 
   const stopDriveWatch = storage.watchDrive({
     onRecover: () => notify({
+      audience: 'admin',
+      category: 'storage',
       level: 'ok',
       title: 'Google Drive is reachable again',
       body: 'Uploads, downloads and previews have resumed.',
@@ -366,10 +482,17 @@ async function main() {
     }),
   });
 
+  // Free-tier hosts spin down after a quiet spell. This keeps the idle timer
+  // from ever elapsing while the task is up; see services/keepalive.js for why
+  // an external pinger is still wanted alongside it.
+  const stopKeepAlive = keepalive.start();
+
   const sweeper = cron.schedule('0 3 * * *', () => {
-    Promise.all([sweepAudit(AUDIT_RETENTION_DAYS), sweepSessions()])
-      .then(([audit, stale]) => {
-        if (audit || stale) console.log(`[sweep] ${audit} audit rows, ${stale} spent sessions removed`);
+    Promise.all([sweepAudit(AUDIT_RETENTION_DAYS), sweepSessions(), sweepOtp(), sweepRateLimits()])
+      .then(([audit, stale, codes, buckets]) => {
+        if (audit || stale || codes || buckets) {
+          console.log(`[sweep] ${audit} audit rows, ${stale} spent sessions, ${codes} passcodes, ${buckets} rate buckets removed`);
+        }
       })
       .catch((err) => console.error('[sweep]', err.message));
   });
@@ -379,6 +502,7 @@ async function main() {
     job?.stop();
     sweeper.stop();
     stopDriveWatch();
+    stopKeepAlive();
     server.close();
     await flushNow().catch(() => null);
     await disconnect().catch(() => null);

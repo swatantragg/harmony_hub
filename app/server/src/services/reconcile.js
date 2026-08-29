@@ -227,6 +227,8 @@ async function reconcile(req, { trigger, applyAvailability }) {
 
   if (counts.MISSING_IN_DRIVE > 0) {
     notify({
+      audience: 'admin',
+      category: 'storage',
       level: 'danger',
       title: `${counts.MISSING_IN_DRIVE} file${counts.MISSING_IN_DRIVE > 1 ? 's' : ''} missing from Google Drive`,
       body: 'Reconciliation found catalogued assets with no Drive file behind them. Review and remediate.',
@@ -235,6 +237,8 @@ async function reconcile(req, { trigger, applyAvailability }) {
   }
   if (counts.TRASHED_IN_DRIVE > 0) {
     notify({
+      audience: 'admin',
+      category: 'storage',
       level: 'danger',
       title: `${counts.TRASHED_IN_DRIVE} catalogued file${counts.TRASHED_IN_DRIVE > 1 ? 's are' : ' is'} in the Drive trash`,
       body: `Restore them before Google empties the trash — that happens ${TRASH_DAYS} days after they were binned.`,
@@ -243,6 +247,8 @@ async function reconcile(req, { trigger, applyAvailability }) {
   }
   if (space && !space.unlimited && space.percentUsed >= 90) {
     notify({
+      audience: 'admin',
+      category: 'storage',
       level: 'warn',
       title: `Google Drive is ${space.percentUsed}% full`,
       body: 'New uploads will start failing when it fills. Free space, or move the library to a Shared Drive.',

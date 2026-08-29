@@ -2,7 +2,7 @@ import express from 'express';
 import { db, persist, flushNow, allAssets } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { runReconciliation, latestRun, healthSummary } from '../services/reconcile.js';
-import { alert, record, notify } from '../services/audit.js';
+import { alert, record, notify, visibleTo } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
 import * as storage from '../services/storage.js';
 import { connectionInfo } from '../db/mongo.js';
@@ -12,12 +12,14 @@ import {
   ROOTS, SEED_PASSWORD, TRASH_DAYS,
 } from '../config.js';
 import { uuid, hashPassword } from '../util/crypto.js';
-import { ROLES, PERMISSIONS, familyOf, normaliseRole } from '../catalogue.js';
+import { ROLES, PERMISSIONS, can, familyOf, normaliseRole } from '../catalogue.js';
 import { invalidateSessions, passwordProblem } from './auth.js';
 import { allTypes } from '../services/vocabulary.js';
 import * as antivirus from '../services/antivirus.js';
+import * as keepalive from '../services/keepalive.js';
 import { LIMITS, email, fields, oneOf, str } from '../util/validate.js';
 import { safeFilename, workbook } from '../util/xlsx.js';
+import { csvRow } from '../util/spreadsheet.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(authenticate);
@@ -35,6 +37,7 @@ adminRouter.get('/health', requires('admin:storage'), async (_req, res) => {
     scanner,
     env: ENV,
     uptime: process.uptime(),
+    keepAlive: keepalive.status(),
     node: process.version,
     mongo: { db: mongo.db, host: mongo.host, connected: mongo.readyState === 1 },
     storage: {
@@ -464,7 +467,8 @@ const toRow = (e) => {
   };
 };
 
-adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req, res) => {
+/** Everything both export formats need, gathered once. */
+async function activityExport(req, extension) {
   const filters = activityQuery(req.query);
   const sort = activitySort(req.query.sort);
 
@@ -491,7 +495,37 @@ adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req,
   const range = filters.from || filters.to
     ? `-${filters.from || 'start'}-to-${filters.to || 'now'}`
     : '';
-  const filename = safeFilename(`gcloud-activity${range}-${stamp}.xlsx`);
+  return {
+    filters, sort, sorted, truncated, source, at,
+    filename: safeFilename(`gcloud-activity${range}-${stamp}.${extension}`),
+  };
+}
+
+/** The audit trail as CSV, for anything that would rather parse than open. */
+adminRouter.get('/activity/export.csv', requires('admin:activity'), async (req, res) => {
+  const { filters, sort, sorted, truncated, filename } = await activityExport(req, 'csv');
+
+  const lines = [
+    csvRow(COLUMNS.map((c) => c.header)),
+    ...sorted.map(toRow).map((row) => csvRow(COLUMNS.map((c) => row[c.key]))),
+  ];
+  const body = Buffer.from(`﻿${lines.join('\r\n')}\r\n`, 'utf8');
+
+  record(req, {
+    action: 'ACTIVITY_EXPORT', entity: 'activity', entityId: 'export',
+    label: `Exported ${sorted.length} activity ${sorted.length === 1 ? 'entry' : 'entries'} to CSV`,
+    after: { rows: sorted.length, truncated, sort, format: 'csv', filters },
+  });
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  res.setHeader('Content-Length', String(body.length));
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(body);
+});
+
+adminRouter.get('/activity/export.xlsx', requires('admin:activity'), async (req, res) => {
+  const { filters, sort, sorted, truncated, source, at, filename } = await activityExport(req, 'xlsx');
 
   const details = [
     ['Exported at', at.toISOString()],
@@ -694,7 +728,7 @@ adminRouter.post('/users/:id/reset-password', requires('admin:users'), requireSt
     meta: { sessionsRevoked: true, mustChangeAtNextSignIn: true },
   });
   notify({
-    userId: user._id, level: 'warn',
+    userId: user._id, audience: 'private', category: 'security', level: 'warn',
     title: 'An administrator reset your password',
     body: 'Every session on your account was ended. Sign in with the new password and set one of your own.',
   });
@@ -746,27 +780,70 @@ adminRouter.delete('/users/:id', requires('admin:users'), requireStepUp('Deletin
 export const notificationsRouter = express.Router();
 notificationsRouter.use(authenticate);
 
+// Read state is per person even for shared rows, so `readBy` carries the set
+// rather than a single `readAt`. A private row still uses `readAt`, because
+// there is only ever one reader.
+const hasRead = (n, userId) => Boolean(n.readAt) || (n.readBy || []).includes(userId);
+
+// Security is not permission-gated, because a member has security rows of their
+// own — a new device on their account, a password reset, a link of theirs being
+// hammered. Hiding the tab would leave those unreadable. What each person sees
+// inside it is decided by `visibleTo`, not by whether the tab exists: a member
+// gets only rows addressed to them, an administrator gets the whole set.
+const TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'activity', label: 'Library' },
+  { key: 'shares', label: 'Shares' },
+  { key: 'security', label: 'Security' },
+  { key: 'storage', label: 'Storage', permission: 'admin:storage' },
+];
+
 notificationsRouter.get('/', (req, res) => {
-  const seen = (n) => Boolean(n.readAt) || (n.readBy || []).includes(req.user.sub);
-  const rows = db.notifications
-    .filter((n) => !n.userId || n.userId === req.user.sub)
-    .slice(0, 40)
-    .map((n) => ({ ...n, readBy: undefined, read: seen(n) }));
-  res.json({ data: rows, unread: rows.filter((n) => !n.read).length });
+  const mine = db.notifications.filter((n) => visibleTo(n, req.user));
+
+  const wanted = String(req.query.category || 'all');
+  const rows = (wanted === 'all' ? mine : mine.filter((n) => (n.category ?? 'activity') === wanted))
+    .slice(0, 60)
+    .map((n) => ({
+      _id: n._id,
+      title: n.title,
+      body: n.body,
+      level: n.level,
+      link: n.link,
+      category: n.category ?? 'activity',
+      createdAt: n.createdAt,
+      read: hasRead(n, req.user.sub),
+      mine: n.userId === req.user.sub,
+    }));
+
+  const counts = { all: 0 };
+  for (const n of mine) {
+    if (hasRead(n, req.user.sub)) continue;
+    const c = n.category ?? 'activity';
+    counts.all += 1;
+    counts[c] = (counts[c] ?? 0) + 1;
+  }
+
+  res.json({
+    data: rows,
+    unread: counts.all,
+    counts,
+    tabs: TABS.filter((t) => !t.permission || can(req.user.role, t.permission)).map(({ key, label }) => ({ key, label })),
+  });
 });
 
 notificationsRouter.post('/read', (req, res) => {
+  const only = req.body?.category && req.body.category !== 'all' ? String(req.body.category) : null;
   const at = new Date().toISOString();
   let marked = 0;
+
   for (const n of db.notifications) {
-    if (n.readAt) continue;
-    if (n.userId && n.userId !== req.user.sub) continue;
-    if (!n.userId) {
-      n.readBy = [...new Set([...(n.readBy || []), req.user.sub])];
-      marked += 1;
-      continue;
-    }
-    n.readAt = at;
+    if (!visibleTo(n, req.user)) continue;
+    if (only && (n.category ?? 'activity') !== only) continue;
+    if (hasRead(n, req.user.sub)) continue;
+
+    if (n.userId === req.user.sub && (n.audience ?? 'private') === 'private') n.readAt = at;
+    else n.readBy = [...new Set([...(n.readBy || []), req.user.sub])];
     marked += 1;
   }
   persist();

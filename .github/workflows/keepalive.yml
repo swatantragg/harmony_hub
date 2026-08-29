@@ -1,0 +1,73 @@
+name: Keep the service awake
+
+# The in-process pinger (server/src/services/keepalive.js) keeps the service
+# awake while it is up. It cannot WAKE one that has already slept, because the
+# host suspends that timer along with everything else.
+#
+# This is the other half: it reaches the service from outside, so it survives
+# the service being asleep — and it is what brings it back after a deploy, a
+# crash, or any gap the internal timer could not cover.
+#
+# ── Setting it up ───────────────────────────────────────────────────────────
+# Repository → Settings → Secrets and variables → Actions → Variables →
+#   New repository variable
+#     Name:  KEEPALIVE_URL
+#     Value: https://your-service.onrender.com/healthz
+#
+# A *variable*, not a secret: the URL is public, and a secret would be masked in
+# the logs, which makes a failure impossible to read.
+#
+# ── A warning worth reading before enabling ─────────────────────────────────
+# Render's free plan includes 750 instance-hours a month and a month is about
+# 730 hours. A service kept awake around the clock therefore consumes nearly the
+# whole allowance, and a second free service would exceed it. If that matters,
+# narrow the schedule below to working hours.
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub queues scheduled runs on a busy shared pool, so
+    # the real gap drifts to 10–20 minutes; Render's idle window is 15, which is
+    # why the in-process pinger carries the primary load and this is the net.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping
+    runs-on: ubuntu-latest
+    # A repository with no URL configured should do nothing, quietly, rather
+    # than fail a workflow every ten minutes forever.
+    if: vars.KEEPALIVE_URL != ''
+    steps:
+      - name: Wake the service
+        run: |
+          url="${{ vars.KEEPALIVE_URL }}"
+          echo "Pinging $url"
+
+          # A cold start on a free tier takes 30-60 seconds, so the first
+          # attempt is given a long timeout rather than being treated as a
+          # failure. Three attempts, backing off.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' \
+                     --max-time 90 --retry 0 \
+                     -H 'user-agent: gcloud-keepalive-actions/1' \
+                     "$url" || echo 000)
+
+            if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+              echo "Awake — HTTP $code"
+              head -c 300 /tmp/body; echo
+              exit 0
+            fi
+
+            echo "Attempt $attempt got HTTP $code"
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+
+          echo "::warning::Service did not answer after three attempts — it may be down rather than merely asleep."
+          # Deliberately not a hard failure: a flaky ping every ten minutes
+          # would bury a real failure under a wall of red. The warning is
+          # visible in the run summary.
+          exit 0

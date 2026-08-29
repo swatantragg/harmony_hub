@@ -1,12 +1,23 @@
 import { create } from 'zustand';
-import { api, auth, resume } from '../lib/api';
+import {
+  api, auth, clearDailyPasscodeFlag, needsDailyPasscode, resume,
+  type OtpChallenge,
+} from '../lib/api';
 import type { User } from '../lib/types';
+
+/** What a sign-in attempt produced: a session, or a passcode still to enter. */
+export type SignInOutcome =
+  | { kind: 'signed-in'; user: User }
+  | { kind: 'passcode'; challenge: OtpChallenge };
 
 interface SessionState {
   user: User | null;
   loading: boolean;
+  /** Set when a session exists but today's passcode has not been entered yet. */
+  passcodeDue: boolean;
   bootstrap: () => Promise<void>;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string) => Promise<SignInOutcome>;
+  submitPasscode: (otpToken: string, code: string) => Promise<User>;
   setPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutEverywhere: () => Promise<void>;
@@ -15,25 +26,57 @@ interface SessionState {
 export const useSession = create<SessionState>((set, get) => ({
   user: null,
   loading: true,
+  passcodeDue: false,
 
   bootstrap: async () => {
     const restored = await resume();
-    if (!restored) { set({ user: null, loading: false }); return; }
+    if (!restored) {
+      // A refused refresh means one of two things, and they need different
+      // screens: the session is gone, or it is intact but a new day started.
+      set({ user: null, loading: false, passcodeDue: needsDailyPasscode() });
+      return;
+    }
     try {
       const user = await api<User>('/me');
-      set({ user, loading: false });
+      set({ user, loading: false, passcodeDue: false });
     } catch {
       auth.clear();
       set({ user: null, loading: false });
     }
   },
   login: async (email, password) => {
-    const res = await api<{ accessToken: string; user: User }>('/auth/login', {
+    const res = await api<{
+      accessToken?: string; user?: User; otpRequired?: boolean;
+    } & Partial<OtpChallenge>>('/auth/login', {
       method: 'POST',
       body: { email, password },
     });
+
+    if (res.otpRequired && res.otpToken) {
+      return {
+        kind: 'passcode',
+        challenge: {
+          otpToken: res.otpToken,
+          expiresIn: res.expiresIn ?? 600,
+          sentTo: res.sentTo ?? '',
+          validUntil: res.validUntil,
+          devCode: res.devCode,
+        },
+      };
+    }
+
+    auth.set(res.accessToken!);
+    set({ user: res.user!, loading: false, passcodeDue: false });
+    return { kind: 'signed-in', user: res.user! };
+  },
+  submitPasscode: async (otpToken, code) => {
+    const res = await api<{ accessToken: string; user: User }>('/auth/otp', {
+      method: 'POST',
+      body: { otpToken, code },
+    });
     auth.set(res.accessToken);
-    set({ user: res.user, loading: false });
+    clearDailyPasscodeFlag();
+    set({ user: res.user, loading: false, passcodeDue: false });
     return res.user;
   },
   setPassword: async (currentPassword, newPassword) => {
@@ -47,12 +90,14 @@ export const useSession = create<SessionState>((set, get) => ({
   logout: async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch {}
     auth.clear();
-    set({ user: null });
+    clearDailyPasscodeFlag();
+    set({ user: null, passcodeDue: false });
   },
   logoutEverywhere: async () => {
     try { await api('/auth/logout-all', { method: 'POST' }); } catch {}
     auth.clear();
-    set({ user: null });
+    clearDailyPasscodeFlag();
+    set({ user: null, passcodeDue: false });
   },
   can: (permission) => get().user?.permissions.includes(permission) ?? false,
 }));

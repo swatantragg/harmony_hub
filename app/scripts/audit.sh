@@ -85,6 +85,36 @@ if [[ -f .env ]]; then
   fi
 fi
 
+section 'Backups'
+backup_dir="${BACKUP_DIR:-$here/backups}"
+newest="$(find "$backup_dir" -name 'gcloud-*.archive.gz' -type f -print0 2>/dev/null \
+  | xargs -0 ls -t 2>/dev/null | head -n 1)"
+
+if [[ -z "$newest" ]]; then
+  bad 'no MongoDB backup has ever been taken — Drive protects the bytes, nothing protects the catalogue (npm run backup)'
+else
+  age=$(( ( $(date +%s) - $(stat -c %Y "$newest" 2>/dev/null || stat -f %m "$newest") ) / 86400 ))
+  if (( age > 7 )); then
+    bad "the newest backup is ${age} days old — the nightly dump is not running (npm run backup:schedule)"
+  else
+    ok "backup taken ${age} day(s) ago"
+  fi
+  # A dump nobody has restored is a hypothesis: mongodump exits 0 on partial
+  # archives, and the failure only shows up when it is needed.
+  if [[ -f "$backup_dir/.last-verified" ]]; then
+    vage=$(( ( $(date +%s) - $(stat -c %Y "$backup_dir/.last-verified" 2>/dev/null || stat -f %m "$backup_dir/.last-verified") ) / 86400 ))
+    (( vage > 100 )) \
+      && meh "the last restore test was ${vage} days ago — run npm run backup:verify" \
+      || ok "restore tested ${vage} day(s) ago"
+  else
+    meh 'no restore has ever been tested — an untested backup is a hypothesis (npm run backup:verify)'
+  fi
+fi
+
+crontab -l 2>/dev/null | grep -q 'scripts/backup-mongo.sh' \
+  && ok 'the nightly backup is scheduled' \
+  || meh 'the backup is not on cron (npm run backup:schedule)'
+
 section 'Regressions'
 grep -q 'contentSecurityPolicy: false' server/src/index.js 2>/dev/null \
   && bad 'the content security policy has been disabled again in index.js' \

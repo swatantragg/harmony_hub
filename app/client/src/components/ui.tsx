@@ -342,13 +342,12 @@ export function ConfirmDialog({
         {needsPassword && (
           <div className="field">
             <label className="label">Your password</label>
-            <input
-              className="input"
-              type="password"
-              autoComplete="current-password"
+            <PasswordInput
               value={password}
-              onChange={(e) => { setPassword(e.target.value); setWrong(false); }}
+              onChange={(v) => { setPassword(v); setWrong(false); }}
+              autoComplete="current-password"
               placeholder="The password for your own account"
+              invalid={wrong}
             />
             <div className="t-meta" style={{ marginTop: 6 }}>
               {wrong

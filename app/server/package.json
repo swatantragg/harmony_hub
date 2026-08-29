@@ -13,7 +13,8 @@
     "seed": "node src/cli/seed.js",
     "reseed": "node src/cli/seed.js --force",
     "reconcile": "node src/cli/reconcile.js",
-    "dedupe": "node src/cli/dedupe.js"
+    "dedupe": "node src/cli/dedupe.js",
+    "test": "node --test --test-concurrency=1 'test/*.test.mjs'"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -5,7 +5,7 @@ import {
   CheckCircle2, Info, ExternalLink, Sparkles, HardDrive, ChevronDown,
 } from 'lucide-react';
 import { api, auth, qs, stepUp } from '../../lib/api';
-import { EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
+import { EmptyState, Modal, PasswordInput, Skeleton, useToast } from '../../components/ui';
 import { Select } from '../../components/Select';
 import { bytes, date, pluralise, relative } from '../../lib/format';
 import { useSession } from '../../app/session';
@@ -643,12 +643,11 @@ function EmptyTrashPanel() {
             {needsPassword && (
               <div className="field">
                 <label className="label">Your password</label>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="current-password"
+                <PasswordInput
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setWrong(false); }}
+                  onChange={(v) => { setPassword(v); setWrong(false); }}
+                  autoComplete="current-password"
+                  invalid={wrong}
                 />
                 {wrong && <div className="t-meta" style={{ marginTop: 6, color: 'var(--danger, #c0392b)' }}>That is not the password for this account.</div>}
               </div>
