@@ -3,9 +3,13 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { PasswordInput, ThemeToggle } from '../../components/ui';
-import { api, googleSignInUrl } from '../../lib/api';
+import {
+  api, googleSignInUrl, requestResumePasscode, type OtpChallenge,
+} from '../../lib/api';
 import { useSession } from '../../app/session';
 import { BUILD_TAG } from '../../lib/version';
+import { PasscodeForm } from './PasscodeForm';
+import { ForgotPassword } from './ForgotPassword';
 import type { AuthProviders } from '../../lib/types';
 
 function GoogleMark() {
@@ -41,7 +45,11 @@ export function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [returning, setReturning] = useState(false);
+  const [challenge, setChallenge] = useState<OtpChallenge | null>(null);
+  const [forgot, setForgot] = useState(false);
   const login = useSession((s) => s.login);
+  const submitPasscode = useSession((s) => s.submitPasscode);
+  const passcodeDue = useSession((s) => s.passcodeDue);
   const user = useSession((s) => s.user);
   const loading = useSession((s) => s.loading);
   const navigate = useNavigate();
@@ -85,18 +93,42 @@ export function Login() {
     navigate(user.mustChangePassword ? '/set-password' : pendingReturn || '/', { replace: true });
   }, [returning, loading, user, pendingReturn, navigate]);
 
+  // A new day, on a browser whose session is otherwise intact. The cookie is
+  // still there and still recognised — it just needs today's passcode, not the
+  // password again. Ask for one straight away rather than making somebody work
+  // out why they are looking at a sign-in form.
+  useEffect(() => {
+    if (!passcodeDue || challenge || forgot || returning) return;
+    let cancelled = false;
+    void (async () => {
+      const resumed = await requestResumePasscode();
+      if (!cancelled && resumed) setChallenge(resumed);
+    })();
+    return () => { cancelled = true; };
+  }, [passcodeDue, challenge, forgot, returning]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      const user = await login(email, password);
-      navigate(user.mustChangePassword ? '/set-password' : returnTo, { replace: true });
+      const outcome = await login(email, password);
+      if (outcome.kind === 'passcode') {
+        setChallenge(outcome.challenge);
+        setPassword('');
+        return;
+      }
+      navigate(outcome.user.mustChangePassword ? '/set-password' : returnTo, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
     } finally {
       setBusy(false);
     }
+  };
+
+  const enterPasscode = async (code: string) => {
+    const signedIn = await submitPasscode(challenge!.otpToken, code);
+    navigate(signedIn.mustChangePassword ? '/set-password' : returnTo, { replace: true });
   };
 
   const continueWithGoogle = () => {
@@ -127,6 +159,18 @@ export function Login() {
           GCloud
         </h1>
 
+        {challenge ? (
+          <PasscodeForm
+            challenge={challenge}
+            onSubmit={enterPasscode}
+            heading={passcodeDue ? 'A new day — one passcode' : 'Enter today’s passcode'}
+            cancelLabel="Sign in as somebody else"
+            onCancel={() => { setChallenge(null); setError(''); }}
+          />
+        ) : forgot ? (
+          <ForgotPassword initialEmail={email} onBack={() => { setForgot(false); setError(''); }} />
+        ) : (
+        <>
         <form onSubmit={submit} className="stack-3">
           <div className="field">
             <label className="label" htmlFor="email">Email</label>
@@ -155,6 +199,13 @@ export function Login() {
           <button className="btn btn-primary btn-lg btn-block" disabled={busy || !email || !password}>
             {busy ? <Loader2 size={16} /> : null} Sign in <ArrowRight size={15} />
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-block"
+            onClick={() => { setForgot(true); setError(''); }}
+          >
+            Forgotten your password?
+          </button>
         </form>
 
         {providers?.google?.enabled && (
@@ -180,6 +231,8 @@ export function Login() {
         <p className="t-small" style={{ textAlign: 'center', marginTop: 22 }}>
           Accounts are created by an administrator. If you do not have one, ask them to add you.
         </p>
+        </>
+        )}
 
         <p className="t-small" style={{ textAlign: 'center', marginTop: 10, fontFamily: 'var(--mono)', letterSpacing: '.1em', opacity: .62 }}>
           {BUILD_TAG}

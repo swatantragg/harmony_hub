@@ -75,6 +75,8 @@ assetsRouter.post('/:id/verify', async (req, res) => {
 
   if (availability.status === 'MISSING' && before !== 'MISSING') {
     notify({
+      audience: 'admin',
+      category: 'storage',
       level: 'danger',
       title: `${ctx.asset.displayName} is missing from Google Drive`,
       body: 'A live check found no file behind this catalogue record.',
@@ -83,6 +85,8 @@ assetsRouter.post('/:id/verify', async (req, res) => {
   }
   if (availability.status === 'TRASHED' && before !== 'TRASHED') {
     notify({
+      audience: 'admin',
+      category: 'storage',
       level: 'warn',
       title: `${ctx.asset.displayName} is in the Drive trash`,
       body: `Restore it from the file's page. Google empties the trash after ${TRASH_DAYS} days.`,
@@ -203,7 +207,7 @@ assetsRouter.post('/:id/replace', requires('asset:edit'), async (req, res) => {
       appProperties: properties({ replacedBy: req.user.sub, replacedAt: new Date().toISOString() }),
       origin: APP_ORIGIN,
     });
-    storage.registerUploadSession(session.sessionUri, {
+    await storage.registerUploadSession(session.sessionUri, {
       userId: req.user.sub, assetId: ctx.asset.assetId, fileId: ctx.asset.drive.fileId,
       sizeBytes: Number(sizeBytes || 0),
     });

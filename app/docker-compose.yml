@@ -1,24 +1,3 @@
-# GCloud — local stack.
-#
-#   docker compose up -d --build app        the app on :8100, using .env as it stands
-#   docker compose --profile local up -d    + MongoDB, for a run that touches no Atlas
-#
-# Ports on this machine: Cleaner on 8080, JGCR on 8090, cuesync on 80/8000.
-# GCloud takes 8100 for the whole application — the API and the front end share one
-# origin, because the Express task serves the built React bundle itself. There is no
-# separate front-end port and no second container. 8101 exists only while the Vite dev
-# server is running, and only on the host.
-#
-# There is no storage service in this file. Google Drive is the same public API from
-# inside a container as from outside, so nothing has to be emulated locally and nothing
-# has to be addressed differently depending on which side of the network is calling.
-#
-# ── One thing to know about DOCKER_MONGODB_URI ───────────────────────────────
-# Inside a container, 127.0.0.1 is the container itself. A .env that points MongoDB at
-# localhost works when you run `npm start` on the host and silently fails in Docker.
-# Rather than rewriting the URL behind your back, the setting that differs is named
-# explicitly in .env, and only the container reads it.
-
 services:
   app:
     build:
@@ -30,27 +9,13 @@ services:
     env_file:
       - .env
     environment:
-      # NODE_ENV deliberately comes from .env rather than being pinned here. The image
-      # defaults to production; leaving it to .env means this same compose file runs the
-      # container in development mode locally — /api/demo/reset available, the founding
-      # administrator named in the boot banner — without a second file.
       PORT: 8100
       CLIENT_DIST: /app/client/dist
-      # Empty is meaningful: it falls back to the .env value.
       MONGODB_URI: ${DOCKER_MONGODB_URI:-${MONGODB_URI}}
     ports:
-      # Bound to the loopback interface. Put a TLS-terminating reverse proxy in front for
-      # anything beyond this machine — the application serves sessions, refresh cookies and
-      # file tickets, and every one of those is in the clear over plain HTTP.
       - '127.0.0.1:8100:8100'
-    # Lets a container reach something listening on the host — useful if you run MongoDB
-    # outside compose:  DOCKER_MONGODB_URI=mongodb://host.docker.internal:27017
     extra_hosts:
       - 'host.docker.internal:host-gateway'
-    # ── Container hardening ───────────────────────────────────────────────────
-    # The process writes nothing to disk: the catalogue is in MongoDB, the bytes are in
-    # Drive, and downloads stream rather than buffer. So the filesystem is read-only, and
-    # the two directories Node genuinely needs are tmpfs.
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -58,16 +23,12 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # A crash loop or a decode bomb should exhaust a limit, not the machine.
     mem_limit: 1g
     pids_limit: 256
     ulimits:
       nofile:
         soft: 8192
         hard: 8192
-    # A service-account key file, when one is used instead of pasted credentials. Mounted
-    # read-only, and the path inside the container is what GOOGLE_SERVICE_ACCOUNT_KEY_FILE
-    # must name. Harmless when the directory does not exist and oauth mode is in use.
     volumes:
       - ./secrets:/app/secrets:ro
     depends_on:
@@ -75,32 +36,17 @@ services:
         condition: service_healthy
         required: false
     healthcheck:
-      # `live`, not `ok`. The two differ on purpose: `ok` is false while Google Drive is
-      # unreachable, but the process is still serving the catalogue, search and every
-      # admin screen — including the one that tells you the credential expired. Killing it
-      # for that would take away the screen you need to fix it.
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8100/healthz').then(r=>r.json()).then(j=>process.exit(j.live?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 40s
 
-  # Malware scanning. Opt-in, because it is a 1.5 GB image with a signature database it
-  # updates on its own, and most libraries take files only from people who already have an
-  # account. Turn it on with:
-  #
-  #   docker compose --profile av up -d clamav
-  #   CLAMAV_ENABLED=true CLAMAV_HOST=clamav   in .env
-  #
-  # First start takes a few minutes: freshclam downloads the signatures before clamd will
-  # answer, which is why the health check has a long start period.
   clamav:
     image: clamav/clamav:1.4
     container_name: gcloud-clamav
     profiles: ['av']
     restart: unless-stopped
-    # Not published. The app container reaches it by name on the compose network, and a
-    # scanner exposed to the host is a service that accepts arbitrary bytes from anywhere.
     expose:
       - '3310'
     volumes:
@@ -120,19 +66,12 @@ services:
     container_name: gcloud-mongo
     profiles: ['local']
     restart: unless-stopped
-    # Authentication is on. It was not, and the port was published on every interface —
-    # which is an open database holding the whole catalogue, including every account's
-    # password hash, to anything that can reach this machine.
     command: ['--auth', '--bind_ip_all']
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-gcloud}
-      # No default on purpose. Left unset, Mongo creates no root user and --auth then
-      # admits nobody — the local database fails closed rather than starting open.
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-}
       MONGO_INITDB_DATABASE: ${MONGODB_DB:-gcloud}
     ports:
-      # Loopback only. The app container reaches it over the compose network by name and
-      # does not need this published at all — it is here for mongosh on this machine.
       - '127.0.0.1:27017:27017'
     volumes:
       - mongo-data:/data/db
@@ -154,7 +93,34 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+  proxy:
+    image: caddy:2-alpine
+    container_name: gcloud-proxy
+    profiles: ['tls']
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      PROXY_DOMAIN: ${PROXY_DOMAIN:-localhost}
+      PROXY_UPSTREAM: ${PROXY_UPSTREAM:-app:8100}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1:2019/config/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   mongo-data:
   clamav-db:
+  caddy-data:
+  caddy-config:

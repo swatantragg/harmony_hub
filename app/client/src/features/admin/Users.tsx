@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, KeyRound, LogIn, UserMinus, UserCheck, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { ConfirmDialog, Modal, Skeleton, useToast } from '../../components/ui';
+import { ConfirmDialog, Modal, PasswordInput, Skeleton, useToast } from '../../components/ui';
 import { Select } from '../../components/Select';
 import { RowMenu } from '../../components/RowMenu';
 import type { RowAction } from '../../components/RowMenu';
@@ -308,12 +308,15 @@ function AddUserDialog({
           <div className="hint">This is what they sign in with.</div>
         </div>
         <div className="field">
-          <label className="label">Starting password</label>
-          <input
-            className="input"
-            type="password"
+          <label className="label" htmlFor="starting-password">Starting password</label>
+          {/* A password being handed to somebody else is the one case where it
+              genuinely has to be read back — typing it blind and then reading it
+              out is how people mistype and lock the new account out. */}
+          <PasswordInput
+            id="starting-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
+            autoComplete="new-password"
             placeholder={`At least ${minLength} characters`}
           />
           <div className="hint">

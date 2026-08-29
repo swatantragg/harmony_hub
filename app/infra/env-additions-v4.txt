@@ -1,0 +1,105 @@
+# ═════════════════════════════════════════════════════════════════════════════
+#  SK-V4.0.0 additions — append this block to app/.env
+#
+#      cat infra/env-additions-v4.txt >> .env
+#
+#  Then fill in the two BREVO_ values and delete this file.
+#  Everything else has a working default; nothing below has to be changed to
+#  boot, except that OTP cannot deliver without the Brevo pair.
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── The daily passcode ───────────────────────────────────────────────────────
+# One emailed code per calendar day. At local midnight every session stops
+# answering; the next morning the holder enters a passcode — not a password —
+# once, and stays signed in for the rest of the day.
+#
+# Set OTP_ENABLED=false to turn the whole thing off and go back to password-only.
+OTP_ENABLED=true
+# The zone that decides when "today" ends. An IANA name, not an offset, so
+# daylight saving is handled for you.
+OTP_TIMEZONE=Asia/Kolkata
+OTP_LENGTH=6
+OTP_TTL_SEC=600
+OTP_MAX_ATTEMPTS=5
+OTP_RESEND_COOLDOWN_SEC=45
+OTP_TICKET_TTL_SEC=900
+
+# ── Email, through Brevo ─────────────────────────────────────────────────────
+# Carries passcodes, password-reset codes and new-device warnings.
+#
+#   BREVO_API_KEY       Brevo → SMTP & API → API keys → Generate a new API key.
+#                       Starts with "xkeysib-". Copy it immediately; Brevo shows
+#                       it once and never again.
+#   BREVO_SENDER_EMAIL  Brevo → Senders → Add a sender, then click the link in
+#                       the confirmation email. Brevo REFUSES to send from an
+#                       unverified address, so this step is not optional.
+#
+# Left blank: development warns and prints the code to the server console
+# instead; production refuses to start, because a passcode that cannot be
+# delivered is a locked door with no handle.
+BREVO_API_KEY=
+BREVO_SENDER_EMAIL=
+BREVO_SENDER_NAME=GCloud
+# Where replies go, if different from the sender. Optional.
+BREVO_REPLY_TO=
+MAIL_TIMEOUT_MS=10000
+
+# ── Passwords ────────────────────────────────────────────────────────────────
+# 8 is allowed in development. Production refuses to start below 12.
+MIN_PASSWORD_LENGTH=8
+# Checks new passwords against the public breach corpus by k-anonymity — five
+# characters of a SHA-1 prefix go to the API, the password never leaves.
+PASSWORD_BREACH_CHECK=true
+# The last N hashes are kept per account and refused for reuse. 0 disables.
+PASSWORD_HISTORY_DEPTH=3
+# Days before a password must be replaced. 0 means never.
+PASSWORD_MAX_AGE_DAYS=0
+
+# ── Limits ───────────────────────────────────────────────────────────────────
+# Self-service reset sends mail to an address the caller names, so it is metered
+# hard or it is a spam cannon.
+RESET_MAX_PER_HOUR=3
+# Where rate-limit counters live. `memory` is per process: two tasks means two
+# limiters, each with the full budget, and the failure is silent.
+RATE_LIMIT_STORE=mongo
+
+# ── Share links ──────────────────────────────────────────────────────────────
+SHARE_PASSCODE_MIN_LENGTH=8
+SHARE_PASSCODE_WINDOW_SEC=900
+SHARE_PASSCODE_MAX_ATTEMPTS=10
+# Wrong passcodes before a link freezes itself and tells its creator.
+SHARE_PASSCODE_FREEZE_AT=20
+
+# ── Cross-site requests ──────────────────────────────────────────────────────
+CSRF_ENABLED=true
+# Warn the account holder the first time an address-and-browser pair is seen.
+LOGIN_ANOMALY_NOTIFY=true
+
+# ── Alerting and logs ────────────────────────────────────────────────────────
+# Every alertable event POSTed here as JSON — Slack, PagerDuty, anything that
+# takes a webhook. Also used by the backup verification.
+ALERT_WEBHOOK_URL=
+# `json` emits one line of JSON per audit event on stdout, for a log collector.
+LOG_FORMAT=pretty
+
+# ── Rotating the file-ticket key ─────────────────────────────────────────────
+# Bump the version and move the old value to _PREVIOUS, and tickets already in
+# circulation keep working for the grace window instead of dying at once.
+FILE_TOKEN_KEY_VERSION=1
+FILE_TOKEN_SECRET_PREVIOUS=
+FILE_TOKEN_GRACE_SEC=86400
+
+# ── Backups ──────────────────────────────────────────────────────────────────
+# A copy on the same disk as the database dies with the disk. Set this.
+BACKUP_REMOTE=
+RETAIN_DAYS=14
+# Where the restore test writes. Blank means MONGODB_URI — a scratch database on
+# the production cluster, dropped afterwards. A local mongod keeps it off
+# production entirely.
+VERIFY_TARGET_URI=
+VERIFY_TOLERANCE=0.10
+
+# ── TLS in front ─────────────────────────────────────────────────────────────
+# docker compose --profile tls up -d
+PROXY_DOMAIN=localhost
+PROXY_UPSTREAM=app:8100

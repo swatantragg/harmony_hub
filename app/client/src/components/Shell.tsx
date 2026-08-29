@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Home, Search, Users, Disc3, UploadCloud, Share2, ShieldCheck, ScrollText,
   UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy, UserCircle2, Table2,
@@ -57,7 +57,7 @@ export function Shell() {
 
   const { data: notifications } = useQuery({
     queryKey: ['notifications'],
-    queryFn: () => api<{ data: { _id: string; title: string; body: string; level: string; createdAt: string; readAt: string | null }[]; unread: number }>('/notifications'),
+    queryFn: () => api<NotificationFeed>('/notifications'),
     refetchInterval: 20_000,
   });
 
@@ -157,9 +157,8 @@ export function Shell() {
           <ThemeToggle />
 
           <NotificationBell
-            items={notifications?.data ?? []}
-            unread={notifications?.unread ?? 0}
-            onOpenStorage={() => navigate('/admin/storage')}
+            feed={notifications}
+            onNavigate={(to) => navigate(to)}
           />
 
           {can('asset:upload') && (
@@ -226,21 +225,73 @@ function UserMenu({ name, role, onLogout }: { name: string; role: string; onLogo
   );
 }
 
-function NotificationBell({
-  items, unread, onOpenStorage,
-}: {
-  items: { _id: string; title: string; body: string; level: string; createdAt: string; readAt: string | null }[];
+interface NotificationRow {
+  _id: string;
+  title: string;
+  body: string;
+  level: string;
+  link: string | null;
+  category: string;
+  createdAt: string;
+  read: boolean;
+  mine: boolean;
+}
+
+interface NotificationFeed {
+  data: NotificationRow[];
   unread: number;
-  onOpenStorage: () => void;
+  counts: Record<string, number>;
+  tabs: { key: string; label: string }[];
+}
+
+const DOT: Record<string, string> = {
+  danger: 'var(--danger)',
+  warn: 'var(--warn, var(--danger))',
+  ok: 'var(--ok)',
+};
+
+/**
+ * The notification panel.
+ *
+ * Tabs, because the four kinds want different attention and used to be one
+ * undifferentiated list: what arrived in the library, what happened to a link
+ * of yours, what happened to your account, and what is wrong with storage. The
+ * server decides which tabs exist for this person and what goes in them — this
+ * only renders what came back.
+ */
+function NotificationBell({
+  feed, onNavigate,
+}: {
+  feed: NotificationFeed | undefined;
+  onNavigate: (to: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState('all');
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
+  const queryClient = useQueryClient();
+
+  const tabs = feed?.tabs ?? [{ key: 'all', label: 'All' }];
+  const counts = feed?.counts ?? {};
+  const unread = feed?.unread ?? 0;
+
+  const rows = (feed?.data ?? []).filter((n) => tab === 'all' || n.category === tab);
+
+  const markRead = async (category: string) => {
+    const pending = category === 'all' ? unread : (counts[category] ?? 0);
+    if (!pending) return;
+    await api('/notifications/read', { method: 'POST', body: { category } });
+    await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+  };
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         className="btn btn-ghost btn-icon"
-        onClick={async () => { setOpen((v) => !v); if (unread) await api('/notifications/read', { method: 'POST' }); }}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) void markRead(tab);
+        }}
         aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
         style={{ position: 'relative' }}
       >
@@ -254,29 +305,82 @@ function NotificationBell({
           className="panel"
           style={{
             position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 40,
-            width: 'min(330px, calc(100vw - 24px))', maxHeight: 'min(420px, 60vh)', overflowY: 'auto',
+            width: 'min(380px, calc(100vw - 24px))', maxHeight: 'min(480px, 70vh)',
+            display: 'flex', flexDirection: 'column',
           }}
         >
           <div className="panel-head"><span className="t-h3">Notifications</span></div>
-          {items.length === 0 ? (
-            <div style={{ padding: 22, textAlign: 'center' }} className="t-small">Nothing needs your attention.</div>
-          ) : (
-            items.map((n) => (
-              <button
-                key={n._id}
-                className="nav-item"
-                style={{ alignItems: 'flex-start', padding: '11px 14px', borderRadius: 0 }}
-                onClick={() => { setOpen(false); onOpenStorage(); }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: '50%', marginTop: 6, flex: 'none', background: n.level === 'danger' ? 'var(--danger)' : n.level === 'ok' ? 'var(--ok)' : 'var(--indigo)' }} />
-                <span className="grow">
-                  <span style={{ display: 'block', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{n.title}</span>
-                  <span className="t-small" style={{ display: 'block', fontWeight: 400, whiteSpace: 'normal' }}>{n.body}</span>
-                  <span className="t-small" style={{ fontSize: 13.5 }}>{relative(n.createdAt)}</span>
-                </span>
-              </button>
-            ))
-          )}
+
+          <div
+            className="row"
+            style={{
+              gap: 4, padding: '8px 10px', borderBottom: '1px solid var(--edge)',
+              overflowX: 'auto', flex: 'none',
+            }}
+            role="tablist"
+          >
+            {tabs.map((t) => {
+              const n = counts[t.key] ?? 0;
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={active}
+                  className={active ? 'btn btn-secondary' : 'btn btn-ghost'}
+                  style={{ padding: '4px 10px', fontSize: 13, whiteSpace: 'nowrap', flex: 'none' }}
+                  onClick={() => { setTab(t.key); void markRead(t.key); }}
+                >
+                  {t.label}
+                  {n > 0 && (
+                    <span
+                      style={{
+                        marginLeft: 6, fontSize: 11, fontWeight: 700, lineHeight: 1,
+                        padding: '2px 5px', borderRadius: 999,
+                        background: 'var(--danger)', color: '#fff',
+                      }}
+                    >
+                      {n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ overflowY: 'auto' }}>
+            {rows.length === 0 ? (
+              <div style={{ padding: 22, textAlign: 'center' }} className="t-small">
+                Nothing here.
+              </div>
+            ) : (
+              rows.map((n) => (
+                <button
+                  key={n._id}
+                  className="nav-item"
+                  style={{
+                    alignItems: 'flex-start', padding: '11px 14px', borderRadius: 0,
+                    opacity: n.read ? 0.72 : 1,
+                  }}
+                  onClick={() => { setOpen(false); onNavigate(n.link || '/'); }}
+                >
+                  <span
+                    style={{
+                      width: 7, height: 7, borderRadius: '50%', marginTop: 6, flex: 'none',
+                      background: DOT[n.level] ?? 'var(--indigo)',
+                    }}
+                  />
+                  <span className="grow">
+                    <span style={{ display: 'block', fontSize: 15, fontWeight: n.read ? 500 : 650, color: 'var(--ink)', whiteSpace: 'normal' }}>
+                      {n.title}
+                    </span>
+                    <span className="t-small" style={{ display: 'block', fontWeight: 400, whiteSpace: 'normal' }}>{n.body}</span>
+                    <span className="t-small" style={{ fontSize: 13.5 }}>{relative(n.createdAt)}</span>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>

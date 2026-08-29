@@ -104,6 +104,26 @@ const Env = z.object({
 
   MIN_PASSWORD_LENGTH: int(12, 8),
   PASSWORD_BREACH_CHECK: bool(false),
+  PASSWORD_HISTORY_DEPTH: int(3, 0),
+  PASSWORD_MAX_AGE_DAYS: int(0, 0),
+
+  // ── Daily one-time passcode ───────────────────────────────────────────────
+  // One OTP per calendar day, in OTP_TIMEZONE. Sessions carry the day they were
+  // stamped with; at local midnight every one of them stops answering and the
+  // holder re-verifies once. See services/otp.js.
+  OTP_ENABLED: bool(true),
+  OTP_TIMEZONE: z.string().default('Asia/Kolkata'),
+  OTP_LENGTH: int(6, 4),
+  OTP_TTL_SEC: int(10 * 60, 60),
+  OTP_MAX_ATTEMPTS: int(5, 1),
+  OTP_RESEND_COOLDOWN_SEC: int(45, 0),
+  OTP_TICKET_TTL_SEC: int(15 * 60, 120),
+
+  BREVO_API_KEY: blankIsUnset(z.string().optional()),
+  BREVO_SENDER_EMAIL: blankIsUnset(z.string().email().optional()),
+  BREVO_SENDER_NAME: z.string().default('GCloud'),
+  BREVO_REPLY_TO: blankIsUnset(z.string().email().optional()),
+  MAIL_TIMEOUT_MS: int(10_000, 1000),
 
   RATE_LIMIT_WINDOW_SEC: int(60, 1),
   RATE_LIMIT_MAX: int(600, 1),
@@ -114,6 +134,37 @@ const Env = z.object({
   LOGIN_MAX_FAILURES: int(8, 3),
   LOGIN_LOCKOUT_SEC: int(900, 60),
   RATE_LIMIT_FILES_MAX: int(600, 10),
+  // Shared counters. Off means per-process counters, which silently stop
+  // limiting anything the moment a second task is started.
+  RATE_LIMIT_STORE: z.enum(['memory', 'mongo']).default('mongo'),
+
+  SHARE_PASSCODE_MIN_LENGTH: int(8, 4),
+  SHARE_PASSCODE_WINDOW_SEC: int(900, 60),
+  SHARE_PASSCODE_MAX_ATTEMPTS: int(10, 1),
+  SHARE_PASSCODE_FREEZE_AT: int(20, 2),
+
+  RESET_MAX_PER_HOUR: int(3, 1),
+
+  CSRF_ENABLED: bool(true),
+  LOGIN_ANOMALY_NOTIFY: bool(true),
+
+  ALERT_WEBHOOK_URL: blankIsUnset(z.string().url().optional()),
+  LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
+
+  // ── Keeping a free-tier host awake ────────────────────────────────────────
+  // Blank means "on when running on Render, off everywhere else" — Render sets
+  // RENDER=true and RENDER_EXTERNAL_URL for us, so the common case needs no
+  // configuration at all. See services/keepalive.js for what this can and
+  // cannot do.
+  KEEPALIVE_ENABLED: z.string().optional(),
+  KEEPALIVE_URL: blankIsUnset(z.string().url().optional()),
+  KEEPALIVE_INTERVAL_MIN: int(10, 1),
+  KEEPALIVE_TIMEOUT_MS: int(20_000, 1000),
+  KEEPALIVE_ALLOW_LOCAL: bool(false),
+
+  // Set by Render itself. Read, never written by hand.
+  RENDER: z.string().optional(),
+  RENDER_EXTERNAL_URL: blankIsUnset(z.string().url().optional()),
 
   UPLOAD_MAX_BYTES: int(25 * 1024 ** 3, 1024),
   UPLOAD_DAILY_BYTES: int(50 * 1024 ** 3, 1024),
@@ -133,6 +184,13 @@ const Env = z.object({
 
   CLIENT_DIST: blankIsUnset(z.string().optional()),
 
+  // Bumped when JWT_SECRET / FILE_TOKEN_SECRET are rotated. Tickets carry the
+  // version they were minted under, and the previous one keeps verifying for
+  // FILE_TOKEN_GRACE_SEC so a rotation does not kill every live download.
+  FILE_TOKEN_KEY_VERSION: int(1, 1),
+  FILE_TOKEN_SECRET_PREVIOUS: blankIsUnset(z.string().min(16).optional()),
+  FILE_TOKEN_GRACE_SEC: int(24 * 60 * 60, 0),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
@@ -150,7 +208,13 @@ export const NODE_ENV = env.NODE_ENV;
 export const ENV = env.APP_ENV;
 export const PORT = env.PORT;
 
-export const ORIGIN = env.PUBLIC_ORIGIN || `http://localhost:${PORT}`;
+// PUBLIC_ORIGIN is what share links and file tickets are built from, so it has
+// to be the address a browser can actually reach. On a platform that assigns
+// the hostname *after* the service is created there is no way to know it in
+// advance — so fall back to the one the platform injects. Render sets
+// RENDER_EXTERNAL_URL; setting PUBLIC_ORIGIN explicitly still wins, which is
+// what a custom domain needs.
+export const ORIGIN = env.PUBLIC_ORIGIN || env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 export const APP_ORIGIN = env.APP_ORIGIN || ORIGIN;
 
 export const CORS_ORIGINS = (env.CORS_ORIGINS || `${ORIGIN},${APP_ORIGIN}`)
@@ -216,8 +280,26 @@ function assertSecrets() {
   if (TRUST_PROXY === true) {
     warn.push('TRUST_PROXY=true trusts the X-Forwarded-For header from any client, which lets anybody spoof the address the rate limiter and the audit trail record. Use a hop count or a proxy CIDR.');
   }
-  if (production && !String(env.PUBLIC_ORIGIN || '').startsWith('https://')) {
+  if (production && !String(ORIGIN).startsWith('https://')) {
     warn.push('PUBLIC_ORIGIN is not https. Sessions, refresh cookies and file tickets all travel in the clear unless something in front terminates TLS.');
+  }
+  if (production && env.MIN_PASSWORD_LENGTH < 12) {
+    fatal.push(`MIN_PASSWORD_LENGTH is ${env.MIN_PASSWORD_LENGTH}. Production requires at least 12 — an 8-character password is inside brute-force reach for anyone who takes a copy of the hashes.`);
+  }
+  if (env.OTP_ENABLED && !env.BREVO_API_KEY) {
+    (production ? fatal : warn).push(
+      'OTP_ENABLED is on but BREVO_API_KEY is unset, so the daily passcode cannot be delivered.'
+      + (production ? '' : ' In development the code is printed to this console instead.'),
+    );
+  }
+  if (env.OTP_ENABLED && env.BREVO_API_KEY && !env.BREVO_SENDER_EMAIL) {
+    fatal.push('BREVO_SENDER_EMAIL is required when BREVO_API_KEY is set — Brevo refuses a send with no verified sender.');
+  }
+  if (production && env.RATE_LIMIT_STORE === 'memory') {
+    warn.push('RATE_LIMIT_STORE=memory keeps rate-limit counters inside one process. A second task, or a restart, resets every counter. Use mongo.');
+  }
+  if (env.FILE_TOKEN_KEY_VERSION > 1 && !env.FILE_TOKEN_SECRET_PREVIOUS) {
+    warn.push('FILE_TOKEN_KEY_VERSION was bumped without FILE_TOKEN_SECRET_PREVIOUS, so every download, preview and share URL already in circulation is dead rather than draining.');
   }
 
   if (warn.length) {
@@ -329,6 +411,67 @@ export const LOGIN_MAX_FAILURES = env.LOGIN_MAX_FAILURES;
 export const LOGIN_LOCKOUT_SEC = env.LOGIN_LOCKOUT_SEC;
 export const STEP_UP_MAX_AGE_SEC = env.STEP_UP_MAX_AGE_SEC;
 export const AUDIT_RETENTION_DAYS = env.AUDIT_RETENTION_DAYS;
+
+export const PASSWORD_HISTORY_DEPTH = env.PASSWORD_HISTORY_DEPTH;
+export const PASSWORD_MAX_AGE_DAYS = env.PASSWORD_MAX_AGE_DAYS;
+
+export const OTP = {
+  enabled: env.OTP_ENABLED,
+  timezone: env.OTP_TIMEZONE,
+  length: env.OTP_LENGTH,
+  ttlSec: env.OTP_TTL_SEC,
+  maxAttempts: env.OTP_MAX_ATTEMPTS,
+  resendCooldownSec: env.OTP_RESEND_COOLDOWN_SEC,
+  ticketTtlSec: env.OTP_TICKET_TTL_SEC,
+};
+
+export const BREVO = {
+  apiKey: env.BREVO_API_KEY,
+  senderEmail: env.BREVO_SENDER_EMAIL,
+  senderName: env.BREVO_SENDER_NAME,
+  replyTo: env.BREVO_REPLY_TO,
+  timeoutMs: env.MAIL_TIMEOUT_MS,
+};
+export const MAIL_CONFIGURED = Boolean(BREVO.apiKey && BREVO.senderEmail);
+
+export const RATE_LIMIT_STORE = env.RATE_LIMIT_STORE;
+
+export const SHARE_PASSCODE = {
+  minLength: env.SHARE_PASSCODE_MIN_LENGTH,
+  windowSec: env.SHARE_PASSCODE_WINDOW_SEC,
+  maxAttempts: env.SHARE_PASSCODE_MAX_ATTEMPTS,
+  freezeAt: env.SHARE_PASSCODE_FREEZE_AT,
+};
+
+export const RESET_MAX_PER_HOUR = env.RESET_MAX_PER_HOUR;
+export const CSRF_ENABLED = env.CSRF_ENABLED;
+export const LOGIN_ANOMALY_NOTIFY = env.LOGIN_ANOMALY_NOTIFY;
+export const ALERT_WEBHOOK_URL = env.ALERT_WEBHOOK_URL ?? null;
+export const LOG_FORMAT = env.LOG_FORMAT;
+
+export const ON_RENDER = /^(1|true|yes)$/i.test(String(env.RENDER ?? ''));
+
+export const KEEPALIVE = {
+  // Explicit setting wins; otherwise it follows whether we are on Render.
+  enabled: env.KEEPALIVE_ENABLED == null || env.KEEPALIVE_ENABLED === ''
+    ? ON_RENDER
+    : /^(1|true|yes|on)$/i.test(env.KEEPALIVE_ENABLED),
+  // Render hands us the public URL; falling back to PUBLIC_ORIGIN covers every
+  // other host. /healthz is the cheapest public route and touches nothing
+  // external — no Drive call, no Google token refresh, no database write.
+  url: (() => {
+    if (env.KEEPALIVE_URL) return env.KEEPALIVE_URL;
+    const base = env.RENDER_EXTERNAL_URL || env.PUBLIC_ORIGIN;
+    return base ? `${base.replace(/\/$/, '')}/healthz` : null;
+  })(),
+  intervalMin: env.KEEPALIVE_INTERVAL_MIN,
+  timeoutMs: env.KEEPALIVE_TIMEOUT_MS,
+  allowLocal: env.KEEPALIVE_ALLOW_LOCAL,
+};
+
+export const FILE_TOKEN_KEY_VERSION = env.FILE_TOKEN_KEY_VERSION;
+export const FILE_TOKEN_SECRET_PREVIOUS = env.FILE_TOKEN_SECRET_PREVIOUS ?? null;
+export const FILE_TOKEN_GRACE_SEC = env.FILE_TOKEN_GRACE_SEC;
 
 export const ALLOW_DESTRUCTIVE_DEMO = env.ALLOW_DESTRUCTIVE_DEMO;
 export const ALLOW_EMPTY_DRIVE_TRASH = env.ALLOW_EMPTY_DRIVE_TRASH;

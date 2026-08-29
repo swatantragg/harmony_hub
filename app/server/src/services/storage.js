@@ -10,6 +10,8 @@ import {
   FOLDER_ROLES, HEAD_CONCURRENCY, INLINE_MIME, ORIGIN, ROOTS, TRASH_DAYS, TTL,
 } from '../config.js';
 import { mintFileToken } from './signing.js';
+import crypto from 'node:crypto';
+import { models } from '../db/models.js';
 
 export { DriveError, isNotFound, isAccessDenied, isQuotaExceeded, mapLimit, isGoogleNative, EXPORT_FORMATS };
 
@@ -124,39 +126,59 @@ export function safeContentType(mimeType) {
   return type;
 }
 
-const uploadSessions = new Map();
+// ── Upload session registry ─────────────────────────────────────────────────
+// A resumable session URI is a bearer credential: whoever holds it can write
+// bytes into this library's Drive folder without presenting anything else. So
+// the server keeps its own record of which URIs it opened and for whom, and
+// refuses to resume or abort one it does not recognise.
+//
+// That record lives in MongoDB rather than in a Map, because a Map is per
+// process: with two tasks running, every resume has a 50% chance of hitting the
+// task that never opened the session and being rejected as foreign. The TTL
+// index on `expiresAt` does the expiry, so nothing has to sweep.
 
 const SESSION_TTL_MS = 7 * 86_400_000;
 
-export function registerUploadSession(sessionUri, { userId, assetId, fileId = null, sizeBytes = 0 }) {
-  uploadSessions.set(sessionUri, {
-    userId, assetId, fileId, sizeBytes, createdAt: Date.now(),
-  });
-  if (uploadSessions.size > 500) {
-    for (const [uri, row] of uploadSessions) {
-      if (Date.now() - row.createdAt > SESSION_TTL_MS) uploadSessions.delete(uri);
-    }
-  }
+const sessionId = (sessionUri) =>
+  crypto.createHash('sha256').update(String(sessionUri || '')).digest('hex');
+
+export async function registerUploadSession(sessionUri, { userId, assetId, fileId = null, sizeBytes = 0 }) {
+  const now = new Date();
+  await models.uploadSessions.updateOne(
+    { _id: sessionId(sessionUri) },
+    {
+      $set: {
+        userId,
+        assetId,
+        fileId,
+        sizeBytes,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
+      },
+    },
+    { upsert: true },
+  );
   return sessionUri;
 }
 
 const GOOGLE_UPLOAD = /^https:\/\/(www\.googleapis\.com|storage\.googleapis\.com)\/upload\//;
 
-export function resolveUploadSession(sessionUri, userId) {
+export async function resolveUploadSession(sessionUri, userId) {
   const uri = String(sessionUri || '');
   if (!GOOGLE_UPLOAD.test(uri)) return { ok: false, reason: 'foreign' };
-  const row = uploadSessions.get(uri);
+  const row = await models.uploadSessions.findOne({ _id: sessionId(uri) }).lean();
   if (!row) return { ok: false, reason: 'unknown' };
   if (row.userId !== userId) return { ok: false, reason: 'not-yours' };
-  if (Date.now() - row.createdAt > SESSION_TTL_MS) {
-    uploadSessions.delete(uri);
+  if (Date.parse(row.expiresAt) < Date.now()) {
+    await models.uploadSessions.deleteOne({ _id: sessionId(uri) }).catch(() => null);
     return { ok: false, reason: 'expired' };
   }
   return { ok: true, session: row };
 }
 
-export function forgetUploadSession(sessionUri) {
-  uploadSessions.delete(String(sessionUri || ''));
+export async function forgetUploadSession(sessionUri) {
+  if (!sessionUri) return;
+  await models.uploadSessions.deleteOne({ _id: sessionId(sessionUri) }).catch(() => null);
 }
 
 

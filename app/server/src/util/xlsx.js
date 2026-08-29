@@ -1,4 +1,5 @@
 import zlib from 'node:zlib';
+import { neutralise } from './spreadsheet.js';
 
 
 const CRC_TABLE = (() => {
@@ -111,7 +112,9 @@ function cell(ref, value, { header = false } = {}) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return `<c r="${ref}"${header ? ' s="1"' : ''}><v>${value}</v></c>`;
   }
-  let text = String(value);
+  // Everything below is written as an inline string, which Excel still parses
+  // for a leading formula character. See util/spreadsheet.js.
+  let text = String(neutralise(value));
   if (text.length > CELL_MAX) text = `${text.slice(0, CELL_MAX - 20)}… [truncated]`;
   return `<c r="${ref}" t="inlineStr"${header ? ' s="1"' : ''}><is><t xml:space="preserve">${esc(text)}</t></is></c>`;
 }

@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { verifyJwt, verifyPassword } from '../util/crypto.js';
 import { can, normaliseRole } from '../catalogue.js';
-import { JWT_SECRET, STEP_UP_MAX_AGE_SEC } from '../config.js';
+import { JWT_SECRET, OTP, STEP_UP_MAX_AGE_SEC } from '../config.js';
+import { isToday } from '../services/otp.js';
 
 export function problem(res, status, title, detail, extra = {}) {
   return res.status(status).type('application/problem+json').json({
@@ -27,6 +28,14 @@ function resolve(req) {
   const user = db.users.find((u) => u._id === claims.sub && u.status === 'active');
   if (!user) return null;
   if (Number(claims.tv ?? 0) !== Number(user.tokenVersion ?? 0)) return null;
+
+  // The daily passcode boundary. A 15-minute token minted at 23:58 must not keep
+  // answering at 00:05, so the day it was stamped with is checked on every
+  // request rather than being left to expiry.
+  if (OTP.enabled && claims.dk && !isToday(claims.dk)) {
+    req.dayExpired = true;
+    return null;
+  }
   return user;
 }
 
@@ -35,9 +44,19 @@ const identify = (user) => ({
   tokenVersion: Number(user.tokenVersion ?? 0),
 });
 
+/** The 401 body that tells the client to ask for a passcode rather than a password. */
+const unauthorized = (req, res) =>
+  (req.dayExpired
+    ? problem(
+      res, 401, 'Unauthorized',
+      'A new day has started, so this session needs a passcode. Check your email for today’s code.',
+      { otpRequired: true, reason: 'day-expired' },
+    )
+    : problem(res, 401, 'Unauthorized', 'A valid access token is required.'));
+
 export function authenticate(req, res, next) {
   const user = resolve(req);
-  if (!user) return problem(res, 401, 'Unauthorized', 'A valid access token is required.');
+  if (!user) return unauthorized(req, res);
   if (user.mustChangePassword) {
     return problem(
       res, 403, 'Password Change Required',
@@ -51,8 +70,23 @@ export function authenticate(req, res, next) {
 
 export function authenticatePending(req, res, next) {
   const user = resolve(req);
-  if (!user) return problem(res, 401, 'Unauthorized', 'A valid access token is required.');
+  if (!user) return unauthorized(req, res);
   req.user = identify(user);
+  next();
+}
+
+/**
+ * Resolves the caller if a token is present, and sets `req.rateKey` either way.
+ *
+ * Mounted ahead of the global limiters. Without it, their key generator reads
+ * `req.user` before any authentication has run, always finds it undefined, and
+ * silently degrades to per-address counting — which means one office behind one
+ * NAT shares a single budget between everybody in it.
+ */
+export function identifyForRateLimit(req, _res, next) {
+  const user = resolve(req);
+  if (user) req.rateUser = identify(user);
+  req.rateKey = user ? `u:${user._id}` : `ip:${req.ip}`;
   next();
 }
 

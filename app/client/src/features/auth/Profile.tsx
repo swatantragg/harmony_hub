@@ -175,11 +175,34 @@ export function Profile() {
 
 function SessionsPanel() {
   const logoutEverywhere = useSession((s) => s.logoutEverywhere);
+  const logout = useSession((s) => s.logout);
   const [rows, setRows] = useState<Session[] | null>(null);
+  const [ending, setEnding] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = () =>
     api<{ data: Session[] }>('/me/sessions').then((r) => setRows(r.data)).catch(() => setRows([]));
-  }, []);
+
+  useEffect(() => { void load(); }, []);
+
+  /**
+   * Ends one session. "Sign out everywhere" was the only tool here, which is
+   * the wrong instrument for the usual case — a laptop left at the office, a
+   * phone that was sold — where the point is to keep working on this device.
+   */
+  const end = async (familyId: string, isCurrent: boolean) => {
+    setEnding(familyId);
+    setError('');
+    try {
+      await api(`/me/sessions/${familyId}`, { method: 'DELETE' });
+      if (isCurrent) { await logout(); return; }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That session could not be ended.');
+    } finally {
+      setEnding(null);
+    }
+  };
 
   return (
     <section className="panel">
@@ -188,21 +211,53 @@ function SessionsPanel() {
         {rows === null && <span className="muted">Loading…</span>}
         {rows?.length === 0 && <span className="muted">No other sessions.</span>}
         {rows && rows.length > 0 && (
-          <dl className="kv">
+          <div className="stack-2">
             {rows.map((s) => (
-              <div key={s.familyId}>
-                <dt>{s.ip ?? 'unknown address'}</dt>
-                <dd>
-                  Last used {relative(s.lastUsedAt)}
-                  <div className="t-small muted" style={{ marginTop: 2 }}>{s.userAgent || 'unknown device'}</div>
-                </dd>
+              <div
+                key={s.familyId}
+                className="row"
+                style={{
+                  gap: 12, alignItems: 'flex-start', justifyContent: 'space-between',
+                  padding: '10px 0', borderBottom: '1px solid var(--edge)',
+                }}
+              >
+                <div className="grow">
+                  <div style={{ fontWeight: 600, color: 'var(--ink)' }}>
+                    {s.ip ?? 'unknown address'}
+                    {s.current && (
+                      <span
+                        className="t-small"
+                        style={{
+                          marginLeft: 8, padding: '1px 7px', borderRadius: 999,
+                          background: 'var(--ok)', color: '#fff', fontSize: 12, fontWeight: 700,
+                        }}
+                      >
+                        This device
+                      </span>
+                    )}
+                  </div>
+                  <div className="t-small muted" style={{ marginTop: 2 }}>
+                    Last used {relative(s.lastUsedAt)} · {s.userAgent || 'unknown device'}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-ghost"
+                  disabled={ending === s.familyId}
+                  onClick={() => void end(s.familyId, Boolean(s.current))}
+                >
+                  {ending === s.familyId ? 'Ending…' : s.current ? 'Sign out' : 'End'}
+                </button>
               </div>
             ))}
-          </dl>
+          </div>
         )}
+
+        {error && <div className="note danger" role="alert"><span>{error}</span></div>}
+
         <p className="t-small" style={{ margin: 0, maxWidth: '70ch' }}>
+          Ending one session leaves the others alone — use it for a device you no longer have.
           Signing out everywhere ends every session on every device, and invalidates every
-          download and preview link already handed out. Use it if a device goes missing.
+          download and preview link already handed out.
         </p>
         <div>
           <button className="btn btn-secondary" onClick={() => logoutEverywhere()}>Sign out everywhere</button>
@@ -218,4 +273,6 @@ interface Session {
   lastUsedAt: string;
   ip: string | null;
   userAgent: string;
+  /** True for the session this browser is using right now. */
+  current?: boolean;
 }

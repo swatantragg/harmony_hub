@@ -1,0 +1,193 @@
+name: CI
+
+# Every job here is blocking. A security check that only warns is a check that
+# gets ignored, and the advisory that mattered will be the one buried in a
+# passing log.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  schedule:
+    # Advisories are published against code that has not changed, so the tree is
+    # re-audited weekly rather than only when somebody happens to push.
+    - cron: '17 4 * * 1'
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  audit:
+    name: Dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # --ignore-scripts for the same reason the Dockerfile uses it: a
+      # postinstall hook in any transitive dependency is arbitrary code running
+      # in CI with a token in the environment.
+      - run: npm ci --ignore-scripts
+
+      - name: Runtime tree must carry no high or critical advisory
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Full tree, reported but not blocking
+        run: npm audit --audit-level=moderate || true
+
+  typecheck:
+    name: Types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+
+  test:
+    name: Security regression suite
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:7
+        ports: ['27017:27017']
+        env:
+          MONGO_INITDB_ROOT_USERNAME: gcloud
+          MONGO_INITDB_ROOT_PASSWORD: gcloud-ci-only
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci --ignore-scripts
+
+      # The suite boots the real server against a scratch database per file.
+      # Google Drive is unreachable here, which is fine: the server starts in a
+      # degraded state on purpose and every route these tests touch is a
+      # catalogue or auth route.
+      - name: Auth, authorisation, notifications, limits
+        run: npm test
+        env:
+          TEST_MONGODB_URI: mongodb://gcloud:gcloud-ci-only@127.0.0.1:27017/?authSource=admin
+
+  backup:
+    name: Backup and restore round-trip
+    runs-on: ubuntu-latest
+
+    # Proves the dump/restore pair still works against the schema as it stands.
+    # It runs on a seeded scratch database, not on production data — the point is
+    # to catch a change that breaks the round-trip, before the quarterly restore
+    # test on real data finds it three months later.
+    services:
+      mongo:
+        image: mongo:7
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci --ignore-scripts
+
+      - name: Install the MongoDB tools
+        run: |
+          curl -fsSL https://pgp.mongodb.com/server-7.0.asc \
+            | sudo gpg -o /usr/share/keyrings/mongodb.gpg --dearmor
+          echo "deb [signed-by=/usr/share/keyrings/mongodb.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+            | sudo tee /etc/apt/sources.list.d/mongodb.list
+          sudo apt-get update -qq
+          sudo apt-get install -y mongodb-database-tools mongodb-mongosh
+
+      - name: Seed a scratch catalogue, dump it, restore it, verify it
+        working-directory: app
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017
+          MONGODB_DB: gcloud_ci
+        run: |
+          mongosh "$MONGODB_URI/$MONGODB_DB" --quiet --eval '
+            db.users.insertOne({_id:"u1", email:"ci@example.test", name:"CI"});
+            db.artists.insertOne({_id:"a1", name:"CI Artist"});
+            db.songs.insertOne({_id:"s1", title:"CI Song", artistId:"a1", assets:[]});
+            db.folders.insertOne({_id:"f1", name:"CI Folder"});
+            db.unfiled.insertOne({assetId:"x1", displayName:"CI Asset"});
+            db.tags.insertOne({_id:"t1", name:"ci"});
+            db.customTypes.insertOne({_id:"c1", type:"CI Type"});
+          '
+          bash scripts/backup-mongo.sh
+          # --no-drive: there is no Google credential in CI, and the
+          # catalogue-to-Drive check is what the quarterly run on real data is for.
+          bash scripts/verify-restore.sh --no-drive
+
+  secrets:
+    name: Leaked credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Repository's own credential audit
+        run: bash scripts/audit.sh
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t gcloud:ci .
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: gcloud:ci
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true

@@ -26,6 +26,14 @@ export const models = {
   notifications: mongoose.model('Notification', schema(), 'notifications'),
   meta: mongoose.model('Meta', schema(), 'meta'),
   sessions: mongoose.model('Session', schema(), 'sessions'),
+
+  // ── Server-owned state, never mirrored into the in-memory working set ──────
+  // These are read and written directly. Putting them in db/store.js would load
+  // every row at boot and flush the whole set on every change, which is exactly
+  // wrong for counters and single-use secrets.
+  otpChallenges: mongoose.model('OtpChallenge', schema(), 'otpChallenges'),
+  uploadSessions: mongoose.model('UploadSession', schema(), 'uploadSessions'),
+  rateLimits: mongoose.model('RateLimit', schema(), 'rateLimits'),
 };
 
 export async function ensureIndexes() {
@@ -82,7 +90,17 @@ export async function ensureIndexes() {
 
   await build(models.sessions, { userId: 1, lastUsedAt: -1 });
   await build(models.sessions, { familyId: 1 });
+  await build(models.sessions, { tokenHash: 1 });
   await build(models.sessions, { expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+  // Mongo's TTL monitor reaps these, so nothing has to remember to sweep them.
+  await build(models.otpChallenges, { userId: 1, purpose: 1, createdAt: -1 });
+  await build(models.otpChallenges, { expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+  await build(models.uploadSessions, { userId: 1 });
+  await build(models.uploadSessions, { expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+  await build(models.rateLimits, { expiresAt: 1 }, { expireAfterSeconds: 0 });
 
   return created;
 }

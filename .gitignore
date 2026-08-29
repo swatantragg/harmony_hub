@@ -36,6 +36,13 @@ app/**/tmp/
 *.sqlite
 *.db
 
+# ── Backups ──────────────────────────────────────────────────────────────────
+# A mongodump of this library is the whole catalogue in one file, including every
+# account's bcrypt hash and the entire audit trail. It must never be committed.
+app/backups/
+backups/
+*.archive.gz
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 logs/
 *.log

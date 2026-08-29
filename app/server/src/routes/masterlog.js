@@ -5,6 +5,7 @@ import { shape } from '../services/assets.js';
 import { record } from '../services/audit.js';
 import { tierOf } from '../catalogue.js';
 import { safeFilename, workbook } from '../util/xlsx.js';
+import { csvRow } from '../util/spreadsheet.js';
 
 export const masterLogRouter = express.Router();
 masterLogRouter.use(authenticate);
@@ -511,8 +512,8 @@ function chosenColumns(raw) {
   return picked.length ? picked : DEFAULT_COLUMNS.map((k) => COLUMN_INDEX[k]);
 }
 
-const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-const csvRow = (values) => values.map(csvCell).join(',');
+// csvCell / csvRow live in util/spreadsheet.js — shared with the .xlsx writer so
+// a column added to one export cannot be neutralised in the other and not here.
 
 const params = (req) => ({ ...req.query, ...(req.body ?? {}) });
 

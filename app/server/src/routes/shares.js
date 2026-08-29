@@ -2,10 +2,10 @@ import express from 'express';
 import { db, persist, assetsUnderFolder } from '../db.js';
 import { authenticate, optionalAuthenticate, requires, problem } from '../middleware/auth.js';
 import { context } from '../services/assets.js';
-import { record, notify } from '../services/audit.js';
+import { alert, record, notify } from '../services/audit.js';
 import * as storage from '../services/storage.js';
 import { can } from '../catalogue.js';
-import { TTL, APP_ORIGIN, TRASH_DAYS } from '../config.js';
+import { TTL, APP_ORIGIN, SHARE_PASSCODE, TRASH_DAYS } from '../config.js';
 import { uuid, token, hashPassword, verifyPassword } from '../util/crypto.js';
 import { LIMITS, str } from '../util/validate.js';
 
@@ -61,6 +61,8 @@ const decorate = (s) => ({
   ...shareKind(s),
   url: `${APP_ORIGIN}/#/s/${s.token}`,
   audienceLabel: AUDIENCE_LABEL[s.audience] ?? AUDIENCE_LABEL.PUBLIC,
+  frozen: Boolean(s.frozenAt),
+  failedAttempts: Number(s.failedAttempts ?? 0),
   expired: Date.parse(s.expiresAt) < Date.now(),
   exhausted: s.maxDownloads != null && s.downloadCount >= s.maxDownloads,
   remainingMs: Date.parse(s.expiresAt) - Date.now(),
@@ -141,8 +143,11 @@ sharesRouter.post('/', requires('share:create'), async (req, res) => {
   }
 
   const secret = passcode == null || passcode === '' ? null : String(passcode);
-  if (secret && (secret.length < 6 || secret.length > 100)) {
-    return problem(res, 422, 'Unprocessable Entity', 'A link passcode must be between 6 and 100 characters.');
+  if (secret && (secret.length < SHARE_PASSCODE.minLength || secret.length > 100)) {
+    return problem(
+      res, 422, 'Unprocessable Entity',
+      `A link passcode must be between ${SHARE_PASSCODE.minLength} and 100 characters.`,
+    );
   }
 
   const base = {
@@ -302,6 +307,13 @@ async function openGate(share, req, res, recipient = null) {
   if (!share) { problem(res, 404, 'Not Found', 'This link does not exist.'); return false; }
   if (share.revokedAt) { problem(res, 410, 'Gone', 'This link has been revoked by its owner.'); return false; }
   if (Date.parse(share.expiresAt) < Date.now()) { problem(res, 410, 'Gone', 'This link has expired.'); return false; }
+  if (share.frozenAt) {
+    problem(
+      res, 423, 'Locked',
+      'This link was frozen after repeated wrong passcodes. Ask the person who sent it for a new one.',
+    );
+    return false;
+  }
   if (share.passcodeHash) {
     const supplied = req.get('x-share-passcode') || req.body?.passcode || req.query?.passcode;
     if (!supplied) {
@@ -309,15 +321,62 @@ async function openGate(share, req, res, recipient = null) {
       return false;
     }
     if (!(await verifyPassword(String(supplied), share.passcodeHash))) {
-      record(
-        { ip: req.ip, socketIp: req.socketIp, get: (h) => req.get(h), user: req.user ?? null },
-        {
-          action: 'SHARE_PASSCODE_FAILED', entity: 'share', entityId: share._id,
-          label: `Wrong passcode on the link to ${share.targetName ?? share.assetName}`,
-        },
-      );
+      // A per-share counter, on top of the per-address limiter. The limiter
+      // stops one machine guessing quickly; this stops a botnet guessing slowly,
+      // because it counts the link's failures wherever they come from.
+      share.failedAttempts = Number(share.failedAttempts ?? 0) + 1;
+      share.lastFailedAt = new Date().toISOString();
+
+      const auditReq = { ip: req.ip, socketIp: req.socketIp, get: (h) => req.get(h), user: req.user ?? null };
+      record(auditReq, {
+        action: 'SHARE_PASSCODE_FAILED', entity: 'share', entityId: share._id,
+        label: `Wrong passcode on the link to ${share.targetName ?? share.assetName}`,
+        after: { failedAttempts: share.failedAttempts },
+      });
+
+      if (share.failedAttempts >= SHARE_PASSCODE.freezeAt) {
+        share.frozenAt = share.lastFailedAt;
+        persist();
+        alert(auditReq, {
+          action: 'SHARE_PASSCODE_FROZEN', entity: 'share', entityId: share._id,
+          level: 'danger',
+          label: `Froze the link to ${share.targetName ?? share.assetName} after ${share.failedAttempts} wrong passcodes`,
+          after: { failedAttempts: share.failedAttempts },
+        });
+        notify({
+          userId: share.createdBy,
+          audience: 'admin',
+          category: 'security',
+          level: 'danger',
+          title: `Your link to ${share.targetName ?? share.assetName} was frozen`,
+          body: `${share.failedAttempts} wrong passcodes were tried against it. Nobody can open it now. Revoke it and send a new one.`,
+          link: '/shares',
+        });
+        problem(res, 423, 'Locked', 'This link has been frozen after too many wrong passcodes. Ask the sender for a new one.');
+        return false;
+      }
+
+      // Warn the owner once, halfway to the freeze, while the link still works.
+      if (share.failedAttempts === Math.ceil(SHARE_PASSCODE.freezeAt / 2)) {
+        notify({
+          userId: share.createdBy,
+          audience: 'admin',
+          category: 'security',
+          level: 'warn',
+          title: `Wrong passcodes are being tried on your link to ${share.targetName ?? share.assetName}`,
+          body: `${share.failedAttempts} so far. It freezes itself at ${SHARE_PASSCODE.freezeAt}.`,
+          link: '/shares',
+        });
+      }
+      persist();
       problem(res, 401, 'Passcode Required', 'That passcode is not correct.', { passcodeRequired: true });
       return false;
+    }
+    // A success clears the count: an owner who mistyped twice this morning
+    // should not find the link frozen a fortnight later.
+    if (share.failedAttempts) {
+      share.failedAttempts = 0;
+      persist();
     }
   }
   const audience = share.audience ?? 'PUBLIC';
@@ -369,6 +428,33 @@ async function openGate(share, req, res, recipient = null) {
   return true;
 }
 const capReached = (share) => share.maxDownloads != null && share.downloadCount >= share.maxDownloads;
+
+const STAMP = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+});
+
+/**
+ * Tells the person who created a link that somebody downloaded from it.
+ *
+ * Addressed to `share.createdBy` and to administrators — and to nobody else.
+ * Whoever shared a folder needs to know it was taken; the rest of the library
+ * has no business knowing which external partner opened whose link.
+ */
+function notifyDownload(share, what, recipient, req) {
+  notify({
+    userId: share.createdBy,
+    audience: 'admin',
+    category: 'shares',
+    level: 'info',
+    title: `Download : ${what} (downloaded on ${STAMP.format(new Date())})`,
+    body: [
+      recipient ? `On the link issued to ${recipient.email}` : `On the ${AUDIENCE_LABEL[share.audience ?? 'PUBLIC'].toLowerCase()} link`,
+      req.user ? `by ${req.user.name}` : `from ${req.socketIp ?? 'an unknown address'}`,
+    ].join(' · '),
+    link: '/shares',
+    meta: { shareId: share._id, recipient: recipient?.email ?? null },
+  });
+}
 publicShareRouter.get('/:token', optionalAuthenticate, async (req, res) => {
   const { share, recipient } = resolveToken(req.params.token);
   if (!await openGate(share, req, res, recipient)) return;
@@ -395,6 +481,8 @@ publicShareRouter.get('/:token', optionalAuthenticate, async (req, res) => {
     share.firstAccessedAt = at;
     notify({
       userId: share.createdBy,
+      audience: 'admin',
+      category: 'shares',
       level: 'info',
       title: `Your link to ${share.targetName ?? share.assetName} was opened`,
       body: `First opened just now from ${req.socketIp ?? 'an unknown address'}${recipient ? ` on the link issued to ${recipient.email}` : ''}${req.user ? ` by ${req.user.name}` : ''}.`,
@@ -491,6 +579,8 @@ publicShareRouter.post('/:token/download', optionalAuthenticate, async (req, res
       after: { downloadCount: share.downloadCount, audience: share.audience ?? 'PUBLIC' },
     },
   );
+  notifyDownload(share, ctx.asset.displayName, recipient, req);
+
   const downloadAs = storage.downloadName(ctx.asset.displayName, ctx.asset.mimeType);
   const url = storage.signedUrl({
     fileId: ctx.asset.drive.fileId, filename: downloadAs, mimeType: ctx.asset.mimeType,
@@ -532,6 +622,9 @@ publicShareRouter.post('/:token/download-all', optionalAuthenticate, async (req,
   share.downloadCount += files.length;
   if (recipient) recipient.downloadCount = Number(recipient.downloadCount ?? 0) + files.length;
   persist();
+  if (files.length) {
+    notifyDownload(share, `${share.targetName ?? share.assetName} (${files.length} files)`, recipient, req);
+  }
   record(
     { ip: req.ip, socketIp: req.socketIp, get: (h) => req.get(h), user: req.user ?? { sub: null, name: 'external partner', role: 'public' } },
     {

@@ -1,4 +1,4 @@
-
+import crypto from 'node:crypto';
 const NAME = 'gcloud.rt';
 const PATH = '/api/auth';
 
@@ -68,6 +68,39 @@ export function clearSignInStateCookie(res, { secure }) {
     secure ? 'Secure' : null,
   ].filter(Boolean).join('; '));
 }
+
+// ── CSRF ────────────────────────────────────────────────────────────────────
+// Deliberately *not* HttpOnly: the point of a double-submit token is that the
+// page's own script can read it and echo it in a header, which a cross-site
+// request cannot do. It carries no authority on its own — it is only ever
+// compared against the copy the browser sends back.
+const CSRF_NAME = 'gcloud.csrf';
+
+export function issueCsrfCookie(res, { secure, maxAgeSec = 60 * 60 * 24 * 14 } = {}) {
+  const value = crypto.randomBytes(24).toString('base64url');
+  append(res, [
+    `${CSRF_NAME}=${value}`,
+    'Path=/',
+    `Max-Age=${Math.floor(maxAgeSec)}`,
+    'SameSite=Strict',
+    secure ? 'Secure' : null,
+  ].filter(Boolean).join('; '));
+  return value;
+}
+
+export const readCsrfCookie = (req) => parseCookies(req.headers?.cookie)[CSRF_NAME] ?? null;
+
+export function clearCsrfCookie(res, { secure }) {
+  append(res, [
+    `${CSRF_NAME}=`,
+    'Path=/',
+    'Max-Age=0',
+    'SameSite=Strict',
+    secure ? 'Secure' : null,
+  ].filter(Boolean).join('; '));
+}
+
+export const CSRF_COOKIE_NAME = CSRF_NAME;
 
 function append(res, value) {
   const existing = res.getHeader('Set-Cookie');

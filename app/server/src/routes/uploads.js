@@ -136,7 +136,7 @@ uploadsRouter.post('/initiate', requires('asset:upload'), requireDrive, async (r
     return problem(res, 502, 'Bad Gateway', `Google Drive would not start the upload: ${err.message}`);
   }
 
-  storage.registerUploadSession(session.sessionUri, {
+  await storage.registerUploadSession(session.sessionUri, {
     userId: req.user.sub, assetId, sizeBytes: size,
   });
 
@@ -160,7 +160,7 @@ uploadsRouter.post('/resume', requires('asset:upload'), async (req, res) => {
   const { uploadUrl, sizeBytes } = check.value;
   if (!sizeBytes) return problem(res, 422, 'Unprocessable Entity', 'sizeBytes is required.');
 
-  const known = storage.resolveUploadSession(uploadUrl, req.user.sub);
+  const known = await storage.resolveUploadSession(uploadUrl, req.user.sub);
   if (!known.ok) {
     if (known.reason === 'foreign' || known.reason === 'not-yours') {
       record(req, {
@@ -179,7 +179,7 @@ uploadsRouter.post('/resume', requires('asset:upload'), async (req, res) => {
     const state = await storage.probeUploadSession(uploadUrl, Number(sizeBytes));
     res.json(state);
   } catch (err) {
-    storage.forgetUploadSession(uploadUrl);
+    await storage.forgetUploadSession(uploadUrl);
     return problem(res, 410, 'Gone', err.message);
   }
 });
@@ -242,6 +242,8 @@ uploadsRouter.post('/complete', requires('asset:upload'), async (req, res) => {
   const quarantine = async ({ label, detail, meta }) => {
     await storage.move(fileId, { toParentId: ROOTS.quarantine, fromParentId: drive.parentId }).catch(() => null);
     notify({
+      audience: 'admin',
+      category: 'security',
       level: 'danger',
       title: `A file was quarantined on upload: ${drive.name}`,
       body: detail,
@@ -283,7 +285,7 @@ uploadsRouter.post('/complete', requires('asset:upload'), async (req, res) => {
     };
   }
 
-  storage.forgetUploadSession(req.body?.uploadUrl);
+  await storage.forgetUploadSession(req.body?.uploadUrl);
 
   const assetType = metadata?.assetType && typeExists(metadata.assetType) ? metadata.assetType : 'Song Cover';
   const now = new Date().toISOString();
@@ -349,6 +351,18 @@ uploadsRouter.post('/complete', requires('asset:upload'), async (req, res) => {
     },
   });
 
+  // Library activity, not a security event: everybody signed in sees what
+  // arrived and who put it there, which is the whole point of a shared library.
+  notify({
+    audience: 'all',
+    category: 'activity',
+    level: 'info',
+    title: `Upload : ${asset.displayName} (${req.user.name})`,
+    body: `${folder?.name ? `Filed under ${folder.name}` : song?.title ? `Added to ${song.title}` : 'Added to the library'} · ${assetType}`,
+    link: `/assets/${assetId}`,
+    meta: { assetId, uploadedBy: req.user.sub, uploadedByName: req.user.name },
+  });
+
   res.status(201).json(shape({ asset, song, artist, folder }));
 });
 
@@ -361,12 +375,12 @@ uploadsRouter.post('/abort', requires('asset:upload'), async (req, res) => {
   const { uploadUrl, fileId } = check.value;
 
   if (uploadUrl) {
-    const known = storage.resolveUploadSession(uploadUrl, req.user.sub);
+    const known = await storage.resolveUploadSession(uploadUrl, req.user.sub);
     if (!known.ok) {
       return problem(res, 410, 'Gone', 'That upload session is not one this server opened for you.');
     }
     await storage.abortUpload(uploadUrl);
-    storage.forgetUploadSession(uploadUrl);
+    await storage.forgetUploadSession(uploadUrl);
   }
 
   let trashed = false;

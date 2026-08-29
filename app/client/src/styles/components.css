@@ -47,12 +47,21 @@
 .panel {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
+  /* A flex or grid child defaults to min-width:auto, which means "never shrink
+     below my content". A panel holding a wide table therefore pushes the whole
+     page sideways instead of letting the table scroll inside it. This is the
+     line that lets it shrink. */
+  min-width: 0;
 }
 .panel-pad { padding: 22px; }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 16px 20px; border-bottom: 1px solid var(--line);
+  min-width: 0; flex-wrap: wrap;
 }
+/* An email address or a Drive file id has no space in it, so it will not wrap
+   and drags the header wider than the phone. Break it rather than overflow. */
+.panel-head > * { min-width: 0; overflow-wrap: anywhere; }
 .panel-body { padding: 20px; }
 .stage { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 22px; }
 
@@ -211,6 +220,10 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+  /* Same reason as .panel above: without these the scroll container sizes
+     itself to the table and nothing ever scrolls — the page does instead. */
+  min-width: 0;
+  max-width: 100%;
 }
 .table-scroll > .tbl { min-width: max-content; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 17px; }
