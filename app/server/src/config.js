@@ -208,7 +208,13 @@ export const NODE_ENV = env.NODE_ENV;
 export const ENV = env.APP_ENV;
 export const PORT = env.PORT;
 
-export const ORIGIN = env.PUBLIC_ORIGIN || `http://localhost:${PORT}`;
+// PUBLIC_ORIGIN is what share links and file tickets are built from, so it has
+// to be the address a browser can actually reach. On a platform that assigns
+// the hostname *after* the service is created there is no way to know it in
+// advance — so fall back to the one the platform injects. Render sets
+// RENDER_EXTERNAL_URL; setting PUBLIC_ORIGIN explicitly still wins, which is
+// what a custom domain needs.
+export const ORIGIN = env.PUBLIC_ORIGIN || env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 export const APP_ORIGIN = env.APP_ORIGIN || ORIGIN;
 
 export const CORS_ORIGINS = (env.CORS_ORIGINS || `${ORIGIN},${APP_ORIGIN}`)
@@ -274,7 +280,7 @@ function assertSecrets() {
   if (TRUST_PROXY === true) {
     warn.push('TRUST_PROXY=true trusts the X-Forwarded-For header from any client, which lets anybody spoof the address the rate limiter and the audit trail record. Use a hop count or a proxy CIDR.');
   }
-  if (production && !String(env.PUBLIC_ORIGIN || '').startsWith('https://')) {
+  if (production && !String(ORIGIN).startsWith('https://')) {
     warn.push('PUBLIC_ORIGIN is not https. Sessions, refresh cookies and file tickets all travel in the clear unless something in front terminates TLS.');
   }
   if (production && env.MIN_PASSWORD_LENGTH < 12) {
