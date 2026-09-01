@@ -15,6 +15,7 @@ async function main() {
     objectsScanned: run.objectsScanned,
     foldersScanned: run.foldersScanned,
     assetsScanned: run.assetsScanned,
+    permanentlyLost: run.permanentlyLost,
     durationMs: run.durationMs,
     counts: run.counts,
     quota: run.quota ? { percentUsed: run.quota.percentUsed, available: run.quota.available } : null,

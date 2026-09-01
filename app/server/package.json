@@ -13,6 +13,10 @@
     "seed": "node src/cli/seed.js",
     "reseed": "node src/cli/seed.js --force",
     "reconcile": "node src/cli/reconcile.js",
+    "import:drive": "node src/cli/import-drive.js",
+    "import:drive:plan": "node src/cli/import-drive.js --dry-run",
+    "mark-lost": "node src/cli/mark-lost.js",
+    "mark-lost:plan": "node src/cli/mark-lost.js --dry-run",
     "dedupe": "node src/cli/dedupe.js",
     "test": "node --test --test-concurrency=1 'test/*.test.mjs'"
   },
