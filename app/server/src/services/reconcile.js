@@ -47,9 +47,18 @@ async function reconcile(req, { trigger, applyAvailability }) {
     ...extra,
   });
 
+  let permanentlyLost = 0;
+
   for (const [fileId, { asset, song }] of inDb) {
     const file = inDrive.get(fileId);
     if (!file) {
+      // An administrator has already accepted that these bytes are gone. Re-reporting
+      // them keeps the run permanently critical and buries findings that still need a
+      // decision, so they are counted and skipped instead.
+      if (asset.permanentlyLost) {
+        permanentlyLost += 1;
+        continue;
+      }
       findings.push(finding('MISSING_IN_DRIVE', 'critical', fileId, asset, song, {
         detail: 'Catalogued in the library, but Google Drive has no file with this id — permanently deleted, or moved out of the GCloud folder.',
       }));
@@ -141,6 +150,8 @@ async function reconcile(req, { trigger, applyAvailability }) {
       const base = { lastCheckedAt: now, checkMethod: 'LIST_RECONCILE' };
 
       if (!file) {
+        // Already accepted as gone — re-reading it is 117 guaranteed 404s per run.
+        if (asset.permanentlyLost) continue;
         needRead.push(asset);
         continue;
       }
@@ -206,6 +217,7 @@ async function reconcile(req, { trigger, applyAvailability }) {
     objectsScanned: inDrive.size,
     foldersScanned: driveFolders.size,
     assetsScanned: inDb.size,
+    permanentlyLost,
     listPages: pages,
     readsIssued,
     counts,

@@ -2,6 +2,7 @@ import express from 'express';
 import { db, persist, flushNow, allAssets } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { runReconciliation, latestRun, healthSummary } from '../services/reconcile.js';
+import { importDrive } from '../services/import-drive.js';
 import { alert, record, notify, visibleTo } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
 import * as storage from '../services/storage.js';
@@ -123,6 +124,23 @@ adminRouter.get('/storage/health', requires('admin:storage'), async (_req, res) 
 adminRouter.post('/storage/reconcile', requires('admin:storage'), async (req, res) => {
   const run = await runReconciliation(req, { trigger: 'manual' });
   res.json(run);
+});
+
+// Whole-drive mode only widens what Drive exposes. Files that were already in the
+// account have no catalogue row, so nothing lists them until they are imported.
+adminRouter.post('/storage/import', requires('admin:storage'), async (req, res) => {
+  const dryRun = req.body?.dryRun === true;
+  const summary = await importDrive({ dryRun, userId: req.user.sub });
+  if (!dryRun) {
+    await flushNow();
+    record(req, {
+      action: 'DRIVE_IMPORT',
+      entity: 'storage',
+      entityId: ROOTS.assets,
+      detail: `Imported ${summary.imported.assets} files and ${summary.imported.folders} folders from Drive.`,
+    });
+  }
+  res.json(summary);
 });
 
 adminRouter.get('/storage/runs', requires('admin:storage'), (_req, res) => {
