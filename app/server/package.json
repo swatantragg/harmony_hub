@@ -17,6 +17,8 @@
     "import:drive:plan": "node src/cli/import-drive.js --dry-run",
     "mark-lost": "node src/cli/mark-lost.js",
     "mark-lost:plan": "node src/cli/mark-lost.js --dry-run",
+    "purge:plan": "node src/cli/purge-stale.js",
+    "purge": "node src/cli/purge-stale.js --apply",
     "dedupe": "node src/cli/dedupe.js",
     "test": "node --test --test-concurrency=1 'test/*.test.mjs'"
   },
