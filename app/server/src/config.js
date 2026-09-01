@@ -73,6 +73,9 @@ const Env = z.object({
   DRIVE_ID: blankIsUnset(z.string().optional()),
   DRIVE_ROOT_FOLDER_ID: blankIsUnset(z.string().optional()),
   DRIVE_ROOT_FOLDER_NAME: z.string().default('GCloud'),
+  // Treat the whole Drive as the library instead of a GCloud/Assets subtree.
+  // DRIVE_ROOT_FOLDER_ID is ignored when this is on.
+  DRIVE_WHOLE_DRIVE: bool(false),
 
   DRIVE_CHUNK_MB: int(8, 1),
   DRIVE_LIST_PAGE_SIZE: int(1000, 100),
@@ -366,7 +369,8 @@ export const GOOGLE_SIGNIN_CONFIGURED =
   GOOGLE_SIGNIN.enabled && Boolean(GOOGLE_SIGNIN.clientId && GOOGLE_SIGNIN.clientSecret);
 
 export const DRIVE_ID = env.DRIVE_ID ?? null;
-export const DRIVE_ROOT_FOLDER_ID = env.DRIVE_ROOT_FOLDER_ID ?? null;
+export const DRIVE_WHOLE_DRIVE = env.DRIVE_WHOLE_DRIVE;
+export const DRIVE_ROOT_FOLDER_ID = DRIVE_WHOLE_DRIVE ? null : (env.DRIVE_ROOT_FOLDER_ID ?? null);
 export const DRIVE_ROOT_FOLDER_NAME = env.DRIVE_ROOT_FOLDER_NAME;
 
 export const FOLDER_ROLES = {

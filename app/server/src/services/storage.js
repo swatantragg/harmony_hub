@@ -7,7 +7,7 @@ import {
 } from '../storage/drive.js';
 import {
   BLOCKED_EXTENSIONS, BLOCKED_MIME, DRIVE_ID, DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_NAME,
-  FOLDER_ROLES, HEAD_CONCURRENCY, INLINE_MIME, ORIGIN, ROOTS, TRASH_DAYS, TTL,
+  DRIVE_WHOLE_DRIVE, FOLDER_ROLES, HEAD_CONCURRENCY, INLINE_MIME, ORIGIN, ROOTS, TRASH_DAYS, TTL,
 } from '../config.js';
 import { mintFileToken } from './signing.js';
 import crypto from 'node:crypto';
@@ -552,7 +552,32 @@ function markDrive(ok, err = null) {
   return changed;
 }
 
+// Whole-drive mode: the library IS the Drive. Nothing is created except Quarantine,
+// which the upload scanner needs somewhere to park a file it refuses to serve.
+async function ensureWholeDriveRoots() {
+  const report = {};
+  const root = await getFile(DRIVE_ID || 'root', 'id,name,mimeType,trashed,webViewLink');
+
+  ROOTS.root = root.id;
+  ROOTS.assets = root.id;
+  ROOTS.backups = null;
+  ROOTS.logs = null;
+
+  const entry = { id: root.id, name: root.name, webViewLink: root.webViewLink ?? null };
+  report.root = entry;
+  report.assets = entry;
+
+  const quarantine = await ensureFolder({ name: FOLDER_ROLES.quarantine, parentId: root.id });
+  ROOTS.quarantine = quarantine.id;
+  report.quarantine = { id: quarantine.id, name: quarantine.name, webViewLink: quarantine.webViewLink ?? null };
+
+  markDrive(true);
+  return report;
+}
+
 export async function ensureRoots() {
+  if (DRIVE_WHOLE_DRIVE) return ensureWholeDriveRoots();
+
   const report = {};
   let root;
 
