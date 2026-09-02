@@ -30,7 +30,14 @@ if git -C "$here/.." rev-parse >/dev/null 2>&1; then
     ok 'no credential files tracked'
   fi
 
-  leaked="$(git -C "$here/.." grep -nIE '(AIza[0-9A-Za-z_-]{35}|GOCSPX-[0-9A-Za-z_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^A-Za-z0-9]{0,4}[A-Za-z0-9+/=]{40,}|mongodb(\+srv)?://[^:[:space:]]+:[^@[:space:]]{6,}@|1//[0-9A-Za-z_-]{30,})' -- . ':(exclude)*.example' ':(exclude)*SECURITY.md' ':(exclude)*audit.sh' 2>/dev/null || true)"
+  # A connection string pointing at the loopback interface is not a credential:
+  # it reaches nothing outside the machine running it, and the test harness and
+  # the CI service container both need one in a tracked file. Excluding those
+  # files wholesale would blind the check to a real Atlas URI added to them
+  # later, so the host is what decides, not the path.
+  local_host='(127\.0\.0\.1|0\.0\.0\.0|localhost|\[::1\]|host\.docker\.internal|mongo)(:[0-9]+)?'
+  leaked="$(git -C "$here/.." grep -nIE '(AIza[0-9A-Za-z_-]{35}|GOCSPX-[0-9A-Za-z_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[^A-Za-z0-9]{0,4}[A-Za-z0-9+/=]{40,}|mongodb(\+srv)?://[^:[:space:]]+:[^@[:space:]]{6,}@|1//[0-9A-Za-z_-]{30,})' -- . ':(exclude)*.example' ':(exclude)*SECURITY.md' ':(exclude)*audit.sh' 2>/dev/null \
+    | grep -Ev "mongodb(\+srv)?://[^:[:space:]]+:[^@[:space:]]+@${local_host}(/|\?|$|[[:space:]'\"])" || true)"
   if [[ -n "$leaked" ]]; then
     bad 'credential-shaped strings in tracked files:'
     printf '      %s\n' "$leaked" | head -10
@@ -87,10 +94,22 @@ fi
 
 section 'Backups'
 backup_dir="${BACKUP_DIR:-$here/backups}"
-newest="$(find "$backup_dir" -name 'gcloud-*.archive.gz' -type f -print0 2>/dev/null \
-  | xargs -0 ls -t 2>/dev/null | head -n 1)"
 
-if [[ -z "$newest" ]]; then
+# -r matters: with no matches, xargs still ran `ls -t`, which lists the *current
+# directory* and hands back a directory name as "the newest backup". The check
+# then reported a fresh backup on a machine that had never taken one.
+newest=''
+if [[ -d "$backup_dir" ]]; then
+  newest="$(find "$backup_dir" -name 'gcloud-*.archive.gz' -type f -print0 2>/dev/null \
+    | xargs -0 -r ls -t 2>/dev/null | head -n 1)"
+fi
+
+if [[ ! -d "$backup_dir" ]]; then
+  # A checkout is not a deployment. On CI, and on a fresh clone, there is no
+  # backup directory because nothing has ever run here — that is not a finding.
+  # A deployment has the directory; an empty one there is still a blocker.
+  meh "no backup directory at $backup_dir — nothing has been deployed here (npm run backup)"
+elif [[ -z "$newest" ]]; then
   bad 'no MongoDB backup has ever been taken — Drive protects the bytes, nothing protects the catalogue (npm run backup)'
 else
   age=$(( ( $(date +%s) - $(stat -c %Y "$newest" 2>/dev/null || stat -f %m "$newest") ) / 86400 ))

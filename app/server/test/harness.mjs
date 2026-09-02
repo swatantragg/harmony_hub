@@ -9,6 +9,7 @@
 
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +24,12 @@ export const ADMIN = {
   password: 'harness-Admin-Passw0rd!',
   name: 'Harness Admin',
 };
+
+// Exported so a test that needs to mint a token the server will accept can use
+// the real key instead of repeating a literal — which is how the old hardcoded
+// secret ended up in two files, and how a scanner found it in both.
+export const SIGNING_KEY = randomBytes(32).toString('hex');
+export const FILE_KEY = randomBytes(32).toString('hex');
 
 let child = null;
 let base = null;
@@ -40,8 +47,13 @@ export async function start({ env = {}, port = 8300 + Math.floor(Math.random() *
       CORS_ORIGINS: `http://localhost:${port}`,
       MONGODB_URI: TEST_MONGO,
       MONGODB_DB: dbName,
-      JWT_SECRET: 'hRnEsS-0nly-k3y-mAterial-l0ng-enough-0123456789',
-      FILE_TOKEN_SECRET: 'hRnEsS-0nly-f1le-k3y-mAterial-l0ng-9876543210',
+      // Minted per run rather than written down. A literal here is a
+      // high-entropy string in a tracked file, which is indistinguishable from
+      // a real leaked key to every scanner that looks — and it made the
+      // credential-scanning job fail on every push. Generating them also means
+      // no two runs share signing material.
+      JWT_SECRET: SIGNING_KEY,
+      FILE_TOKEN_SECRET: FILE_KEY,
       ADMIN_EMAIL: ADMIN.email,
       ADMIN_NAME: ADMIN.name,
       ADMIN_PASSWORD: ADMIN.password,
@@ -49,6 +61,10 @@ export async function start({ env = {}, port = 8300 + Math.floor(Math.random() *
       MIN_PASSWORD_LENGTH: '8',
       SEED_ON_BOOT: 'false',
       RECONCILE_ENABLED: 'false',
+      // The Drive mirror runs on a timer and behind library reads. Drive is
+      // unreachable here so every pass is a no-op, but a background timer doing
+      // nothing useful during a test run is a flake waiting to happen.
+      DRIVE_SYNC_ENABLED: 'false',
       PASSWORD_BREACH_CHECK: 'false',
       RATE_LIMIT_STORE: 'memory',
       // A suite deliberately fails sign-ins dozens of times. With production

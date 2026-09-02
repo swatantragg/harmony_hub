@@ -5,7 +5,7 @@
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADMIN, client, start, stop } from './harness.mjs';
+import { ADMIN, SIGNING_KEY, client, start, stop } from './harness.mjs';
 
 before(async () => { await start(); });
 after(async () => { await stop(); });
@@ -135,12 +135,14 @@ describe('access tokens', () => {
     const c = client();
     await c.signIn();
 
-    // Same secret the harness gave the server, so the only thing wrong with
-    // this token is its day stamp.
+    // The same key the harness gave the server, taken from the harness rather
+    // than written out again, so the only thing wrong with this token is its
+    // day stamp — and so rotating the key cannot silently turn this into a
+    // signature test that passes for the wrong reason.
     const { default: jwt } = await import('jsonwebtoken');
     const stale = jwt.sign(
       { sub: 'user_admin', role: 'Admin', name: 'Harness Admin', tv: 0, dk: '2000-01-01' },
-      'hRnEsS-0nly-k3y-mAterial-l0ng-enough-0123456789',
+      SIGNING_KEY,
       { algorithm: 'HS256', expiresIn: 900, issuer: 'gcloud', audience: 'gcloud-api' },
     );
     const res = await c.send('/api/me', { token: stale });

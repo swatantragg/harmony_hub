@@ -1,0 +1,48 @@
+# Gitleaks configuration.
+#
+# The default rules stay on in full — this file only records the handful of
+# strings that look like credentials to an entropy check but are not, and could
+# not be, secrets. Each one is named individually rather than excluding a whole
+# directory: a real key pasted into a test file tomorrow must still be caught.
+#
+# Nothing here is a blanket "ignore the tests" switch. If you add an entry,
+# state why the string is unusable by anyone who finds it.
+
+title = "GCloud"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and documented placeholders — none of these authenticate against anything"
+
+# The credential-shaped strings that live in the test suite.
+regexes = [
+  # Forged tickets. auth.test.mjs asserts that a signature the server never
+  # issued is refused, so the fixture has to look like a JWT and must not be a
+  # valid one. The payload spells out that it is not signed.
+  '''eyJ1IjoidXNlcl9hZG1pbiJ9\.notasignature''',
+
+  # test/harness.mjs signing material as it stood before it was switched to
+  # randomBytes() per run. The history still carries it and gitleaks scans the
+  # full history, so the literals are named here. They only ever signed tokens
+  # for a throwaway server on a random localhost port.
+  '''hRnEsS-0nly-[A-Za-z0-9-]+''',
+
+  # Loopback connection strings. The test harness and the CI service container
+  # both need one; neither reaches anything off the machine running it.
+  '''mongodb(\+srv)?://[^:@\s]+:[^@\s]+@(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]|mongo)(:\d+)?''',
+
+  # Passwords that exist to be rejected. The audit script and the seeder both
+  # carry a list of well-known defaults so they can refuse them.
+  '''changeme123|admin123|hunter2''',
+]
+
+# Committed documentation and templates, which are supposed to show the shape of
+# a credential without carrying one.
+paths = [
+  '''app/\.env\.example$''',
+  '''app/SECURITY\.md$''',
+  '''app/scripts/audit\.sh$''',
+  '''\.gitleaks\.toml$''',
+]
