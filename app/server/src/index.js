@@ -20,6 +20,7 @@ import { seed } from './seed.js';
 import { ensureAccounts } from './services/accounts.js';
 import * as storage from './services/storage.js';
 import { runReconciliation } from './services/reconcile.js';
+import { freshen, startAutoSync, syncState } from './services/sync.js';
 
 import {
   authenticate, clientAddress, identifyForRateLimit, problem, requires,
@@ -272,6 +273,17 @@ app.use('/api/auth/google', rateLimit({
   message: tooMany('Too many sign-in attempts from this address. Wait a few minutes and try again.'),
 }));
 
+// Every library screen reads MongoDB. Without this the catalogue only changes
+// when somebody uses the app, so a file put straight into Drive stayed invisible
+// however many times the page was reloaded. This gives the read path a chance to
+// catch up first — briefly, and only when the catalogue has actually gone stale.
+// Deliberately not on /api/assets: downloads and previews live there and must
+// never wait on Drive. Every screen that *lists* the library is covered.
+app.use(
+  ['/api/dashboard', '/api/folders', '/api/search', '/api/master-log', '/api/songs', '/api/artists'],
+  freshen,
+);
+
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
 app.use('/api/dashboard', dashboardRouter);
@@ -469,7 +481,13 @@ async function main() {
         .catch((err) => console.error('[reconcile]', err.message));
     })
     : null;
-  if (job) console.log(`  Reconciliation scheduled: ${RECONCILE_CRON}\n`);
+  if (job) console.log(`  Reconciliation scheduled: ${RECONCILE_CRON}`);
+
+  const stopAutoSync = startAutoSync();
+  const sync = syncState();
+  console.log(sync.enabled
+    ? `  Drive sync:      every ${sync.intervalSec}s, and on any library screen older than ${sync.staleAfterSec}s\n`
+    : '  Drive sync:      off (DRIVE_SYNC_ENABLED=false)\n');
 
   const stopDriveWatch = storage.watchDrive({
     onRecover: () => notify({
@@ -501,6 +519,7 @@ async function main() {
     console.log(`\n${signal} — draining…`);
     job?.stop();
     sweeper.stop();
+    stopAutoSync();
     stopDriveWatch();
     stopKeepAlive();
     server.close();

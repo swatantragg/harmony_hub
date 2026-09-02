@@ -276,6 +276,52 @@ export async function listAll({ q, fields = FILE_FIELDS, onPage } = {}) {
   return { files, pages };
 }
 
+// ── The Changes feed ────────────────────────────────────────────────────────
+// A full recursive walk of the library costs one list call per folder. That is
+// fine nightly and far too expensive to run every few minutes, so incremental
+// syncs ask Drive what actually moved since the last token instead. The token is
+// opaque and account-wide; Drive invalidates it after ~30 days of disuse, which
+// surfaces as a 404 and sends the caller back to a full walk.
+
+// changes.list takes a narrower parameter set than files.list — `corpora` is not
+// among them — so these build their own rather than reusing sharedDriveParams.
+const changeParams = () => ({
+  supportsAllDrives: 'true',
+  includeItemsFromAllDrives: 'true',
+  ...(DRIVE_ID ? { driveId: DRIVE_ID } : {}),
+});
+
+export const startPageToken = () =>
+  api('/changes/startPageToken', changeParams()).then((out) => out.startPageToken ?? null);
+
+export async function listChanges({ pageToken, fields = FILE_FIELDS, pageSize = LIST_PAGE_SIZE } = {}) {
+  const changes = [];
+  let token = pageToken;
+  let nextToken = null;
+  let pages = 0;
+
+  do {
+    const out = await api('/changes', {
+      pageToken: token,
+      pageSize: Math.min(1000, pageSize),
+      includeRemoved: 'true',
+      restrictToMyDrive: 'false',
+      spaces: 'drive',
+      fields: `nextPageToken,newStartPageToken,changes(fileId,removed,changeType,time,file(${fields}))`,
+      ...changeParams(),
+    });
+    pages += 1;
+    for (const change of out.changes || []) {
+      if (change.changeType && change.changeType !== 'file') continue;
+      changes.push(change);
+    }
+    if (out.newStartPageToken) nextToken = out.newStartPageToken;
+    token = out.nextPageToken;
+  } while (token);
+
+  return { changes, startPageToken: nextToken, pages };
+}
+
 export const createFolder = ({ name, parentId }) =>
   api('/files', { fields: FILE_FIELDS, ...sharedDriveParams() }, {
     method: 'POST',

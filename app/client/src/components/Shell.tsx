@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Home, Search, Users, Disc3, UploadCloud, Share2, ShieldCheck, ScrollText,
   UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy, UserCircle2, Table2,
+  RefreshCw,
 } from 'lucide-react';
 import { Brandmark, ThemeToggle, useClickOutside, useToast } from './ui';
 import { CommandPalette } from './CommandPalette';
@@ -13,6 +14,7 @@ import { api } from '../lib/api';
 import { initials, relative } from '../lib/format';
 import { BUILD_TAG } from '../lib/version';
 import { useQueue } from '../features/upload/useUploadQueue';
+import { describeSync, useDriveSync, useSyncOnFocus } from '../lib/sync';
 
 interface NavEntry { to: string; label: string; icon: typeof Home; perm?: string; end?: boolean }
 
@@ -44,6 +46,20 @@ export function Shell() {
   const [showTour, setShowTour] = useState(!tour.done());
   const queue = useQueue((s) => s.items);
   const uploading = queue.filter((i) => ['UPLOADING', 'FINALISING', 'HASHING'].includes(i.state)).length;
+
+  // Files put straight into the Drive folder have no catalogue row until a sync
+  // makes one, and until then the library cannot show them. The server syncs on a
+  // timer and lazily behind library reads; this is the same pass on demand, plus
+  // one whenever the tab is brought back to the front.
+  const sync = useDriveSync({
+    onDone: (summary) => {
+      if (summary.changed > 0) {
+        toast({ kind: 'ok', title: 'Synced with Google Drive', body: describeSync(summary) });
+      }
+    },
+  });
+  const syncSilently = useCallback(() => { if (!sync.isPending) sync.mutate(false); }, [sync.mutate, sync.isPending]);
+  useSyncOnFocus(syncSilently);
 
   useEffect(() => { setNavOpen(false); }, [location.pathname]);
 
@@ -153,6 +169,28 @@ export function Shell() {
           </button>
 
           <div className="grow" />
+
+          {/* A large Drive takes a while to read. The spinner alone cannot say
+              whether it is working or stuck, so the seconds are shown climbing. */}
+          <button
+            className={`btn btn-ghost ${sync.isPending ? 'btn-sm' : 'btn-icon'}`}
+            onClick={() => sync.mutate(false)}
+            disabled={sync.isPending}
+            title={
+              sync.isPending
+                ? `Reading Google Drive — ${sync.elapsed} so far`
+                : sync.lastSyncedAt
+                  ? `Last checked ${relative(sync.lastSyncedAt)}. Click to check again.`
+                  : 'Check Google Drive for anything added outside the app'
+            }
+            aria-label={sync.isPending ? `Syncing with Google Drive, ${sync.elapsed} elapsed` : 'Sync with Google Drive'}
+            aria-live="polite"
+          >
+            <RefreshCw size={17} className={sync.isPending ? 'spin' : undefined} />
+            {sync.isPending && (
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{sync.elapsed}</span>
+            )}
+          </button>
 
           <ThemeToggle />
 

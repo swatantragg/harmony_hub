@@ -98,6 +98,14 @@ const Env = z.object({
   RECONCILE_CRON: z.string().default('0 2 * * *'),
   RECONCILE_ENABLED: bool(true),
 
+  DRIVE_SYNC_ENABLED: bool(true),
+  DRIVE_SYNC_INTERVAL_SEC: int(120, 30),
+  DRIVE_SYNC_STALE_SEC: int(45, 5),
+  DRIVE_SYNC_WAIT_MS: int(6000, 0),
+  DRIVE_SYNC_FIRST_RUN_SEC: int(20, 0),
+  DRIVE_SYNC_INCREMENTAL: bool(true),
+  DRIVE_SYNC_MAX_PROBES: int(200, 0),
+
   SEED_ON_BOOT: bool(true),
   SEED_PASSWORD: z.string().min(8).default('changeme123'),
 
@@ -522,3 +530,20 @@ export const FOUNDING_ADMIN = {
 
 export const RECONCILE_CRON = env.RECONCILE_CRON;
 export const RECONCILE_ENABLED = env.RECONCILE_ENABLED;
+
+// Nightly reconciliation reports drift; this keeps the catalogue level with
+// Drive between those runs, so a file dropped into the Drive folder shows up
+// here within a couple of minutes instead of the next morning.
+export const DRIVE_SYNC = {
+  enabled: env.DRIVE_SYNC_ENABLED,
+  intervalMs: env.DRIVE_SYNC_INTERVAL_SEC * 1000,
+  // How old the catalogue may be before a library screen triggers a sync itself.
+  staleMs: env.DRIVE_SYNC_STALE_SEC * 1000,
+  // How long that screen is willing to wait for the sync before serving anyway.
+  waitMs: env.DRIVE_SYNC_WAIT_MS,
+  firstRunDelayMs: env.DRIVE_SYNC_FIRST_RUN_SEC * 1000,
+  incremental: env.DRIVE_SYNC_INCREMENTAL,
+  // Ceiling on the files.get calls one run will spend confirming that a file the
+  // walk did not see is genuinely gone rather than merely moved out of the tree.
+  maxProbes: env.DRIVE_SYNC_MAX_PROBES,
+};

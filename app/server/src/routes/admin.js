@@ -3,6 +3,7 @@ import { db, persist, flushNow, allAssets } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { runReconciliation, latestRun, healthSummary } from '../services/reconcile.js';
 import { importDrive } from '../services/import-drive.js';
+import { syncDrive, syncState } from '../services/sync.js';
 import { alert, record, notify, visibleTo } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
 import * as storage from '../services/storage.js';
@@ -141,6 +142,23 @@ adminRouter.post('/storage/import', requires('admin:storage'), async (req, res) 
     });
   }
   res.json(summary);
+});
+
+// The library reads MongoDB, so it only ever shows what has been catalogued.
+// This pulls anything added to Drive from outside the app into the catalogue —
+// the same pass the timer runs, exposed so a person can ask for it now.
+adminRouter.post('/storage/sync', requires('admin:storage'), async (req, res) => {
+  const summary = await syncDrive({
+    userId: req.user.sub,
+    trigger: 'manual',
+    mode: req.body?.full === true ? 'full' : 'auto',
+  });
+  if (summary.changed > 0) await flushNow();
+  res.json({ ...summary, state: syncState() });
+});
+
+adminRouter.get('/storage/sync', requires('admin:storage'), (_req, res) => {
+  res.json(syncState());
 });
 
 adminRouter.get('/storage/runs', requires('admin:storage'), (_req, res) => {
