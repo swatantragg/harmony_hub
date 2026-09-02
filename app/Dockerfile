@@ -22,7 +22,21 @@ RUN npm ci --omit=dev --ignore-scripts --workspace server --include-workspace-ro
 
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache dumb-init curl ffmpeg
+# apk upgrade picks up OS patches published after the base image was cut. Without
+# it the image is only ever as current as node:22-alpine's last rebuild, and the
+# scanner fails the build over an openssl advisory nobody here can act on.
+RUN apk upgrade --no-cache \
+  && apk add --no-cache dumb-init curl ffmpeg
+
+# npm is a build-time tool. It is not needed to run the server, and leaving it in
+# means shipping its whole vendored dependency tree — tar, pacote, sigstore and
+# the rest — into production. Those carry their own advisories, none of which are
+# reachable from anything this image actually executes, and every one of them
+# fails an image scan. Deleting npm removes the code and the false alarms
+# together, and takes a package manager out of reach of anything that gets in.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm /usr/local/bin/npx \
+           /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 ENV NODE_ENV=production \
     PORT=8100 \

@@ -11,6 +11,14 @@
 import { test, before, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
+// config.js validates the environment on import and exits the process when
+// something required is missing. On a developer machine app/.env supplies those
+// and nobody notices; CI has no .env, so without this the file died at import
+// and took the whole test job with it. Nothing here connects anywhere — the
+// values only have to satisfy the schema.
+process.env.JWT_SECRET ??= 'sync-test-only-key-material-long-enough';
+process.env.MONGODB_URI ??= 'mongodb://127.0.0.1:27017/sync-test-never-connected';
+
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const ASSETS_ROOT = 'root-assets';
 
