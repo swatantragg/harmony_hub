@@ -13,6 +13,13 @@ import { bytes, date, duration, relative } from '../../lib/format';
 import { ACTION_COPY, STATUS_COPY } from '../../lib/assetTypes';
 import type { Asset } from '../../lib/types';
 import { useSession } from '../../app/session';
+
+const CHECK_METHOD: Record<string, string> = {
+  HEAD_OBJECT: 'live probe',
+  FILES_GET: 'live probe',
+  DRIVE_SYNC: 'Drive sync',
+  LIST_RECONCILE: 'nightly reconciliation',
+};
 import { RenameDialog } from './RenameDialog';
 import { AssetPreview } from './AssetPreview';
 import { ShareDialog } from '../shares/ShareDialog';
@@ -170,7 +177,7 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
               </div>
               <div className="t-small" style={{ marginTop: 4, fontSize: 14 }}>
                 {copy.next} · Last checked {relative(asset.availability.lastCheckedAt)}
-                {asset.availability.checkMethod ? ` (${asset.availability.checkMethod === 'HEAD_OBJECT' ? 'live probe' : 'nightly reconciliation'})` : ''}
+                {asset.availability.checkMethod ? ` (${CHECK_METHOD[asset.availability.checkMethod] ?? 'nightly reconciliation'})` : ''}
               </div>
             </div>
           </div>

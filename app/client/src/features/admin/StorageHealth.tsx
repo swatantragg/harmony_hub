@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ShieldCheck, RefreshCw, Loader2, AlertTriangle, CheckCircle2, Database,
-  HardDrive, FileWarning, Info, ExternalLink, Folder as FolderIcon, Trash2,
+  HardDrive, FileWarning, Info, ExternalLink, Folder as FolderIcon, Trash2, FolderSync,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AvailabilityBadge, EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
@@ -13,7 +13,18 @@ import { Pagination } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, pluralise, relative } from '../../lib/format';
 import { FINDING_COPY, STATUS_COPY } from '../../lib/assetTypes';
+import { describeSync, useDriveSync } from '../../lib/sync';
 import type { Availability, Finding, Quota, SongRow, StorageHealth as Health } from '../../lib/types';
+
+interface SyncStatus {
+  enabled: boolean;
+  running: boolean;
+  intervalSec: number;
+  staleAfterSec: number;
+  lastFinishedAt: string | null;
+  lastMode: string | null;
+  lastError: string | null;
+}
 
 interface Remedy { action: string; label: string; hint: string; danger?: boolean; needsSong?: boolean }
 
@@ -170,6 +181,23 @@ export function StorageHealth() {
     }
   }, [focused, data]);
 
+  const syncStatus = useQuery({
+    queryKey: ['drive-sync'],
+    queryFn: () => api<SyncStatus>('/admin/storage/sync'),
+    refetchInterval: 30_000,
+  });
+
+  const sync = useDriveSync({
+    onDone: (summary) => {
+      qc.invalidateQueries();
+      toast({
+        kind: summary.changed ? 'ok' : 'info',
+        title: summary.changed ? 'Synced with Google Drive' : 'Already up to date',
+        body: describeSync(summary),
+      });
+    },
+  });
+
   const reconcile = useMutation({
     mutationFn: () => api<{ counts: Record<string, number>; objectsScanned: number }>('/admin/storage/reconcile', { method: 'POST' }),
     onSuccess: (run) => {
@@ -203,10 +231,38 @@ export function StorageHealth() {
     <div className="page stack-5">
       <div className="spread page-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
         <h1 className="t-h1">Storage health</h1>
-        <button className="btn btn-spark" disabled={reconcile.isPending} onClick={() => reconcile.mutate()}>
-          {reconcile.isPending ? <Loader2 size={16} /> : <RefreshCw size={16} />}
-          {reconcile.isPending ? 'Comparing…' : 'Run the check now'}
-        </button>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button className="btn" disabled={sync.isPending} onClick={() => sync.mutate(true)} aria-live="polite">
+            {sync.isPending ? <Loader2 size={16} className="spin" /> : <FolderSync size={16} />}
+            {sync.isPending
+              ? <>Reading Drive… <span style={{ fontVariantNumeric: 'tabular-nums' }}>{sync.elapsed}</span></>
+              : 'Sync from Drive now'}
+          </button>
+          <button className="btn btn-spark" disabled={reconcile.isPending} onClick={() => reconcile.mutate()}>
+            {reconcile.isPending ? <Loader2 size={16} /> : <RefreshCw size={16} />}
+            {reconcile.isPending ? 'Comparing…' : 'Run the check now'}
+          </button>
+        </div>
+      </div>
+
+      <div className="note indigo">
+        <FolderSync size={16} />
+        <div>
+          <b>Anything added to the Drive folder from outside the app is pulled in automatically.</b>{' '}
+          {syncStatus.data?.enabled === false
+            ? 'Automatic syncing is switched off — use the button above, or set DRIVE_SYNC_ENABLED=true.'
+            : (
+              <>
+                Checked every {syncStatus.data?.intervalSec ?? 120}s, and again whenever a library screen is
+                more than {syncStatus.data?.staleAfterSec ?? 45}s out of date.
+                {syncStatus.data?.lastFinishedAt && (
+                  <> Last synced {relative(syncStatus.data.lastFinishedAt)}
+                    {syncStatus.data.lastMode ? ` (${syncStatus.data.lastMode})` : ''}.</>
+                )}
+                {syncStatus.data?.lastError && <> Last attempt failed: {syncStatus.data.lastError}</>}
+              </>
+            )}
+        </div>
       </div>
 
       {data.quota && (

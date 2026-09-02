@@ -20,7 +20,7 @@
     "purge:plan": "node src/cli/purge-stale.js",
     "purge": "node src/cli/purge-stale.js --apply",
     "dedupe": "node src/cli/dedupe.js",
-    "test": "node --test --test-concurrency=1 'test/*.test.mjs'"
+    "test": "node --test --experimental-test-module-mocks --test-concurrency=1 'test/*.test.mjs'"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -137,6 +137,8 @@ export const ACTION_COPY: Record<string, string> = {
   SHARE_REVOKE: 'revoked a link for',
   SHARE_ACCESS: 'externally downloaded',
   RECONCILE_RUN: 'ran reconciliation',
+  DRIVE_SYNC: 'synced from Google Drive',
+  DRIVE_IMPORT: 'imported from Google Drive',
   DRIFT_REMEDIATE: 'remediated',
   ARTIST_CREATE: 'created artist',
   ARTIST_UPDATE: 'updated artist',
