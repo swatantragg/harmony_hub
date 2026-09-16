@@ -210,11 +210,11 @@ describe('file tickets', () => {
 
 describe('spreadsheet exports', () => {
   test('both formats are offered and neither carries a live formula', async () => {
-    const csv = await admin.send('/api/master-log/export.csv');
+    const csv = await admin.send('/api/admin/activity/export.csv');
     assert.equal(csv.status, 200);
     assert.equal(typeof csv.body, 'string');
 
-    const xlsx = await admin.send('/api/master-log/export.xlsx');
+    const xlsx = await admin.send('/api/admin/activity/export.xlsx');
     assert.equal(xlsx.status, 200, 'the Excel format is offered alongside CSV');
 
     // No cell may begin with a formula character once the quote is stripped.
@@ -227,12 +227,5 @@ describe('spreadsheet exports', () => {
         );
       }
     }
-  });
-
-  test('the audit trail exports in both formats too', async () => {
-    const csv = await admin.send('/api/admin/activity/export.csv');
-    const xlsx = await admin.send('/api/admin/activity/export.xlsx');
-    assert.equal(csv.status, 200);
-    assert.equal(xlsx.status, 200);
   });
 });

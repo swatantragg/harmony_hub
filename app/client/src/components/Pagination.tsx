@@ -1,11 +1,59 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Select } from './Select';
 
 export const PAGE_SIZES = [50, 100, 200, 250, 0] as const;
+/** For lists of cards or fat rows, where fifty is already a long scroll. */
+export const LIST_PAGE_SIZES = [12, 24, 48, 96, 0] as const;
 export const ALL_ROWS = 0;
 
 const sizeLabel = (n: number) => (n === ALL_ROWS ? 'All rows' : `${n} rows`);
+
+/**
+ * Paging for a set the client already holds in full.
+ *
+ * Screens that fetch everything in one request — folders, songs, links, people,
+ * duplicate groups — only need slicing, not another round trip. Anything
+ * fetched page by page (search) keeps doing that and uses <Pagination/> on its
+ * own state instead.
+ *
+ * `resetKey` is whatever identifies the current filter or tab: when it changes
+ * the view jumps back to page one, because page seven of a different list is
+ * meaningless. When the set merely shrinks, the page is clamped instead.
+ */
+export function usePaged<T>(
+  rows: T[],
+  { initialSize = 24, resetKey = '' }: { initialSize?: number; resetKey?: string } = {},
+) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(initialSize);
+
+  const total = rows.length;
+  const pages = pageSize === ALL_ROWS ? 1 : Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => { setPage(1); }, [resetKey]);
+  useEffect(() => { if (page > pages) setPage(pages); }, [page, pages]);
+
+  const view = useMemo(
+    () => (pageSize === ALL_ROWS ? rows : rows.slice((page - 1) * pageSize, page * pageSize)),
+    [rows, page, pageSize],
+  );
+
+  const changeSize = (size: number) => { setPageSize(size); setPage(1); };
+
+  return {
+    /** The rows for the current page. */
+    rows: view,
+    page,
+    pageSize,
+    total,
+    pages,
+    setPage,
+    setPageSize: changeSize,
+    /** Spread straight into <Pagination/>. */
+    bind: { page, pageSize, total, onPage: setPage, onPageSize: changeSize },
+  };
+}
 
 function pageNumbers(page: number, pages: number): (number | 'gap')[] {
   if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
@@ -21,6 +69,7 @@ function pageNumbers(page: number, pages: number): (number | 'gap')[] {
 
 export function Pagination({
   page, pageSize, total, onPage, onPageSize, noun = 'row', nounPlural,
+  sizes = PAGE_SIZES,
 }: {
   page: number;
   pageSize: number;
@@ -29,6 +78,7 @@ export function Pagination({
   onPageSize: (size: number) => void;
   noun?: string;
   nounPlural?: string;
+  sizes?: readonly number[];
 }) {
   const plural = nounPlural ?? `${noun}s`;
   const showingAll = pageSize === ALL_ROWS;
@@ -57,7 +107,7 @@ export function Pagination({
           style={{ width: 'auto' }}
           value={String(pageSize)}
           onChange={(v) => onPageSize(Number(v))}
-          options={PAGE_SIZES.map((n) => ({ value: String(n), label: sizeLabel(n) }))}
+          options={sizes.map((n) => ({ value: String(n), label: sizeLabel(n) }))}
           ariaLabel={`How many ${plural} per page`}
         />
       </div>

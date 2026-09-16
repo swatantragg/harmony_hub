@@ -11,6 +11,7 @@ import {
 } from '../../components/ui';
 import { RowMenu } from '../../components/RowMenu';
 import { Select, pairs } from '../../components/Select';
+import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
 import type { RowAction } from '../../components/RowMenu';
 import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
@@ -208,6 +209,8 @@ export function FolderList() {
     return [...(data?.data ?? [])].sort(by[sort] ?? by.name);
   }, [data, sort]);
 
+  const paged = usePaged(folders, { initialSize: 24, resetKey: `${sort}|${debounced}` });
+
   return (
     <div className="page stack-4">
       <div className="spread page-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
@@ -248,11 +251,14 @@ export function FolderList() {
           action={can('asset:upload') ? <button className="btn btn-primary" onClick={() => setCreating(true)}>Create a folder</button> : undefined}
         />
       ) : (
-        <div className="panel rows">
-          {folders.map((f) => (
-            <FolderRow key={f._id} folder={f} onOpen={() => navigate(`/folders/${f._id}`)} />
-          ))}
-        </div>
+        <>
+          <div className="panel rows">
+            {paged.rows.map((f) => (
+              <FolderRow key={f._id} folder={f} onOpen={() => navigate(`/folders/${f._id}`)} />
+            ))}
+          </div>
+          <Pagination {...paged.bind} noun="folder" sizes={LIST_PAGE_SIZES} />
+        </>
       )}
 
       {creating && <NewFolderDialog onClose={() => setCreating(false)} onCreated={(f) => navigate(`/folders/${f._id}`)} />}
@@ -283,6 +289,13 @@ export function FolderDetail() {
     if (tab !== 'all') return data.assetsByFamily?.[tab] ?? [];
     return FAMILY_ORDER.flatMap((f) => data.assetsByFamily?.[f] ?? []);
   }, [data, tab]);
+
+  const subfolderRows = useMemo(() => data?.subfolders ?? [], [data]);
+
+  // One page position per tab, reset on every switch: page four of the images
+  // tab means nothing once you are looking at documents.
+  const pagedAssets = usePaged(visibleAssets, { initialSize: 24, resetKey: `${id}|${tab}` });
+  const pagedSubfolders = usePaged(subfolderRows, { initialSize: 24, resetKey: String(id) });
 
   if (isLoading || !data) {
     return <div className="page stack-3"><Skeleton h={32} w="34%" /><Skeleton h={96} /><RowSkeletons n={4} /></div>;
@@ -415,13 +428,19 @@ export function FolderDetail() {
           </div>
 
           {active === 'folders' ? (
-            <div className="panel rows">
-              {subfolders.map((sub) => (
-                <FolderRow key={sub._id} folder={sub} onOpen={() => navigate(`/folders/${sub._id}`)} />
-              ))}
-            </div>
+            <>
+              <div className="panel rows">
+                {pagedSubfolders.rows.map((sub) => (
+                  <FolderRow key={sub._id} folder={sub} onOpen={() => navigate(`/folders/${sub._id}`)} />
+                ))}
+              </div>
+              <Pagination {...pagedSubfolders.bind} noun="folder" sizes={LIST_PAGE_SIZES} />
+            </>
           ) : (
-            <AssetList assets={visibleAssets} selectedId={openAsset} onOpen={(a) => setOpenAsset(a.assetId)} />
+            <>
+              <AssetList assets={pagedAssets.rows} selectedId={openAsset} onOpen={(a) => setOpenAsset(a.assetId)} />
+              <Pagination {...pagedAssets.bind} noun="file" sizes={LIST_PAGE_SIZES} />
+            </>
           )}
         </section>
       )}

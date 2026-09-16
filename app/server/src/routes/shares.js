@@ -8,11 +8,23 @@ import { can } from '../catalogue.js';
 import { TTL, APP_ORIGIN, SHARE_PASSCODE, TRASH_DAYS } from '../config.js';
 import { uuid, token, hashPassword, verifyPassword } from '../util/crypto.js';
 import { LIMITS, str } from '../util/validate.js';
+import { hasExpired, neverExpires } from '../util/shares.js';
 
 export const sharesRouter = express.Router();
 export const publicShareRouter = express.Router();
 
-const DURATIONS = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000 };
+// `never` is null on purpose rather than a very distant date: a link with no
+// expiry should read as "no expiry" everywhere, not as one that lapses in 2124.
+// Revocation is what ends such a link, and it is instant.
+const DURATIONS = {
+  '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000, never: null,
+};
+
+const DURATION_LABEL = {
+  '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days', never: 'no expiry',
+};
+
+
 const AUDIENCES = ['PUBLIC', 'EDITOR', 'RESTRICTED'];
 
 const AUDIENCE_LABEL = {
@@ -63,9 +75,13 @@ const decorate = (s) => ({
   audienceLabel: AUDIENCE_LABEL[s.audience] ?? AUDIENCE_LABEL.PUBLIC,
   frozen: Boolean(s.frozenAt),
   failedAttempts: Number(s.failedAttempts ?? 0),
-  expired: Date.parse(s.expiresAt) < Date.now(),
+  expiresAt: s.expiresAt ?? null,
+  neverExpires: neverExpires(s),
+  expired: hasExpired(s),
   exhausted: s.maxDownloads != null && s.downloadCount >= s.maxDownloads,
-  remainingMs: Date.parse(s.expiresAt) - Date.now(),
+  // null, not Infinity — JSON turns Infinity into null anyway, and a nullable
+  // number is something the client can branch on honestly.
+  remainingMs: neverExpires(s) ? null : Date.parse(s.expiresAt) - Date.now(),
 });
 
 const normaliseEmails = (list) =>
@@ -142,6 +158,9 @@ sharesRouter.post('/', requires('share:create'), async (req, res) => {
     return problem(res, 422, 'Unprocessable Entity', 'A link can be allocated to at most 200 addresses.');
   }
 
+  const duration = Object.hasOwn(DURATIONS, expiresIn) ? expiresIn : '7d';
+  const lifespan = DURATIONS[duration];
+
   const secret = passcode == null || passcode === '' ? null : String(passcode);
   if (secret && (secret.length < SHARE_PASSCODE.minLength || secret.length > 100)) {
     return problem(
@@ -164,7 +183,7 @@ sharesRouter.post('/', requires('share:create'), async (req, res) => {
     note: noteCheck.value,
     passcodeHash: secret ? await hashPassword(secret) : null,
     createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + (DURATIONS[expiresIn] ?? DURATIONS['7d'])).toISOString(),
+    expiresAt: lifespan == null ? null : new Date(Date.now() + lifespan).toISOString(),
     canDownload: Boolean(canDownload),
     maxDownloads: maxDownloads == null ? null : Number(maxDownloads),
     downloadCount: 0,
@@ -212,7 +231,7 @@ sharesRouter.post('/', requires('share:create'), async (req, res) => {
   persist();
   record(req, {
     action: 'SHARE_CREATE', entity: 'share', entityId: share._id,
-    label: `Shared ${share.targetName} for ${expiresIn} (${AUDIENCE_LABEL[audience]})`,
+    label: `Shared ${share.targetName} for ${DURATION_LABEL[duration]} (${AUDIENCE_LABEL[audience]})`,
     after: {
       target, audience, expiresAt: share.expiresAt,
       maxDownloads: share.maxDownloads, canDownload: share.canDownload,
@@ -306,7 +325,7 @@ function resolveToken(value) {
 async function openGate(share, req, res, recipient = null) {
   if (!share) { problem(res, 404, 'Not Found', 'This link does not exist.'); return false; }
   if (share.revokedAt) { problem(res, 410, 'Gone', 'This link has been revoked by its owner.'); return false; }
-  if (Date.parse(share.expiresAt) < Date.now()) { problem(res, 410, 'Gone', 'This link has expired.'); return false; }
+  if (hasExpired(share)) { problem(res, 410, 'Gone', 'This link has expired.'); return false; }
   if (share.frozenAt) {
     problem(
       res, 423, 'Locked',
@@ -459,7 +478,12 @@ publicShareRouter.get('/:token', optionalAuthenticate, async (req, res) => {
   const { share, recipient } = resolveToken(req.params.token);
   if (!await openGate(share, req, res, recipient)) return;
 
-  const ttl = Math.min(TTL.share, Math.max(60, Math.floor((Date.parse(share.expiresAt) - Date.now()) / 1000)));
+  // A storage URL is short-lived whatever the link's own lifetime is: a link
+  // that never expires still hands out URLs that do, and the page re-signs them
+  // on every open.
+  const ttl = neverExpires(share)
+    ? TTL.share
+    : Math.min(TTL.share, Math.max(60, Math.floor((Date.parse(share.expiresAt) - Date.now()) / 1000)));
   const common = {
     share: {
       target: share.target ?? 'ASSET',
@@ -467,7 +491,8 @@ publicShareRouter.get('/:token', optionalAuthenticate, async (req, res) => {
       audienceLabel: AUDIENCE_LABEL[share.audience ?? 'PUBLIC'],
       canDownload: share.canDownload,
       canEdit: Boolean(share.canEdit),
-      expiresAt: share.expiresAt,
+      expiresAt: share.expiresAt ?? null,
+      neverExpires: neverExpires(share),
       note: share.note,
       sharedBy: share.createdByName,
       downloadsRemaining: share.maxDownloads == null ? null : share.maxDownloads - share.downloadCount,

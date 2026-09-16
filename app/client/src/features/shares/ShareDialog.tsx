@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Link2, ShieldCheck, Globe, PenLine, UserCheck, X, Eye } from 'lucide-react';
+import { Check, Link2, ShieldCheck, Globe, PenLine, UserCheck, X, Eye, Infinity as InfinityIcon } from 'lucide-react';
 import { Modal, CopyButton, useToast } from '../../components/ui';
 import { FilePreview } from '../preview/FilePreview';
 import { api } from '../../lib/api';
@@ -9,6 +9,7 @@ import type { Asset, Folder, Share, ShareAudience } from '../../lib/types';
 
 const DURATIONS = [
   ['1h', '1 hour'], ['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'],
+  ['never', 'Never expires'],
 ] as const;
 
 const AUDIENCES: { value: ShareAudience; label: string; icon: typeof Globe; blurb: string }[] = [
@@ -155,7 +156,9 @@ export function ShareDialog({
           <div className="note ok">
             <Check size={15} />
             <div>
-              <b>{created.audienceLabel}</b> · expires {new Date(created.expiresAt).toLocaleString()}
+              <b>{created.audienceLabel}</b> · {created.neverExpires || !created.expiresAt
+                ? 'never expires — revoke it when you are done'
+                : `expires ${new Date(created.expiresAt).toLocaleString()}`}
               {created.maxDownloads ? ` · capped at ${created.maxDownloads} downloads` : ' · unlimited downloads'}
               {created.canDownload ? '' : ' · preview only'}
               {created.target === 'FOLDER' ? ` · ${created.fileCount} files` : ''}
@@ -301,11 +304,34 @@ export function ShareDialog({
           <label className="label">How long should it work?</label>
           <div className="wrap-gap">
             {DURATIONS.map(([v, l]) => (
-              <button key={v} className={`chip ${expiresIn === v ? 'on' : ''}`} onClick={() => setExpiresIn(v)}>{l}</button>
+              <button
+                key={v}
+                type="button"
+                className={`chip ${expiresIn === v ? 'on' : ''}`}
+                onClick={() => setExpiresIn(v)}
+              >
+                {v === 'never' && <InfinityIcon size={12} style={{ verticalAlign: -1, marginRight: 4 }} />}
+                {l}
+              </button>
             ))}
           </div>
-          <div className="hint">The link stops working on its own.</div>
+          <div className="hint">
+            {expiresIn === 'never'
+              ? 'This one keeps working until you revoke it. Revoking is instant and applies everywhere, including to anyone who already has the page open.'
+              : 'The link stops working on its own.'}
+          </div>
         </div>
+
+        {expiresIn === 'never' && (
+          <div className="note warn">
+            <ShieldCheck size={15} />
+            <div>
+              <b>Nothing will lapse this link for you.</b> It stays open until somebody revokes it
+              from <b>Share links</b>. Every open is still logged, the download cap below still
+              applies, and revoking cuts it off immediately.
+            </div>
+          </div>
+        )}
 
         <label className="check">
           <input type="checkbox" checked={canDownload} onChange={(e) => setCanDownload(e.target.checked)} />

@@ -7,6 +7,7 @@ import {
 import { api, auth, qs, stepUp } from '../../lib/api';
 import { EmptyState, Modal, PasswordInput, Skeleton, useToast } from '../../components/ui';
 import { Select } from '../../components/Select';
+import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
 import { bytes, date, pluralise, relative } from '../../lib/format';
 import { useSession } from '../../app/session';
 import { AssetDrawer } from '../assets/AssetDrawer';
@@ -125,6 +126,8 @@ export function Dedupe() {
     }
   };
 
+  const paged = usePaged(data?.groups ?? [], { initialSize: 12, resetKey: `${level}|${family}` });
+
   const buildHashes = useMutation({
     mutationFn: () => api<{ total: number }>('/dedupe/perceptual/build', { method: 'POST' }),
     onSuccess: (r) => toast({
@@ -224,7 +227,7 @@ export function Dedupe() {
         />
       ) : (
         <div className="stack-4">
-          {data.groups.map((group) => (
+          {paged.rows.map((group) => (
             <GroupCard
               key={group._id}
               group={group}
@@ -233,6 +236,7 @@ export function Dedupe() {
               onOpenAsset={setOpenAsset}
             />
           ))}
+          <Pagination {...paged.bind} noun="group" sizes={LIST_PAGE_SIZES} />
         </div>
       )}
 

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Share2, Ban, Clock, Download, Globe, PenLine, UserCheck, Folder as FolderIcon,
-  FileIcon, Search,
+  FileIcon, Search, Infinity as InfinityIcon,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { CopyButton, EmptyState, Skeleton, useToast, useDebounced, ConfirmDialog } from '../../components/ui';
 import { Select, pairs } from '../../components/Select';
+import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
 import { countdown, date, pluralise, relative } from '../../lib/format';
 import type { Share } from '../../lib/types';
 import { useMemo, useState } from 'react';
@@ -32,7 +33,11 @@ type ShareSort = typeof SHARE_SORTS[number][0];
 
 const STATES = [
   ['', 'Every state'], ['live', 'Live only'], ['expired', 'Expired'], ['revoked', 'Revoked'],
+  ['never', 'Never expires'],
 ] as const;
+
+/** A link with no expiry sorts after every dated one, never before. */
+const remaining = (s: Share) => (s.remainingMs == null ? Number.POSITIVE_INFINITY : s.remainingMs);
 
 export function ShareManager() {
   const [revoking, setRevoking] = useState<Share | null>(null);
@@ -83,6 +88,7 @@ export function ShareManager() {
       : { label: 'Live', status: 'AVAILABLE' };
 
   const live = data?.data.filter((s) => !s.revokedAt && !s.expired && !s.exhausted) ?? [];
+  const openEnded = live.filter((s) => s.neverExpires ?? s.expiresAt == null).length;
 
   const isLive = (s: Share) => !s.revokedAt && !s.expired && !s.exhausted;
 
@@ -97,6 +103,7 @@ export function ShareManager() {
       if (stateFilter === 'live' && !isLive(s)) return false;
       if (stateFilter === 'expired' && !s.expired) return false;
       if (stateFilter === 'revoked' && !s.revokedAt) return false;
+      if (stateFilter === 'never' && !(s.neverExpires ?? s.expiresAt == null)) return false;
       if (term) {
         const hay = `${s.targetName ?? ''} ${s.assetName ?? ''} ${s.songTitle ?? ''} ${s.artistName ?? ''} ${s.createdByName ?? ''} ${s.note ?? ''}`.toLowerCase();
         if (!hay.includes(term)) return false;
@@ -110,11 +117,16 @@ export function ShareManager() {
       oldest: (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
       name: (a, b) => name(a).localeCompare(name(b)),
       nameDesc: (a, b) => name(b).localeCompare(name(a)),
-      expiring: (a, b) => a.remainingMs - b.remainingMs,
+      expiring: (a, b) => remaining(a) - remaining(b),
       downloads: (a, b) => b.downloadCount - a.downloadCount,
     };
     return [...filtered].sort(by[sort]);
   }, [data, category, sort, stateFilter, debounced]);
+
+  const paged = usePaged(rows, {
+    initialSize: 24,
+    resetKey: `${category}|${sort}|${stateFilter}|${debounced}`,
+  });
 
   return (
     <div className="page stack-4">
@@ -136,8 +148,12 @@ export function ShareManager() {
           </div>
           <div className="stat plain">
             <div className="stat-k">Expiring within a day</div>
-            <div className="stat-v warn">{live.filter((s) => s.remainingMs < 86_400_000).length}</div>
-            <div className="stat-n">no action needed — they lapse on their own</div>
+            <div className="stat-v warn">{live.filter((s) => (s.remainingMs ?? Infinity) < 86_400_000).length}</div>
+            <div className="stat-n">
+              {openEnded > 0
+                ? `${openEnded} other${openEnded === 1 ? '' : 's'} never lapse — revoke those by hand`
+                : 'no action needed — they lapse on their own'}
+            </div>
           </div>
         </div>
       )}
@@ -211,7 +227,7 @@ export function ShareManager() {
                 <tr><th>Shared</th><th>Link type</th><th>Status</th><th>Expires</th><th>Downloads</th><th>Created by</th><th /></tr>
               </thead>
               <tbody>
-                {rows.map((s) => {
+                {paged.rows.map((s) => {
                   const st = state(s);
                   const Audience = AUDIENCE_ICON[s.audience ?? 'PUBLIC'] ?? Globe;
                   const isFolder = s.target === 'FOLDER';
@@ -270,6 +286,11 @@ export function ShareManager() {
                       <td className="t-small">
                         {s.revokedAt ? `revoked ${relative(s.revokedAt)}`
                           : s.expired ? date(s.expiresAt)
+                          : s.remainingMs == null ? (
+                            <span className="row-tight" title="This link has no expiry — revoking it is what ends it">
+                              <InfinityIcon size={12} /> Never expires
+                            </span>
+                          )
                           : <span className="row-tight"><Clock size={12} /> {countdown(s.remainingMs)}</span>}
                       </td>
                       <td className="t-small" style={{ fontFamily: 'var(--mono)' }}>
@@ -294,6 +315,9 @@ export function ShareManager() {
               </tbody>
             </table>
           </div>
+          <div className="panel-body" style={{ paddingTop: 0 }}>
+            <Pagination {...paged.bind} noun="link" sizes={LIST_PAGE_SIZES} />
+          </div>
         </div>
       )}
 
@@ -305,6 +329,9 @@ export function ShareManager() {
             <>
               <b>{revoking.targetName ?? revoking.assetName}</b> becomes unreachable through this link immediately, even for
               someone who already has it open. You can always create a new one.
+              {(revoking.neverExpires ?? revoking.expiresAt == null) && (
+                <> This link has no expiry, so revoking is the only thing that ends it.</>
+              )}
             </>
           }
           confirmLabel="Revoke now"

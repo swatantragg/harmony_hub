@@ -8,6 +8,7 @@ import { contentDisposition, dispositionFor, safeContentType } from '../services
 import { downloadResponse, driveErrorCode, isNotFound } from '../storage/drive.js';
 import { problem } from '../middleware/auth.js';
 import { record } from '../services/audit.js';
+import { hasExpired } from '../util/shares.js';
 
 export const filesRouter = express.Router();
 
@@ -32,7 +33,7 @@ function stillAuthorised(grant) {
     const share = db.shares.find((s) => s._id === grant.shareId);
     if (!share) return { ok: false, status: 410, detail: 'The share this link belongs to no longer exists.' };
     if (share.revokedAt) return { ok: false, status: 410, detail: 'This link has been revoked by its owner.' };
-    if (Date.parse(share.expiresAt) < Date.now()) {
+    if (hasExpired(share)) {
       return { ok: false, status: 410, detail: 'The share this link belongs to has expired.' };
     }
   }

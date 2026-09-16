@@ -19,6 +19,7 @@ vocabulary guard and the light/dark tokens, over a Google Drive.
 2. [Run it](#2-run-it)
 3. [How storage behaves](#3-how-storage-behaves)
 4. [De-duplication](#4-de-duplication)
+4a. [Finding and sharing things](#4a-finding-and-sharing-things)
 5. [Installing it as an app](#5-installing-it-as-an-app)
 6. [Commands](#6-commands)
 7. [Troubleshooting](#7-troubleshooting)
@@ -253,27 +254,6 @@ password is still asked to choose a password — but is not asked for the one th
 sent, because Google has just proved who they are. That exemption lasts a few minutes,
 covers exactly one password, and never applies to an account that has already set one.
 
-### The master log
-
-**Master log** is the register of record: one row per catalogued file, sixty-nine
-available columns, and nothing summarised away. It is not the activity log — that is a
-stream of events, this is the state of the library as it stands. *"Who deleted the master
-on Tuesday"* is a question for one; *"what do we hold, in what state, and can we prove it"*
-is a question for the other.
-
-Seventeen columns are on by default. The rest are one click away in **Columns**, grouped by
-what they describe — identity, classification, state, placement, storage, integrity,
-release, custody, distribution — with five named presets for the questions people arrive
-with: a standard register, a delivery sheet, a storage audit, a chain of custody, and
-everything at once.
-
-Every column sorts in both directions, every filter lives in the URL — so *"the register of
-everything missing, oldest first"* is a link somebody can be sent — and blanks always sort
-last, in both directions, because an empty cell is absent rather than smallest.
-
-Deleted files are excluded by default and one dropdown away, so *"how many files do we
-hold"* never silently counts the recycle bin.
-
 ### Where a file's language comes from
 
 Language began as a property of the **song**, which is right for the common case: the six
@@ -291,42 +271,22 @@ it differs only by case.
 
 **The field is offered on audio and video only.** A cover, a banner or a credits sheet has
 no language of its own, and a field that insists otherwise collects a guess. This governs
-the field rather than the value: artwork attached to a Hindi release still reports Hindi in
-the master log, marked *inherited*, which is what keeps *"every asset for the Hindi
-catalogue"* a filter that returns the artwork too. Re-typing a reel as a cover clears the
+the field rather than the value: artwork attached to a Hindi release still reports Hindi,
+inherited from the release, which is what keeps *"every asset for the Hindi catalogue"* a
+filter that returns the artwork too. Re-typing a reel as a cover clears the
 file-level language in the same save — leaving it behind would strand a value no screen
 could show or remove. The server enforces the rule as well as the form.
 
 The order of resolution is: **the file's own language, then its release's.** A file-level
 value exists only because somebody stated it about *that file*, which is a stronger claim
 than the release's default — an English-subtitled cut of a Hindi single is exactly the case
-that needs it. The master log carries a **Language stated on** column saying which of the
-two answered, so a register never shows a value without saying where it came from.
+that needs it. A file's details panel says which of the two answered, so a value is never
+shown without saying where it came from.
 
 Nothing is guessed. A file with no language of its own and no release behind it reports no
-language, and the master log's language filter offers **—** so *"which files have no
-language recorded?"* is an answerable question rather than a gap in a dropdown. Creating a
+language, and search's language filter offers **—** so *"which files have no language
+recorded?"* is an answerable question rather than a gap in a dropdown. Creating a
 song no longer fills in `Hindi` when the field is left alone, for the same reason.
-
-### Taking the master log out
-
-Three scopes, each saying in words what it will contain: the rows ticked on screen, the
-rows matching the filters, or the whole library. Two formats: `.xlsx` and `.csv`. What
-leaves is what is on screen — the same filters, the same order, the same columns — unless
-**every column** is chosen in the column picker.
-
-The workbook is a report rather than a data dump. Beyond the register itself it carries a
-summary, roll-ups by artist, by asset type and by folder, and a final sheet recording who
-exported it, when, in what order, and precisely which filters produced it — including the
-columns it left out. A register with no note of what was filtered out of it is a register
-nobody should quote from.
-
-The CSV is RFC 4180 with every field quoted and a byte-order mark, so Excel on Windows
-reads it as UTF-8 rather than as the system code page.
-
-A hand-picked selection is POSTed rather than put in a URL: six hundred asset ids is
-twenty-two kilobytes, and a URL that long is refused by proxies. Taking a copy is itself an
-entry in the activity log, with the scope, the columns and the filters that were used.
 
 ### Taking the activity log out
 
@@ -455,6 +415,34 @@ that file changes. The other three tiers work without it.
 
 ---
 
+## 4a. Finding and sharing things
+
+**Search is sorted into categories.** One title usually exists four times over — the master,
+the video, the artwork, the lyric sheet — and a single ranked list interleaves all of them.
+Searching a name therefore opens with a section per kind: songs and audio, then videos,
+then images, then documents, then a catch-all. Each header carries that category's real
+total, not the number on screen, and **See all** opens one category in full as an ordinary
+family filter — which means it is also a URL somebody can be sent. **One list** in the
+toolbar returns to a single ranked list, and that choice lives in the URL too (`view=list`).
+
+Grouping applies only where it earns its place: there has to be a search term, and no
+family may already be chosen, because a single-family search would be one section.
+
+**A link can be given no expiry at all.** Beside the hour / day / week / month choices there
+is **Never expires**, stored as a null `expiresAt` rather than a date far in the future so
+that every screen and every counter can say *never* honestly. Such a link ends when somebody
+revokes it, which is instant and applies everywhere — including to a page already open. The
+download cap, the passcode and the access log all work exactly as they do on a dated link,
+and **Share links** has a *Never expires* filter and a count of how many are open-ended, so
+they cannot quietly accumulate.
+
+**Every long list pages.** Folders, songs, artists, share links, duplicate groups, people,
+the files inside a folder and the files on a release all carry the same control: a
+rows-per-page picker, numbered pages, first/last, and a *go to page* box. **All rows** is
+one of the choices where scrolling really is what you want.
+
+---
+
 ## 5. Installing it as an app
 
 GCloud is a PWA. On a phone or a desktop it installs to the home screen or the dock, opens
@@ -486,15 +474,27 @@ product whose entire job is telling you whether a file is really there.
 
 ### Updating
 
-A deploy is picked up on the next visit. The new version installs in the background and
-waits — it never swaps the bundle out from under an upload in progress. The reader gets a
-"new version is ready" card and reloads when it suits them.
+A deploy is noticed without waiting for the next visit. Every open copy — installed app,
+browser tab, phone home screen — polls `/version.json` every five minutes and whenever it
+comes back to the front. A different revision there means a deploy has landed, and the card
+that appears names the version and lists what went into it before offering **Reload**.
 
-The mechanism is `dist/sw.js`, generated at build time by the `gcloud-pwa` plugin in
-`client/vite.config.ts` from the template in `client/service-worker.js`. Its revision is a
-hash of the precached bytes, so it changes when the build changes and stays put when it
-does not. Two server-side headers make it work, both in `server/src/index.js`: `sw.js` is
-served `no-cache`, and `/assets/*` is served `immutable`.
+Nothing reloads underneath anybody. The new version installs in the background and waits;
+the button is what swaps it in, so an upload in progress is never interrupted. After the
+reload the app says once what changed, keyed on the build tag, and does not mention it
+again.
+
+The mechanism is `dist/sw.js` and `dist/version.json`, both generated at build time by the
+`gcloud-pwa` plugin in `client/vite.config.ts` — the worker from the template in
+`client/service-worker.js`, the manifest from `BUILD_TAG` and the top entry of
+`client/src/lib/releaseNotes.ts`. **Editing `releaseNotes.ts` is how the update card gets
+its text**: the top entry is the release being built.
+
+The revision in both is a hash of the precached bytes, so it changes when the build changes
+and stays put when it does not. `version.json` is deliberately excluded from the precache
+and served network-only by the worker — a cached copy of it would answer the one question
+it exists to ask. Two server-side headers make the rest work, both in `server/src/index.js`:
+`sw.js` is served `no-cache`, and `/assets/*` is served `immutable`.
 
 ### Icons
 

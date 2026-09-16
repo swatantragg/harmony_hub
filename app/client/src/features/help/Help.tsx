@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { Link } from 'react-router';
 import {
   Search, ShieldCheck, Pencil, UploadCloud, Share2, History, Trash2,
-  Command, RotateCcw, Users, Globe, PenLine, UserCheck, Eye, Link2, Table2,
+  Command, RotateCcw, Users, Globe, PenLine, UserCheck, Eye, Link2, Rows3, RefreshCw,
 } from 'lucide-react';
 import { AvailabilityBadge, Brandmark, useToast } from '../../components/ui';
 import { STATUS_COPY } from '../../lib/assetTypes';
@@ -23,9 +23,9 @@ const CONCEPTS = [
     body: 'One box covers every filename, song, artist and tag. A search for “punjabi reels tagged viral” gives you those exact clips, each one showing which song and artist it came from. Filters on the left narrow it further, and the number beside each filter tells you how many files would remain.',
   },
   {
-    icon: Table2,
-    title: 'The master log is the register of everything',
-    body: 'Search is for finding one file. The master log is for seeing all of them at once — one row per file, sixty-nine possible columns, and every one of them filterable and sortable. Language is asked for on audio and video at upload; artwork and paperwork inherit theirs from the release they belong to. Pick the columns you need (there are named presets for a delivery sheet, a storage audit and a chain of custody), narrow it however you like, and export exactly what is on screen to Excel or CSV. The workbook carries roll-ups by artist, type and folder, and a final sheet recording precisely which filters produced it.',
+    icon: Rows3,
+    title: 'A search is sorted into categories',
+    body: 'One title usually exists four times over — the master, the video, the artwork and the lyric sheet — and a single ranked list interleaves all of them. Searching a name therefore opens with a section per kind: songs and audio first, then videos, then images, then documents, then anything else. Each section header carries the real total, so you can see there are forty images before deciding to look at them, and “See all” opens that one category in full. “One list” in the toolbar goes back to a single ranked list.',
   },
   {
     icon: ShieldCheck,
@@ -50,7 +50,12 @@ const CONCEPTS = [
   {
     icon: Share2,
     title: 'Sharing is controlled and reversible',
-    body: 'A link can go to anyone, to signed-in editors, or to named people only. It expires on its own, can be capped by download count, and can be switched off instantly. Before handing anything over it confirms the file is still really in storage, and every open is recorded with time and IP.',
+    body: 'A link can go to anyone, to signed-in editors, or to named people only. Give it an expiry — an hour, a day, a week, a month — or set it to never expire, which is for the links you keep handing out and end by revoking rather than by waiting. Either way it can be capped by download count and switched off instantly from Share links. Before handing anything over it confirms the file is still really in storage, and every open is recorded with time and IP.',
+  },
+  {
+    icon: RefreshCw,
+    title: 'The app updates itself, and says what changed',
+    body: 'When a new version is deployed, whatever you have open notices within a few minutes — installed app, browser tab or phone home screen alike — and offers a Reload button with the version number and what went into it. Nothing reloads underneath you: the moment is yours to pick, so an upload in progress is never interrupted. After the reload it tells you once what changed, and that is the end of it.',
   },
   {
     icon: Trash2,

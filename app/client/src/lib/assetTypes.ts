@@ -151,6 +151,9 @@ export const ACTION_COPY: Record<string, string> = {
   USER_DELETE: 'deleted the account for',
   USER_PASSWORD_RESET: 'reset the password for',
   USER_UNLOCK: 'unlocked',
+  // The master log is gone, but audit entries written while it existed are
+  // not: without this line the activity log would print MASTER_LOG_EXPORT at
+  // people. Keep it as long as any history does.
   MASTER_LOG_EXPORT: 'exported the master log',
   AUTH_LOGIN: 'signed in',
   AUTH_LOGOUT: 'signed out',

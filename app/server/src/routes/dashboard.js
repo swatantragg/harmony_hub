@@ -6,6 +6,7 @@ import { healthSummary } from '../services/reconcile.js';
 import { scan } from '../services/dedupe.js';
 import * as storage from '../services/storage.js';
 import { can } from '../catalogue.js';
+import { isLiveShare } from '../util/shares.js';
 
 export const dashboardRouter = express.Router();
 dashboardRouter.use(authenticate);
@@ -31,7 +32,7 @@ dashboardRouter.get('/', async (req, res) => {
 
   const stale = rows.filter(({ asset }) => (asset.availability?.status ?? 'UNVERIFIED') === 'UNVERIFIED').length;
 
-  const activeShares = db.shares.filter((s) => !s.revokedAt && Date.parse(s.expiresAt) > Date.now()).length;
+  const activeShares = db.shares.filter(isLiveShare).length;
 
   const trendingTags = [...db.tags]
     .filter((t) => t.usageCount > 0)

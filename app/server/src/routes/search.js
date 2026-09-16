@@ -140,6 +140,24 @@ export function runSearch(query) {
 const MAX_PAGE = 500;
 const MAX_LIVE_VERIFY = 25;
 
+/**
+ * The sections a search is broken into, in the order somebody looking for a
+ * song wants them: the recording first, then what was cut from it, then the
+ * artwork, then the paperwork. Anything with a family outside this list falls
+ * into a final "Other" section rather than disappearing.
+ */
+const SECTIONS = [
+  { key: 'Audio', label: 'Songs & audio' },
+  { key: 'Video', label: 'Videos' },
+  { key: 'Image', label: 'Images & artwork' },
+  { key: 'Document', label: 'Documents' },
+];
+const OTHER = { key: 'Other', label: 'Everything else' };
+
+const SECTION_KEYS = new Set(SECTIONS.map((s) => s.key));
+
+const PER_SECTION_MAX = 96;
+
 searchRouter.get('/', async (req, res) => {
   const page = Math.max(1, Math.min(10_000, Number(req.query.page) || 1));
   const limit = Math.min(MAX_PAGE, Math.max(1, Number(req.query.limit) || 24));
@@ -166,6 +184,51 @@ searchRouter.get('/', async (req, res) => {
     hasMore: page * limit < results.length,
     verifiedLive: req.query.verify === 'live',
   });
+});
+
+/**
+ * The same search, cut into sections by family.
+ *
+ * One title usually has an audio master, a video, artwork and a lyric sheet all
+ * sharing its name, and a flat relevance list interleaves them. This answers
+ * "what audio is there for X, and what video" in one request: each section
+ * carries its own total, so "see all 40 images" is a filter the client applies
+ * rather than another guess at a page size.
+ */
+searchRouter.get('/grouped', (req, res) => {
+  const q = String(req.query.q ?? '');
+  if (q.length > 200) {
+    return problem(res, 422, 'Unprocessable Entity', 'That search term is too long.');
+  }
+  const perSection = Math.min(PER_SECTION_MAX, Math.max(1, Number(req.query.perSection) || 12));
+
+  const { results, facets, sort } = runSearch(req.query);
+
+  const buckets = new Map();
+  for (const row of results) {
+    const key = SECTION_KEYS.has(row.asset.family) ? row.asset.family : OTHER.key;
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(row);
+    buckets.set(key, bucket);
+  }
+
+  const groups = [...SECTIONS, OTHER]
+    .map(({ key, label }) => {
+      const rows = buckets.get(key) ?? [];
+      return {
+        key,
+        label,
+        total: rows.length,
+        hasMore: rows.length > perSection,
+        // Only the four real families can be turned into a family filter; the
+        // catch-all section is not a filter anybody can express.
+        filterable: key !== OTHER.key,
+        data: rows.slice(0, perSection).map(shape),
+      };
+    })
+    .filter((g) => g.total > 0);
+
+  res.json({ groups, facets, sort, total: results.length, perSection, q });
 });
 
 searchRouter.get('/facets', (req, res) => {

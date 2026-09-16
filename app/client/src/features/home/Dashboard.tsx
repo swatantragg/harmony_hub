@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Skeleton, useDebounced } from '../../components/ui';
+import { Pagination } from '../../components/Pagination';
 import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, pluralise, relative } from '../../lib/format';
@@ -128,12 +129,25 @@ export function Dashboard() {
       </section>
 
       {search.isSearching ? (
-        <section>
+        <section className="stack-4">
           <SearchResults
             search={search}
             openAsset={openAsset}
             onOpen={(a) => setOpenAsset(a.assetId)}
+            paginated={!search.grouped}
           />
+          {/* Grouped results page inside each category, so there is nothing
+              global to page through. */}
+          {!search.grouped && (
+            <Pagination
+              page={search.page}
+              pageSize={search.pageSize}
+              total={search.total}
+              onPage={search.setPage}
+              onPageSize={search.setPageSize}
+              noun="file"
+            />
+          )}
         </section>
       ) : (
         <>

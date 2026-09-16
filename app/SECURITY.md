@@ -200,7 +200,7 @@ per person, which is a different thing from hiding the tab.
 
 ### Spreadsheet exports
 
-Both the master log and the audit trail export as `.csv` and `.xlsx`. Every cell is passed
+The audit trail exports as `.csv` and `.xlsx`. Every cell is passed
 through `util/spreadsheet.js` first: a value beginning `=`, `+`, `-`, `@`, tab or carriage
 return is prefixed with an apostrophe, because Excel, LibreOffice and Sheets parse those as
 **formulas** and quoting does not stop it. Asset names, folder names, tags and audit labels

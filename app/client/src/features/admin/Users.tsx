@@ -4,6 +4,7 @@ import { UserPlus, KeyRound, LogIn, UserMinus, UserCheck, Trash2 } from 'lucide-
 import { api } from '../../lib/api';
 import { ConfirmDialog, Modal, PasswordInput, Skeleton, useToast } from '../../components/ui';
 import { Select } from '../../components/Select';
+import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
 import { RowMenu } from '../../components/RowMenu';
 import type { RowAction } from '../../components/RowMenu';
 import { date, initials, pluralise } from '../../lib/format';
@@ -229,6 +230,8 @@ export function Users() {
     queryFn: () => api<UsersResponse>('/admin/users'),
   });
 
+  const paged = usePaged(data?.data ?? [], { initialSize: 24 });
+
   if (isLoading || !data) return <div className="page stack-3"><Skeleton h={32} w="30%" /><Skeleton h={260} /></div>;
 
   return (
@@ -239,10 +242,11 @@ export function Users() {
       </div>
 
       <div className="panel rows">
-        {data.data.map((u) => (
+        {paged.rows.map((u) => (
           <PersonRow key={u._id} person={u} roles={data.roles} isSelf={u._id === me?._id} />
         ))}
       </div>
+      <Pagination {...paged.bind} noun="person" nounPlural="people" sizes={LIST_PAGE_SIZES} />
 
       {adding && (
         <AddUserDialog
