@@ -10,6 +10,7 @@ import { allTypes, resolveFamily } from '../services/vocabulary.js';
 import { properties } from '../storage/drive.js';
 import { uuid } from '../util/crypto.js';
 import { LIMITS, fields, list, str } from '../util/validate.js';
+import { isLiveShare, neverExpires } from '../util/shares.js';
 
 export const assetsRouter = express.Router();
 assetsRouter.use(authenticate);
@@ -62,7 +63,24 @@ assetsRouter.get('/:id', (req, res) => {
     .map((a) => ({ assetId: a.assetId, version: a.version, displayName: a.displayName, isCurrent: a.isCurrent, createdAt: a.createdAt, sizeBytes: a.drive?.sizeBytes ?? 0 }))
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   const activity = db.activityLog.filter((e) => e.entityId === ctx.asset.assetId).slice(0, 25);
-  const shares = db.shares.filter((s) => s.assetId === ctx.asset.assetId && !s.revokedAt);
+  // Only what the drawer shows, and nothing that would let this panel become a
+  // way of reading a link's secrets: the passcode hash and every recipient
+  // token stay on the server.
+  const shares = db.shares
+    .filter((s) => s.assetId === ctx.asset.assetId && isLiveShare(s))
+    .map((s) => ({
+      _id: s._id,
+      url: `${APP_ORIGIN}/#/s/${s.token}`,
+      audience: s.audience ?? 'PUBLIC',
+      canDownload: s.canDownload,
+      downloadCount: s.downloadCount ?? 0,
+      maxDownloads: s.maxDownloads ?? null,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt ?? null,
+      neverExpires: neverExpires(s),
+      note: s.note ?? '',
+      createdByName: s.createdByName ?? '',
+    }));
   res.json({ ...shape(ctx), versions, activity, shares });
 });
 

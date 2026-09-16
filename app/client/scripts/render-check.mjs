@@ -63,6 +63,14 @@ const FIXTURES = {
     facets: { family: [{ value: 'Audio', count: 3 }], type: [], tags: [{ value: 'Master', count: 3 }], availability: [{ value: 'AVAILABLE', count: 3 }], folder: [], artist: [], language: [], mood: [], version: [], year: [] },
     sort: 'newest', page: 1, limit: 48, total: 3, hasMore: false, verifiedLive: false,
   },
+  '/search/grouped': {
+    groups: [
+      { key: 'Audio', label: 'Songs & audio', total: 3, hasMore: false, filterable: true, data: [1, 2, 3].map(asset) },
+      { key: 'Video', label: 'Videos', total: 2, hasMore: false, filterable: true, data: [4, 5].map(asset) },
+    ],
+    facets: { family: [{ value: 'Audio', count: 3 }], type: [], tags: [], availability: [], folder: [], artist: [], language: [], mood: [], version: [], year: [] },
+    sort: 'relevance', total: 5, perSection: 12, q: 'dil se',
+  },
   '/artists/artist_1': {
     _id: 'artist_1', name: 'Raju Singh', slug: 'raju', genre: 'Punjabi', label: 'Northlight',
     city: 'Chandigarh', bio: 'Bio.', contact: '', socials: [{ platform: 'Instagram', handle: '@raju' }],
@@ -89,46 +97,6 @@ const FIXTURES = {
     permissionMatrix: { Admin: ['asset:read', 'admin:users'], User: ['asset:read'] },
     minPasswordLength: 8,
   },
-  '/master-log': (() => {
-    const columns = [
-      { key: 'rowNo', header: '#', group: 'Identity', width: 6, num: true, always: true },
-      { key: 'title', header: 'Title', group: 'Identity', width: 42, always: true },
-      { key: 'artist', header: 'Artist', group: 'Identity', width: 24 },
-      { key: 'status', header: 'Status', group: 'State', width: 15, always: true },
-      { key: 'size', header: 'Size', group: 'Storage', width: 12 },
-      { key: 'tags', header: 'Tags', group: 'Release', width: 32 },
-      { key: 'sha256', header: 'SHA-256', group: 'Integrity', width: 66 },
-      { key: 'createdAt', header: 'Added to library', group: 'Custody', width: 22 },
-      { key: 'driveLink', header: 'Drive link', group: 'Storage', width: 46 },
-    ];
-    const row = (i) => ({
-      _id: `a${i}`, _status: 'AVAILABLE', _family: 'Audio', _songId: 's1', _artistId: 'artist_1',
-      _folderId: 'fo1', _driveLink: 'https://drive.google.com/x', _tags: ['Master'], _deleted: false,
-      rowNo: i, title: `track_${i}.wav`, artist: 'Raju Singh', status: 'Available', size: '4.8 MB',
-      tags: 'Master', sha256: 'a'.repeat(64), createdAt: new Date().toISOString(),
-      driveLink: 'https://drive.google.com/x',
-    });
-    return {
-      data: [1, 2, 3].map(row), total: 3, libraryTotal: 45, page: 1, limit: 50,
-      sort: 'createdAt', dir: 'desc', filtered: false,
-      columns, groups: ['Identity', 'State', 'Storage', 'Release', 'Integrity', 'Custody'],
-      defaultColumns: columns.map((c) => c.key),
-      presets: [{ id: 'default', label: 'Standard register', hint: 'The usual columns', columns: columns.map((c) => c.key) }],
-      summary: {
-        files: 3, bytes: 15_000_000, bytesText: '14.3 MB', artists: 1, songs: 1, folders: 1,
-        available: 3, needsAttention: 0, unchecked: 0, shared: 1, inBin: 0, byStatus: { AVAILABLE: 3 },
-      },
-      facets: {
-        status: [{ value: 'AVAILABLE', count: 3 }], family: [{ value: 'Audio', count: 3 }],
-        type: [{ value: 'Master Audio', count: 3 }], artist: [{ value: 'Raju Singh', count: 3 }],
-        folder: [{ value: 'Masters', count: 3 }], uploadedBy: [{ value: 'Tester', count: 3 }],
-        tags: [{ value: 'Master', count: 3 }], language: [{ value: 'Hindi', count: 3 }],
-        version: [{ value: 'V1', count: 3 }], placement: [{ value: 'Song asset', count: 3 }],
-        year: [{ value: '2026', count: 3 }],
-      },
-      earliest: new Date().toISOString(),
-    };
-  })(),
   '/notifications': { data: [], unread: 0 },
   '/admin/activity': {
     data: [{ _id: 'e1', userId: 'u1', userName: 'Tester', userRole: 'Admin', action: 'ASSET_UPLOAD', entity: 'asset', entityId: 'a1', label: 'track_1.wav', before: null, after: null, meta: null, ip: '10.0.0.1', timestamp: new Date().toISOString() }],
@@ -198,7 +166,6 @@ try {
   const { StorageHealth } = await server.ssrLoadModule('/src/features/admin/StorageHealth.tsx');
   const { Users } = await server.ssrLoadModule('/src/features/admin/Users.tsx');
   const { ActivityLog } = await server.ssrLoadModule('/src/features/admin/ActivityLog.tsx');
-  const { MasterLog } = await server.ssrLoadModule('/src/features/masterlog/MasterLog.tsx');
   const { ShareManager } = await server.ssrLoadModule('/src/features/shares/ShareManager.tsx');
   const { FolderList } = await server.ssrLoadModule('/src/features/folders/Folders.tsx');
   const { Dedupe } = await server.ssrLoadModule('/src/features/dedupe/Dedupe.tsx');
@@ -222,7 +189,8 @@ try {
     { name: 'Login', Page: Login, path: '/', at: '/' },
     { name: 'Help', Page: Help, path: '/', at: '/' },
     { name: 'Home (browse)', Page: Dashboard, path: '/', at: '/' },
-    { name: 'Home (searching)', Page: Dashboard, path: '/', at: '/?q=dil+se', expect: /file/i },
+    { name: 'Home (searching, by category)', Page: Dashboard, path: '/', at: '/?q=dil+se', expect: /Songs & audio/ },
+    { name: 'Home (searching, one list)', Page: Dashboard, path: '/', at: '/?q=dil+se&view=list', expect: /file/i },
     { name: 'Artist · everything', Page: ArtistDetail, path: '/artists/:id', at: '/artists/artist_1', expect: /Releases|Folders/ },
     { name: 'Artist · folders tab', Page: ArtistDetail, path: '/artists/:id', at: '/artists/artist_1?tab=folders', expect: /Masters/ },
     { name: 'Artist · BTS tab', Page: ArtistDetail, path: '/artists/:id', at: '/artists/artist_1?tab=bts', expect: /BTS/ },
@@ -230,8 +198,6 @@ try {
     { name: 'People', Page: Users, path: '/', at: '/', expect: /Admin/ },
     { name: 'Set password', Page: SetPassword, path: '/', at: '/', expect: /Choose your password/ },
     { name: 'Activity log', Page: ActivityLog, path: '/', at: '/', expect: /Activity log/ },
-    { name: 'Master log', Page: MasterLog, path: '/', at: '/', expect: /Master log/ },
-    { name: 'Master log (filtered)', Page: MasterLog, path: '/', at: '/?status=MISSING&family=Audio', expect: /Spreadsheet view/i },
     { name: 'Share links', Page: ShareManager, path: '/', at: '/', expect: /Share links/ },
     { name: 'Folders', Page: FolderList, path: '/', at: '/', expect: /Folders/ },
     { name: 'Duplicates', Page: Dedupe, path: '/', at: '/', expect: /Duplicates/ },

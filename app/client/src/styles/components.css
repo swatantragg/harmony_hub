@@ -448,6 +448,8 @@
 .note.danger b, .note.danger svg { color: var(--danger-ink); }
 .note.ok { background: var(--ok-soft); border-color: var(--ok-edge); }
 .note.ok b, .note.ok svg { color: var(--ok-ink); }
+.note.warn { background: var(--warn-soft); border-color: var(--warn-edge, var(--warn)); }
+.note.warn b, .note.warn svg { color: var(--warn-ink); }
 .note.neutral { background: var(--surface-2); border-color: var(--line); }
 .note.neutral b, .note.neutral svg { color: var(--ink-2); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 14px; }
@@ -726,6 +728,14 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
 .pwa-card .btn { flex: none; align-self: center; }
 .pwa-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
 .pwa-body { font-size: 15.5px; color: var(--ink-2); line-height: 1.5; margin-top: 1px; }
+.pwa-card.wide { width: min(560px, 100%); }
+.pwa-card .pwa-notes {
+  margin: 8px 0 0; padding-left: 18px;
+  font-size: 15px; color: var(--ink-2); line-height: 1.5;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.pwa-card .pwa-notes li { list-style: disc; }
+.pwa-version { font-family: var(--mono); font-size: 14.5px; letter-spacing: .06em; color: var(--indigo); }
 .pwa-card.offline { border-color: var(--warn); background: var(--warn-soft); }
 .pwa-card.offline > svg { color: var(--warn-ink); }
 .pwa-card.offline .pwa-title { color: var(--warn-ink); }
@@ -739,6 +749,12 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   color: var(--ink-3); opacity: .62;
 }
 .search-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.search-section-icon {
+  width: 26px; height: 26px; border-radius: 8px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--fam-a, var(--indigo-soft)), var(--fam-b, var(--indigo-wash)));
+  color: var(--fam-ink, var(--indigo-deep));
+}
 .search-toolbar { align-items: center; row-gap: 10px; }
 @media (max-width: 560px) {
   .search-toolbar { flex-direction: column; align-items: stretch; }

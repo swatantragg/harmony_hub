@@ -43,7 +43,6 @@ import { sharesRouter, publicShareRouter } from './routes/shares.js';
 import { adminRouter, notificationsRouter } from './routes/admin.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dedupeRouter } from './routes/dedupe.js';
-import { masterLogRouter } from './routes/masterlog.js';
 import { filesRouter } from './routes/files.js';
 
 const app = express();
@@ -280,7 +279,7 @@ app.use('/api/auth/google', rateLimit({
 // Deliberately not on /api/assets: downloads and previews live there and must
 // never wait on Drive. Every screen that *lists* the library is covered.
 app.use(
-  ['/api/dashboard', '/api/folders', '/api/search', '/api/master-log', '/api/songs', '/api/artists'],
+  ['/api/dashboard', '/api/folders', '/api/search', '/api/songs', '/api/artists'],
   freshen,
 );
 
@@ -303,7 +302,6 @@ app.use('/api/shares', sharesRouter);
 app.use('/api/s/:token', sharePasscodeIpLimiter, shareTokenLimiter);
 app.use('/api/s', publicShareRouter);
 app.use('/api/dedupe', dedupeRouter);
-app.use('/api/master-log', masterLogRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationsRouter);
 

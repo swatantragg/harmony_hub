@@ -22,6 +22,7 @@ import * as keepalive from '../services/keepalive.js';
 import { LIMITS, email, fields, oneOf, str } from '../util/validate.js';
 import { safeFilename, workbook } from '../util/xlsx.js';
 import { csvRow } from '../util/spreadsheet.js';
+import { isLiveShare } from '../util/shares.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(authenticate);
@@ -634,9 +635,8 @@ function attachments() {
     uploads.set(asset.uploadedBy, (uploads.get(asset.uploadedBy) ?? 0) + 1);
   }
   const shares = new Map();
-  const now = Date.now();
   for (const s of db.shares) {
-    if (!s.createdBy || s.revokedAt || Date.parse(s.expiresAt) < now) continue;
+    if (!s.createdBy || !isLiveShare(s)) continue;
     shares.set(s.createdBy, (shares.get(s.createdBy) ?? 0) + 1);
   }
   return { uploads, shares };

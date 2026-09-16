@@ -8,7 +8,7 @@ import {
 import { api } from '../../lib/api';
 import { CardSkeletons, EmptyState, RowSkeletons, Skeleton, useDebounced } from '../../components/ui';
 import { Select, pairs } from '../../components/Select';
-import { Pagination } from '../../components/Pagination';
+import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, date, pluralise } from '../../lib/format';
 import type { Artist, ArtistFolder } from '../../lib/types';
@@ -47,6 +47,8 @@ export function ArtistList() {
     return [...(data?.data ?? [])].sort(by[sort] ?? by.name);
   }, [data, sort]);
 
+  const paged = usePaged(artists, { initialSize: 24, resetKey: `${sort}|${debounced}` });
+
   return (
     <div className="page stack-4">
       <div className="page-head">
@@ -70,21 +72,24 @@ export function ArtistList() {
       {isLoading ? (
         <RowSkeletons n={5} />
       ) : (
-        <div className="panel rows">
-          {artists.map((a) => (
-            <Link key={a._id} to={`/artists/${a._id}`} className="row-item">
-              <span className="row-icon">{a.name.slice(0, 2).toUpperCase()}</span>
-              <span className="row-main">
-                <span className="row-title">{a.name}</span>
-                <span className="row-sub">{a.genre} · {a.label}</span>
-              </span>
-              <span className="row-meta">
-                <span>{pluralise(a.songCount, 'song')} · {pluralise(a.assetCount, 'file')}</span>
-                <b>{bytes(a.totalBytes)}</b>
-              </span>
-            </Link>
-          ))}
-        </div>
+        <>
+          <div className="panel rows">
+            {paged.rows.map((a) => (
+              <Link key={a._id} to={`/artists/${a._id}`} className="row-item">
+                <span className="row-icon">{a.name.slice(0, 2).toUpperCase()}</span>
+                <span className="row-main">
+                  <span className="row-title">{a.name}</span>
+                  <span className="row-sub">{a.genre} · {a.label}</span>
+                </span>
+                <span className="row-meta">
+                  <span>{pluralise(a.songCount, 'song')} · {pluralise(a.assetCount, 'file')}</span>
+                  <b>{bytes(a.totalBytes)}</b>
+                </span>
+              </Link>
+            ))}
+          </div>
+          <Pagination {...paged.bind} noun="artist" sizes={LIST_PAGE_SIZES} />
+        </>
       )}
     </div>
   );
@@ -186,6 +191,8 @@ export function ArtistDetail() {
     };
     return rows.sort(by[folderSort] ?? by.files);
   }, [data?.folders, folderSort]);
+
+  const pagedFolders = usePaged(sortedFolders, { initialSize: 24, resetKey: folderSort });
 
   useEffect(() => {
     const next = new URLSearchParams(params);
@@ -305,14 +312,17 @@ export function ArtistDetail() {
             paginated
           />
 
-          <Pagination
-            page={search.page}
-            pageSize={search.pageSize}
-            total={search.total}
-            onPage={search.setPage}
-            onPageSize={search.setPageSize}
-            noun="file"
-          />
+          {/* The grouped view pages inside each category instead. */}
+          {!search.grouped && (
+            <Pagination
+              page={search.page}
+              pageSize={search.pageSize}
+              total={search.total}
+              onPage={search.setPage}
+              onPageSize={search.setPageSize}
+              noun="file"
+            />
+          )}
         </div>
       )}
 
@@ -364,8 +374,9 @@ export function ArtistDetail() {
               body="Every file of theirs sits at the library root rather than inside a folder."
             />
           ) : (
+            <>
             <div className="cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-              {sortedFolders.map((f) => (
+              {pagedFolders.rows.map((f) => (
                 <div key={f._id} className="panel">
                   <div className="panel-body stack-2">
                     <div className="row-tight">
@@ -391,6 +402,8 @@ export function ArtistDetail() {
                 </div>
               ))}
             </div>
+            <Pagination {...pagedFolders.bind} noun="folder" sizes={LIST_PAGE_SIZES} />
+            </>
           )}
           {(data.looseCount ?? 0) > 0 && (
             <div className="hint" style={{ marginTop: 14 }}>

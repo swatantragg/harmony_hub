@@ -4,6 +4,13 @@ import { join, relative, resolve, sep } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { BUILD_TAG } from './src/lib/version';
+import { CURRENT_RELEASE } from './src/lib/releaseNotes';
+
+// Fetched by a running tab to find out whether what is on the server is still
+// what it is running. Deliberately kept out of the precache and served
+// network-only by the service worker — a cached copy of it says nothing.
+const VERSION_FILE = '/version.json';
 
 
 function pwa(): Plugin {
@@ -30,7 +37,7 @@ function pwa(): Plugin {
       const url = (full: string) => `/${relative(outDir, full).split(sep).join('/')}`;
       const precache = files
         .map(url)
-        .filter((f) => !f.endsWith('.map') && f !== '/sw.js')
+        .filter((f) => !f.endsWith('.map') && f !== '/sw.js' && f !== VERSION_FILE)
         .filter((f) => !f.startsWith('/fonts/'))
         .sort();
       const digest = createHash('sha256');
@@ -47,7 +54,21 @@ function pwa(): Plugin {
         .replaceAll('__PRECACHE__', JSON.stringify(precache, null, 2));
 
       writeFileSync(join(outDir, 'sw.js'), source);
+
+      // The revision, not the build tag, is what says "this is a different
+      // deploy": two builds of the same tagged release still differ here.
+      writeFileSync(
+        join(outDir, VERSION_FILE.slice(1)),
+        `${JSON.stringify({
+          version: BUILD_TAG,
+          revision,
+          builtAt: new Date().toISOString(),
+          release: CURRENT_RELEASE,
+        }, null, 2)}\n`,
+      );
+
       this.info?.(`sw.js — ${precache.length} files precached, revision ${revision}`);
+      this.info?.(`version.json — ${BUILD_TAG} (${revision})`);
     },
   };
 }

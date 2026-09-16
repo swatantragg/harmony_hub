@@ -44,6 +44,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin === self.location.origin && (url.pathname.startsWith('/api/') || url.pathname === '/healthz')) return;
 
+  // The deploy marker. A cached answer would say the app is up to date for as
+  // long as the cache lives, which is exactly the question being asked, so this
+  // one always goes to the network.
+  if (url.origin === self.location.origin && url.pathname === '/version.json') return;
+
   if (url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith('/fonts/')) {

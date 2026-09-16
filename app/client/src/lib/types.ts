@@ -103,7 +103,27 @@ export interface Asset {
   verificationAgeHours: number | null;
   versions?: VersionRow[];
   activity?: ActivityEntry[];
-  shares?: Share[];
+  shares?: AssetShareRef[];
+}
+
+/**
+ * The trimmed share record the asset drawer gets back with a file.
+ *
+ * Deliberately not a whole `Share`: the drawer only needs to say that a live
+ * link exists and hand over its address, so the server sends nothing else.
+ */
+export interface AssetShareRef {
+  _id: string;
+  url: string;
+  audience: ShareAudience;
+  canDownload: boolean;
+  downloadCount: number;
+  maxDownloads: number | null;
+  createdAt: string;
+  expiresAt: string | null;
+  neverExpires: boolean;
+  note: string;
+  createdByName: string;
 }
 export interface VersionRow {
   assetId: string;
@@ -164,14 +184,17 @@ export interface Share {
   createdByName: string;
   note: string;
   createdAt: string;
-  expiresAt: string;
+  /** null when the link was created with no expiry. */
+  expiresAt: string | null;
+  neverExpires: boolean;
   canDownload: boolean;
   maxDownloads: number | null;
   downloadCount: number;
   revokedAt: string | null;
   expired: boolean;
   exhausted: boolean;
-  remainingMs: number;
+  /** null when the link never expires — there is no remaining time to report. */
+  remainingMs: number | null;
 }
 export interface FacetValue { value: string; count: number }
 export interface AssetTypeDef {
@@ -238,6 +261,23 @@ export interface SearchResponse {
   total: number;
   hasMore: boolean;
   verifiedLive: boolean;
+}
+export interface SearchGroup {
+  key: Family | 'Other';
+  label: string;
+  total: number;
+  hasMore: boolean;
+  /** False for the catch-all section, which is not a filter anybody can express. */
+  filterable: boolean;
+  data: Asset[];
+}
+export interface GroupedSearchResponse {
+  groups: SearchGroup[];
+  facets: Record<string, FacetValue[]>;
+  sort: string;
+  total: number;
+  perSection: number;
+  q: string;
 }
 export interface Artist {
   _id: string;
@@ -471,57 +511,4 @@ export interface Dashboard {
   canUpload: boolean;
   canSeeStorage: boolean;
   activity: ActivityEntry[];
-}
-export interface MasterLogColumn {
-  key: string;
-  header: string;
-  group: string;
-  width?: number;
-  num?: boolean;
-
-  always?: boolean;
-}
-export interface MasterLogPreset { id: string; label: string; hint: string; columns: string[] }
-export interface MasterLogRow {
-  _id: string;
-  _status: Availability;
-  _family: Family;
-  _songId: string | null;
-  _artistId: string | null;
-  _folderId: string | null;
-  _driveLink: string;
-  _tags: string[];
-  _deleted: boolean;
-  [column: string]: string | number | boolean | string[] | null;
-}
-export interface MasterLogSummary {
-  files: number;
-  bytes: number;
-  bytesText: string;
-  artists: number;
-  songs: number;
-  folders: number;
-  available: number;
-  needsAttention: number;
-  unchecked: number;
-  shared: number;
-  inBin: number;
-  byStatus: Record<string, number>;
-}
-export interface MasterLogResponse {
-  data: MasterLogRow[];
-  total: number;
-  libraryTotal: number;
-  page: number;
-  limit: number;
-  sort: string;
-  dir: 'asc' | 'desc';
-  filtered: boolean;
-  columns: MasterLogColumn[];
-  groups: string[];
-  defaultColumns: string[];
-  presets: MasterLogPreset[];
-  summary: MasterLogSummary;
-  facets: Record<string, FacetValue[]>;
-  earliest: string | null;
 }

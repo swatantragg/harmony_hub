@@ -37,7 +37,8 @@ interface Resolved {
     audienceLabel: string;
     canDownload: boolean;
     canEdit: boolean;
-    expiresAt: string;
+    expiresAt: string | null;
+    neverExpires?: boolean;
     note: string;
     sharedBy: string;
     downloadsRemaining: number | null;
@@ -174,7 +175,9 @@ export function PublicShare() {
         )}
 
         <p className="t-small" style={{ textAlign: 'center', marginTop: 22 }}>
-          Delivered by {BUILD_TAG}. This link expires on its own and can be revoked at any time.
+          Delivered by {BUILD_TAG}. {data?.share.expiresAt
+            ? 'This link expires on its own and can be revoked at any time.'
+            : 'This link has no expiry and can be revoked at any time.'}
         </p>
       </div>
     </div>
@@ -188,7 +191,10 @@ function ShareMeta({ data }: { data: Resolved }) {
     <div className="note neutral">
       <Clock size={15} />
       <div>
-        Shared by <b>{data.share.sharedBy}</b> · {countdown(Date.parse(data.share.expiresAt) - Date.now())}
+        Shared by <b>{data.share.sharedBy}</b> ·{' '}
+        {data.share.expiresAt
+          ? countdown(Date.parse(data.share.expiresAt) - Date.now())
+          : 'no expiry'}
         {data.share.downloadsRemaining != null && ` · ${data.share.downloadsRemaining} downloads left`}
         <div className="row-tight" style={{ marginTop: 5, fontSize: 14 }}>
           <Icon size={12} />

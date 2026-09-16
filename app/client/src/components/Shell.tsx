@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Home, Search, Users, Disc3, UploadCloud, Share2, ShieldCheck, ScrollText,
-  UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy, UserCircle2, Table2,
+  UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy, UserCircle2,
   RefreshCw,
 } from 'lucide-react';
 import { Brandmark, ThemeToggle, useClickOutside, useToast } from './ui';
@@ -25,7 +25,6 @@ const PRIMARY: NavEntry[] = [
   { to: '/shares', label: 'Share links', icon: Share2, perm: 'share:create' },
 ];
 const LIBRARY: NavEntry[] = [
-  { to: '/master-log', label: 'Master log', icon: Table2 },
   { to: '/artists', label: 'Artists', icon: Users },
   { to: '/songs', label: 'Songs', icon: Disc3 },
   { to: '/dedupe', label: 'Duplicates', icon: Copy },

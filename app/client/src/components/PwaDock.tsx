@@ -1,8 +1,26 @@
-import { Download, RefreshCw, WifiOff, X } from 'lucide-react';
+import { Download, RefreshCw, Sparkles, WifiOff, X } from 'lucide-react';
 import { usePwa } from '../app/pwa';
+import { BUILD_TAG } from '../lib/version';
+
+const MAX_HIGHLIGHTS = 5;
+
+function Highlights({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="pwa-notes">
+      {items.slice(0, MAX_HIGHLIGHTS).map((line) => <li key={line}>{line}</li>)}
+      {items.length > MAX_HIGHLIGHTS && (
+        <li className="muted">…and {items.length - MAX_HIGHLIGHTS} more.</li>
+      )}
+    </ul>
+  );
+}
 
 export function PwaDock() {
-  const { offline, updateReady, installable, standalone, applyUpdate, install, dismissInstall } = usePwa();
+  const {
+    offline, updateReady, incoming, whatsNew, installable, standalone,
+    applyUpdate, dismissWhatsNew, install, dismissInstall,
+  } = usePwa();
 
   if (offline) {
     return (
@@ -22,15 +40,44 @@ export function PwaDock() {
   }
 
   if (updateReady) {
+    const release = incoming?.release ?? null;
+    const version = release?.version ?? incoming?.version ?? null;
     return (
       <div className="pwa-dock" role="status" aria-live="polite">
-        <div className="pwa-card">
+        <div className="pwa-card wide">
           <RefreshCw size={17} style={{ color: 'var(--indigo)' }} />
           <div className="grow">
-            <div className="pwa-title">A new version is ready</div>
-            <div className="pwa-body">Reloading takes a second. Anything uploading will need starting again.</div>
+            <div className="pwa-title">
+              A new version is ready{version ? <> · <span className="pwa-version">{version}</span></> : null}
+            </div>
+            <div className="pwa-body">
+              {release?.headline
+                ?? 'Reloading takes a second. Anything uploading will need starting again.'}
+            </div>
+            <Highlights items={release?.highlights ?? []} />
+            <div className="pwa-body" style={{ marginTop: 8 }}>
+              Reloading takes a second. Anything uploading will need starting again.
+            </div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={applyUpdate}>Reload</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (whatsNew) {
+    return (
+      <div className="pwa-dock" role="status" aria-live="polite">
+        <div className="pwa-card wide">
+          <Sparkles size={17} style={{ color: 'var(--indigo)' }} />
+          <div className="grow">
+            <div className="pwa-title">
+              Updated to <span className="pwa-version">{whatsNew.version || BUILD_TAG}</span>
+            </div>
+            <div className="pwa-body">{whatsNew.headline}</div>
+            <Highlights items={whatsNew.highlights} />
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={dismissWhatsNew}>Got it</button>
         </div>
       </div>
     );

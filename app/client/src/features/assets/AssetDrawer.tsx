@@ -318,7 +318,8 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
                       <div key={s._id} className="panel" style={{ boxShadow: 'none' }}>
                         <div className="panel-body spread" style={{ padding: 12 }}>
                           <div className="t-small">
-                            {s.downloadCount}{s.maxDownloads ? ` / ${s.maxDownloads}` : ''} downloads · expires {relative(s.expiresAt)}
+                            {s.downloadCount}{s.maxDownloads ? ` / ${s.maxDownloads}` : ''} downloads ·{' '}
+                            {s.expiresAt ? `expires ${relative(s.expiresAt)}` : 'never expires'}
                           </div>
                           <CopyButton value={s.url} label="Copy link" />
                         </div>

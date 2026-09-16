@@ -6,10 +6,11 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { CardSkeletons, EmptyState, Skeleton, useDebounced } from '../../components/ui';
+import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
 import { AssetList } from '../assets/AssetCard';
 import { AssetDrawer } from '../assets/AssetDrawer';
 import { bytes, date, pluralise } from '../../lib/format';
-import type { SongDetail, SongRow, Family } from '../../lib/types';
+import type { Asset, SongDetail, SongRow, Family } from '../../lib/types';
 import { useSession } from '../../app/session';
 
 const FAMILY_ICON: Record<string, typeof Music2> = { Audio: Music2, Video: Film, Image: ImageIcon, Document: FileText };
@@ -23,6 +24,8 @@ export function SongList() {
     queryKey: ['songs', debounced],
     queryFn: () => api<{ data: SongRow[] }>(`/songs${debounced ? `?q=${encodeURIComponent(debounced)}` : ''}`),
   });
+
+  const paged = usePaged(data?.data ?? [], { initialSize: 24, resetKey: debounced });
 
   return (
     <div className="page stack-4">
@@ -44,7 +47,7 @@ export function SongList() {
                 <tr><th>Song</th><th>Artist</th><th>Language</th><th>Mood</th><th>Released</th><th>Files</th><th /></tr>
               </thead>
               <tbody>
-                {data?.data.map((s) => (
+                {paged.rows.map((s) => (
                   <tr key={s._id} onClick={() => navigate(`/songs/${s._id}`)}>
                     <td style={{ fontWeight: 600 }}>{s.title}</td>
                     <td className="t-small">{s.artistName}</td>
@@ -64,9 +67,57 @@ export function SongList() {
               </tbody>
             </table>
           </div>
+          <div className="panel-body" style={{ paddingTop: 0 }}>
+            <Pagination {...paged.bind} noun="song" sizes={LIST_PAGE_SIZES} />
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * One family's files on a release, paged on its own.
+ *
+ * Its own component rather than a loop body, because each section needs its own
+ * page position and a hook cannot be called inside a map.
+ */
+function FamilySection({
+  family, assets, artistId, openAsset, onOpen,
+}: {
+  family: Family;
+  assets: Asset[];
+  artistId: string | undefined;
+  openAsset: string | null;
+  onOpen: (a: Asset) => void;
+}) {
+  const Icon = FAMILY_ICON[family];
+  const paged = usePaged(assets, { initialSize: 24, resetKey: family });
+
+  return (
+    <section>
+      <div className="spread" style={{ marginBottom: 13 }}>
+        <h2 className="t-h2 row-tight">
+          <span
+            data-family={family}
+            style={{
+              width: 26, height: 26, borderRadius: 8,
+              background: 'linear-gradient(135deg, var(--fam-a), var(--fam-b))',
+              color: 'var(--fam-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Icon size={14} />
+          </span>
+          {family}
+          <span className="t-small" style={{ fontWeight: 500 }}>{pluralise(assets.length, 'file')}</span>
+        </h2>
+        <Link className="btn btn-ghost btn-sm" to={`/?family=${family}&artistId=${artistId}`}>
+          See all {family.toLowerCase()} for this artist
+        </Link>
+      </div>
+      <AssetList assets={paged.rows} selectedId={openAsset} onOpen={onOpen} />
+      <Pagination {...paged.bind} noun="file" sizes={LIST_PAGE_SIZES} />
+    </section>
   );
 }
 
@@ -136,34 +187,16 @@ export function SongDetailPage() {
           action={can('asset:upload') ? <Link className="btn btn-spark" to={`/upload?songId=${data._id}`}>Upload the first file</Link> : undefined}
         />
       ) : (
-        FAMILY_ORDER.filter((f) => data.assetsByFamily[f]?.length).map((family) => {
-          const Icon = FAMILY_ICON[family];
-          const assets = data.assetsByFamily[family];
-          return (
-            <section key={family}>
-              <div className="spread" style={{ marginBottom: 13 }}>
-                <h2 className="t-h2 row-tight">
-                  <span
-                    data-family={family}
-                    style={{
-                      width: 26, height: 26, borderRadius: 8,
-                      background: 'linear-gradient(135deg, var(--fam-a), var(--fam-b))',
-                      color: 'var(--fam-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <Icon size={14} />
-                  </span>
-                  {family}
-                  <span className="t-small" style={{ fontWeight: 500 }}>{pluralise(assets.length, 'file')}</span>
-                </h2>
-                <Link className="btn btn-ghost btn-sm" to={`/?family=${family}&artistId=${data.artistId}`}>
-                  See all {family.toLowerCase()} for this artist
-                </Link>
-              </div>
-              <AssetList assets={assets} selectedId={openAsset} onOpen={(a) => setOpenAsset(a.assetId)} />
-            </section>
-          );
-        })
+        FAMILY_ORDER.filter((f) => data.assetsByFamily[f]?.length).map((family) => (
+          <FamilySection
+            key={family}
+            family={family}
+            assets={data.assetsByFamily[family]}
+            artistId={data.artistId}
+            openAsset={openAsset}
+            onOpen={(a) => setOpenAsset(a.assetId)}
+          />
+        ))
       )}
 
       {data.recycleBin.length > 0 && (
