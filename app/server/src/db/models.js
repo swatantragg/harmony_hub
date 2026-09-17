@@ -45,6 +45,19 @@ export async function ensureIndexes() {
 
   await build(models.users, { email: 1 }, { unique: true });
 
+  // Every collection in the working set is sorted on the way in (db/store.js
+  // `load`). With no index behind that sort Mongo does it in memory and gives up
+  // at 32 MB, which on a shared Atlas tier is a failure to boot rather than a
+  // slow boot. This list has to match the `order` field of COLLECTIONS there.
+  for (const model of [
+    models.users, models.artists, models.songs, models.unfiled,
+    models.folders, models.customTypes, models.tags,
+  ]) {
+    await build(model, { _seq: 1 });
+  }
+  await build(models.shares, { createdAt: -1 });
+  await build(models.dedupeIgnores, { ignoredAt: -1 });
+
   await build(
     models.songs,
     { title: 'text', tags: 'text', 'assets.displayName': 'text' },
