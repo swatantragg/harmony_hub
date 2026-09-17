@@ -1,3 +1,4 @@
+import { SONG_TAGS, ARTIST_TAGS, EVENT_TAGS } from './tag-vocabulary.js';
 
 export const FAMILIES = ['Audio', 'Video', 'Image', 'Document'];
 
@@ -36,7 +37,16 @@ export const carriesLanguage = (family) => LANGUAGE_FAMILIES.includes(family);
 export const CONTROLLED_TAGS = {
   'Mood / theme': ['Romantic', 'Sad', 'Party', 'Acoustic', 'Viral', 'Festive', 'Devotional'],
   'Format / use': ['Promo', 'Reel', 'Teaser', 'BTS', 'Master', 'Demo', 'Lyric Video'],
+  Song: SONG_TAGS,
+  Artist: ARTIST_TAGS,
+  Event: EVENT_TAGS,
 };
+
+// The three above are long enough that the picker searches them rather than
+// listing them flat. Anything over this many names gets a filter box.
+export const SEARCHABLE_TAG_GROUP = 14;
+
+export const TAG_SECTIONS = Object.keys(CONTROLLED_TAGS);
 
 export const LANGUAGES = ['Hindi', 'Punjabi', 'English', 'Tamil', 'Telugu', 'Marathi', 'Bengali'];
 export const MOODS = ['Romantic', 'Sad', 'Party', 'Acoustic', 'Festive', 'Devotional', 'Motivational'];

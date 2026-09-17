@@ -21,8 +21,29 @@ export function useFolderOptions() {
 export const fetchSimilarTags = (name: string) =>
   api<{ exact: TagSuggestion | null; suggestions: TagSuggestion[] }>(`/tags/similar${qs({ name })}`);
 
-export const registerTag = (name: string, force = false) =>
-  api<TagSuggestion>('/tags', { method: 'POST', body: { name, force } }).catch(() => null);
+export const registerTag = (name: string, force = false, group = '') =>
+  api<TagSuggestion>('/tags', { method: 'POST', body: { name, force, group } }).catch(() => null);
+
+export interface TagSection {
+  group: string;
+  names: string[];
+  searchable: boolean;
+}
+
+/**
+ * The sections behind the tag chips. Served rather than bundled: Song, Artist and
+ * Event run to hundreds of names between them, they are filled from the content
+ * sheets, and a name filed into one through the Custom tag box has to appear for
+ * everybody without a redeploy.
+ */
+export function useTagSections() {
+  return useQuery({
+    queryKey: ['tag-sections'],
+    queryFn: () => api<{ sections: TagSection[] }>('/tags'),
+    staleTime: 300_000,
+    select: (d) => d.sections ?? [],
+  });
+}
 
 
 export const normaliseTag = (s: string) =>

@@ -17,6 +17,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V4.7.1',
+    date: '2026-09-17',
+    headline: 'Songs, artists and events are now tags you pick, not names you retype.',
+    highlights: [
+      'The tag picker has three new sections — Song, Artist and Event — filled from the Goongoonalo content sheets.',
+      'Long sections are searched rather than scrolled, and anything already on the file stays pinned at the front.',
+      'The Custom tag box can file a new tag into a section, so it joins that list for everyone instead of standing alone.',
+    ],
+  },
+  {
     version: 'SK-V4.7.0',
     date: '2026-09-16',
     headline: 'Links that never lapse, results grouped by kind, and updates that announce themselves.',

@@ -4,7 +4,7 @@ import { authenticate, requires, problem } from '../middleware/auth.js';
 import { shape } from '../services/assets.js';
 import { record } from '../services/audit.js';
 import { uuid } from '../util/crypto.js';
-import { CONTROLLED_TAGS, LANGUAGES, MOODS, FAMILIES } from '../catalogue.js';
+import { CONTROLLED_TAGS, TAG_SECTIONS, SEARCHABLE_TAG_GROUP, LANGUAGES, MOODS, FAMILIES } from '../catalogue.js';
 import { similarTags, similarTypes, allTypes } from '../services/vocabulary.js';
 import { LIMITS, fields, list, oneOf, str } from '../util/validate.js';
 
@@ -294,6 +294,17 @@ songsRouter.patch('/:id', requires('catalogue:edit'), (req, res) => {
 tagsRouter.get('/', (_req, res) => {
   res.json({
     controlled: CONTROLLED_TAGS,
+    // A section is the built-in list plus whatever has been filed into it since,
+    // so a name added through the Custom tag box turns up as a chip next to the
+    // ones it belongs with rather than loose at the bottom.
+    sections: TAG_SECTIONS.map((group) => ({
+      group,
+      names: [...new Set([
+        ...CONTROLLED_TAGS[group],
+        ...db.tags.filter((t) => t.group === group).map((t) => t.name),
+      ])],
+      searchable: CONTROLLED_TAGS[group].length > SEARCHABLE_TAG_GROUP,
+    })),
     all: [...db.tags].sort((a, b) => b.usageCount - a.usageCount),
     languages: LANGUAGES,
     moods: MOODS,
@@ -312,6 +323,14 @@ tagsRouter.post('/', requires('asset:upload'), (req, res) => {
   if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
   const name = check.value.name;
 
+  // Optional. Blank means the tag stands on its own, which is what the box did
+  // before the sections existed and still the right answer for a one-off.
+  const section = oneOf(req.body?.group, TAG_SECTIONS, { field: 'group', fallback: '' });
+  if (req.body?.group && section.problem) {
+    return problem(res, 422, 'Unprocessable Entity', section.problem);
+  }
+  const group = section.value || 'Custom';
+
   const { exact, suggestions } = similarTags(name);
 
   if (exact) return res.json({ ...exact, reused: true });
@@ -326,10 +345,24 @@ tagsRouter.post('/', requires('asset:upload'), (req, res) => {
     });
   }
 
-  const tag = { _id: uuid(), name, group: 'Custom', type: 'custom', usageCount: 0, createdAt: new Date().toISOString() };
+  const tag = {
+    _id: uuid(),
+    name,
+    group,
+    type: group === 'Custom' ? 'custom' : 'controlled',
+    usageCount: 0,
+    createdAt: new Date().toISOString(),
+  };
   db.tags.push(tag);
   persist();
-  record(req, { action: 'TAG_CREATE', entity: 'tag', entityId: tag._id, label: `Created custom tag "${name}"` });
+  record(req, {
+    action: 'TAG_CREATE',
+    entity: 'tag',
+    entityId: tag._id,
+    label: group === 'Custom'
+      ? `Created custom tag "${name}"`
+      : `Created tag "${name}" in the ${group} section`,
+  });
   res.status(201).json(tag);
 });
 

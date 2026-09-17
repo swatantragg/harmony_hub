@@ -1,11 +1,116 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Tag as TagIcon, Lightbulb, Check, CornerDownLeft } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Plus, Tag as TagIcon, Lightbulb, Check, CornerDownLeft, Search } from 'lucide-react';
 import { CONTROLLED_TAGS } from '../../lib/assetTypes';
 import {
-  fetchSimilarTags, registerTag, isNearTag, isSameTag, nearTagConfidence,
+  fetchSimilarTags, registerTag, isNearTag, isSameTag, nearTagConfidence, useTagSections,
 } from '../../lib/vocabulary';
+import { Select } from '../../components/Select';
 import { useDebounced } from '../../components/ui';
-import type { TagMatch } from '../../lib/vocabulary';
+import type { TagMatch, TagSection } from '../../lib/vocabulary';
+
+/** Above this many names a section is searched rather than read. Matches the server. */
+const SEARCHABLE_AT = 14;
+
+/** How many chips a searched section shows before it asks to be opened out. */
+const PREVIEW = 18;
+
+const FALLBACK_SECTIONS: TagSection[] = Object.entries(CONTROLLED_TAGS).map(([group, names]) => ({
+  group, names, searchable: names.length > SEARCHABLE_AT,
+}));
+
+/**
+ * One group of chips. Short groups list every name, the way they always have.
+ * Song and Artist run to three figures, so those get a filter box instead — a
+ * wall of 139 chips is not a picker, it is a haystack. Whatever is already on
+ * the file stays pinned at the front either way, so nothing a person chose can
+ * scroll out of sight or be hidden behind a search term.
+ */
+function Section({
+  section, value, onToggle,
+}: {
+  section: TagSection;
+  value: string[];
+  onToggle: (tag: string) => void;
+}) {
+  const [term, setTerm] = useState('');
+  const [openedOut, setOpenedOut] = useState(false);
+  const searchable = section.searchable || section.names.length > SEARCHABLE_AT;
+
+  const selected = useMemo(
+    () => section.names.filter((n) => value.some((v) => isSameTag(v, n))),
+    [section.names, value],
+  );
+
+  const rest = useMemo(() => {
+    const chosen = new Set(selected.map((s) => s.toLowerCase()));
+    const q = term.trim().toLowerCase();
+    return section.names.filter(
+      (n) => !chosen.has(n.toLowerCase()) && (!q || n.toLowerCase().includes(q)),
+    );
+  }, [section.names, selected, term]);
+
+  const truncated = searchable && !openedOut && !term.trim() && rest.length > PREVIEW;
+  const shown = truncated ? rest.slice(0, PREVIEW) : rest;
+
+  const chip = (t: string) => (
+    <button
+      key={t}
+      type="button"
+      className={`chip ${value.some((v) => isSameTag(v, t)) ? 'on' : ''}`}
+      onClick={() => onToggle(t)}
+      aria-pressed={value.some((v) => isSameTag(v, t))}
+    >
+      {t}
+    </button>
+  );
+
+  return (
+    <div>
+      <div className="row" style={{ justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+        <div className="eyebrow">
+          {section.group}
+          {searchable && <span style={{ opacity: 0.7 }}> · {section.names.length}</span>}
+        </div>
+        {searchable && (
+          <div className="row-tight">
+            <Search size={13} color="var(--ink-3)" />
+            <input
+              className="input"
+              style={{ maxWidth: 190, padding: '6px 9px' }}
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder={`Search ${section.group.toLowerCase()}…`}
+              aria-label={`Search ${section.group} tags`}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="wrap-gap">
+        {selected.map(chip)}
+        {shown.map(chip)}
+        {truncated && (
+          <button type="button" className="chip chip-static" onClick={() => setOpenedOut(true)}>
+            Show all {rest.length}
+          </button>
+        )}
+        {openedOut && !term.trim() && (
+          <button type="button" className="chip chip-static" onClick={() => setOpenedOut(false)}>
+            Show fewer
+          </button>
+        )}
+      </div>
+
+      {searchable && term.trim() && rest.length === 0 && selected.length === 0 && (
+        <div className="hint" style={{ marginTop: 7 }}>
+          Nothing in {section.group} matches “{term.trim()}”. Add it below and choose
+          {' '}{section.group} as its section, and it joins this list for everyone.
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TagPicker({
   value, onChange, required = false, label = 'Tags', hint, knownTags = [],
@@ -18,12 +123,17 @@ export function TagPicker({
   knownTags?: string[];
 }) {
   const [custom, setCustom] = useState('');
+  const [section, setSection] = useState('');
   const [libraryExact, setLibraryExact] = useState<string | null>(null);
   const [librarySimilar, setLibrarySimilar] = useState<TagMatch[]>([]);
   const [acknowledged, setAcknowledged] = useState(false);
   const debounced = useDebounced(custom, 240);
+  const qc = useQueryClient();
 
-  const controlled = useMemo(() => Object.values(CONTROLLED_TAGS).flat(), []);
+  const { data: served } = useTagSections();
+  const sections = served?.length ? served : FALLBACK_SECTIONS;
+
+  const controlled = useMemo(() => sections.flatMap((s) => s.names), [sections]);
 
   const sessionPool = useMemo(
     () => [...new Set([...knownTags, ...value, ...controlled])],
@@ -81,7 +191,11 @@ export function TagPicker({
 
   const exactApplied = Boolean(exact && value.some((v) => isSameTag(v, exact)));
 
-  const toggle = (t: string) => onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t]);
+  const toggle = (t: string) => (
+    value.some((v) => isSameTag(v, t))
+      ? onChange(value.filter((x) => !isSameTag(x, t)))
+      : onChange([...value, t])
+  );
 
   const use = (name: string) => {
     if (!value.some((v) => isSameTag(v, name))) onChange([...value, name]);
@@ -95,11 +209,23 @@ export function TagPicker({
     if (!term) return;
     if (exact) { use(exact); return; }
     if (suggestions.length > 0 && !acknowledged) { setAcknowledged(true); return; }
-    void registerTag(term, suggestions.length > 0);
+    void registerTag(term, suggestions.length > 0, section).then(() => {
+      // A tag filed into a section has to show up as a chip in it, here and for
+      // everybody else, so the list it joined is no longer the one we fetched.
+      if (section) void qc.invalidateQueries({ queryKey: ['tag-sections'] });
+    });
     use(term);
   };
 
-  const customTags = value.filter((t) => !controlled.includes(t));
+  const customTags = value.filter((t) => !controlled.some((c) => isSameTag(c, t)));
+
+  const sectionOptions = useMemo(
+    () => [
+      { value: '', label: 'No section', hint: 'Stands on its own, as before' },
+      ...sections.map((s) => ({ value: s.group, label: s.group })),
+    ],
+    [sections],
+  );
 
   return (
     <div className="stack-3">
@@ -119,28 +245,13 @@ export function TagPicker({
         </div>
       </div>
 
-      {Object.entries(CONTROLLED_TAGS).map(([group, names]) => (
-        <div key={group}>
-          <div className="eyebrow" style={{ marginBottom: 7 }}>{group}</div>
-          <div className="wrap-gap">
-            {names.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={`chip ${value.includes(t) ? 'on' : ''}`}
-                onClick={() => toggle(t)}
-                aria-pressed={value.includes(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
+      {sections.map((s) => (
+        <Section key={s.group} section={s} value={value} onToggle={toggle} />
       ))}
 
       <div>
         <div className="eyebrow" style={{ marginBottom: 7 }}>Custom tag</div>
-        <div className="row-tight">
+        <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             className="input"
             style={{ maxWidth: 260 }}
@@ -150,9 +261,22 @@ export function TagPicker({
             placeholder="e.g. Launch Week"
             aria-describedby="tag-suggestions"
           />
+          <Select
+            value={section}
+            onChange={setSection}
+            options={sectionOptions}
+            placeholder="No section"
+            ariaLabel="Which section this tag joins"
+            style={{ maxWidth: 190 }}
+          />
           <button type="button" className="btn btn-secondary btn-sm" onClick={addCustom} disabled={!term}>
             <Plus size={13} /> Add
           </button>
+        </div>
+        <div className="hint" style={{ marginTop: 6 }}>
+          {section
+            ? `Optional. “${term || 'It'}” joins the ${section} list above, for everyone, not just this file.`
+            : 'Optional. Pick a section and the tag joins that list for everyone — leave it blank and it stays a one-off.'}
         </div>
 
         {exact && exactApplied && (
