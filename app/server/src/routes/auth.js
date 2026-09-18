@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import express from 'express';
-import { db, persist, flushNow } from '../db.js';
+import { db, adoptOne, persist, flushNow } from '../db.js';
 import { signJwt, token, verifyPassword, hashPassword } from '../util/crypto.js';
 import {
   ACCESS_TTL_SEC, APP_ORIGIN, GOOGLE_SIGNIN, GOOGLE_SIGNIN_CONFIGURED,
@@ -212,10 +212,28 @@ function registerFailure(user, req) {
   persist();
 }
 
+/**
+ * Accounts are looked up by address on three paths — password sign-in, Google
+ * sign-in and a reset request — and all three have to see an account created a
+ * moment ago on another instance. A miss in the working set is therefore a
+ * question for the database, not an answer.
+ */
+const userByEmail = async (address) => {
+  const known = db.users.find((u) => u.email.toLowerCase() === address);
+  if (known || !address) return known ?? null;
+  // The indexed exact match first. The case-insensitive pass is only for rows
+  // that predate addresses being lowered on the way in, and matches what the
+  // comparison above would have accepted.
+  const exact = await adoptOne('users', { email: address });
+  if (exact) return exact;
+  const anchored = new RegExp(`^${address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  return adoptOne('users', { email: anchored });
+};
+
 authRouter.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   const address = String(email || '').trim().toLowerCase();
-  const user = db.users.find((u) => u.email.toLowerCase() === address);
+  const user = await userByEmail(address);
 
   if (user && lockedUntil(user) > Date.now()) {
     record({ ...req, user: { sub: user._id, name: user.name, role: 'system' } }, {
@@ -535,7 +553,7 @@ authRouter.get('/google/callback', async (req, res) => {
     return fail(err.reason ?? 'refused', err.message);
   }
 
-  const user = db.users.find((u) => u.email.toLowerCase() === identity.email);
+  const user = await userByEmail(identity.email);
 
   if (!user) {
     record({ ...req, user: { sub: null, name: identity.email, role: 'anonymous' } }, {
@@ -776,7 +794,7 @@ authRouter.post('/forgot', async (req, res) => {
 
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) return res.status(202).json(accepted);
 
-  const user = db.users.find((u) => u.email.toLowerCase() === address);
+  const user = await userByEmail(address);
   if (!user || user.status !== 'active') {
     record({ ...req, user: { sub: null, name: address, role: 'anonymous' } }, {
       action: 'AUTH_RESET_REQUESTED', entity: 'user', entityId: 'unknown',

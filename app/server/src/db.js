@@ -1,5 +1,6 @@
 export {
   db,
+  adoptOne,
   load,
   flush,
   flushNow,
