@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY client/package.json client/
 
-RUN npm ci --ignore-scripts
+RUN npm ci --include=dev --ignore-scripts
 
 COPY client/ client/
 RUN npm run --workspace client build
