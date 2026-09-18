@@ -17,6 +17,17 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V4.7.2',
+    date: '2026-09-18',
+    headline: 'Sign-in fixes: new accounts work straight away, and Google comes back to the right address.',
+    highlights: [
+      'Somebody added by an administrator can sign in immediately, on whichever instance answers them.',
+      'A passcode now reaches every account that exists, rather than only the ones the answering instance had seen.',
+      '"Continue with Google" returns to the address people actually visited.',
+      'A deployment configured to talk to itself now refuses to start, instead of failing quietly at sign-in.',
+    ],
+  },
+  {
     version: 'SK-V4.7.1',
     date: '2026-09-17',
     headline: 'Songs, artists and events are now tags you pick, not names you retype.',

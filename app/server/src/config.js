@@ -291,7 +291,14 @@ function assertSecrets() {
   if (TRUST_PROXY === true) {
     warn.push('TRUST_PROXY=true trusts the X-Forwarded-For header from any client, which lets anybody spoof the address the rate limiter and the audit trail record. Use a hop count or a proxy CIDR.');
   }
-  if (production && !String(ORIGIN).startsWith('https://')) {
+  if (production && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$|\/)/i.test(String(ORIGIN))) {
+    fatal.push(
+      `PUBLIC_ORIGIN resolved to ${ORIGIN} in production, which is this container talking to itself. `
+      + 'Every share link and file ticket would point there, and "Continue with Google" would send people '
+      + 'to that address instead of back here — which looks like a redirect to localhost and is exactly that. '
+      + 'Set PUBLIC_ORIGIN to the address people actually type.',
+    );
+  } else if (production && !String(ORIGIN).startsWith('https://')) {
     warn.push('PUBLIC_ORIGIN is not https. Sessions, refresh cookies and file tickets all travel in the clear unless something in front terminates TLS.');
   }
   if (production && env.MIN_PASSWORD_LENGTH < 12) {
