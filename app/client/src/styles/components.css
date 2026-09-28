@@ -13,11 +13,11 @@
 .tile.sm span { width: 2.5px; }
 .tile.lg { width: 56px; height: 56px; border-radius: 16px; padding: 14px 12px; gap: 4px; }
 .tile.lg span { width: 5px; }
-.wordmark { font-family: var(--display); font-weight: 600; letter-spacing: -.02em; font-size: 24px; }
+.wordmark { font-family: var(--display); font-weight: 600; letter-spacing: -.02em; font-size: var(--fs-h2); }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  font-family: var(--sans); font-weight: 600; font-size: 17px; letter-spacing: -.005em;
+  font-family: var(--sans); font-weight: 600; font-size: var(--fs-small); letter-spacing: -.005em;
   padding: 10px 18px; border-radius: var(--r-md); border: 1px solid transparent;
   cursor: pointer; white-space: nowrap; transition: background var(--t-fast), border-color var(--t-fast),
     box-shadow var(--t-fast), transform var(--t-fast);
@@ -40,8 +40,8 @@
 .btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
 .btn-danger-solid { background: var(--danger); color: var(--on-accent); }
 .btn-danger-solid:hover:not(:disabled) { background: var(--danger-ink); }
-.btn-sm { padding: 7px 13px; font-size: 16px; border-radius: var(--r-sm); gap: 6px; }
-.btn-lg { padding: 14px 24px; font-size: 18px; border-radius: var(--r-lg); }
+.btn-sm { padding: 7px 13px; font-size: var(--fs-key); border-radius: var(--r-sm); gap: 6px; }
+.btn-lg { padding: 14px 24px; font-size: var(--fs-body); border-radius: var(--r-lg); }
 .btn-block { width: 100%; }
 .btn-icon { padding: 8px; border-radius: var(--r-sm); }
 .panel {
@@ -113,11 +113,11 @@
 .searchbar:focus-within { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
 .searchbar input {
   flex: 1; min-width: 0; border: none; background: transparent; outline: none;
-  font-family: var(--sans); font-size: 18px; color: var(--ink);
+  font-family: var(--sans); font-size: max(16px, var(--fs-body)); color: var(--ink);
 }
 .searchbar input::placeholder { color: var(--ink-3); }
 .searchbar.lg { padding: 16px 20px; border-radius: var(--r-lg); }
-.searchbar.lg input { font-size: 20.5px; }
+.searchbar.lg input { font-size: max(16px, var(--fs-h2)); }
 .kbd {
   font-family: var(--mono); font-size: 14.5px; font-weight: 500; color: var(--ink-3);
   background: var(--surface-2); border: 1px solid var(--line-2); border-bottom-width: 2px;
@@ -210,7 +210,7 @@
 }
 .card-body { padding: 12px 14px 14px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .card-title { font-weight: 600; font-size: 17.5px; line-height: 1.35; word-break: break-word; }
-.card-sub { font-size: 15.5px; color: var(--ink-3); }
+.card-sub { font-size: var(--fs-key); color: var(--ink-3); }
 .card-key {
   font-family: var(--mono); font-size: 14.5px; color: var(--ink-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -226,7 +226,7 @@
   max-width: 100%;
 }
 .table-scroll > .tbl { min-width: max-content; }
-.tbl { width: 100%; border-collapse: collapse; font-size: 17px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
 .tbl th {
   text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line);
   font-family: var(--mono); font-size: 14.5px; letter-spacing: .07em; text-transform: uppercase;
@@ -239,15 +239,15 @@
 .tbl tbody tr.selected { background: var(--indigo-soft); }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
-.label { font-size: 16.5px; font-weight: 600; color: var(--ink); }
-.hint { font-size: 15.5px; color: var(--ink-3); line-height: 1.55; }
+.label { font-size: var(--fs-small); font-weight: 600; color: var(--ink); }
+.hint { font-size: var(--fs-key); color: var(--ink-3); line-height: 1.55; }
 .input, .select, .textarea {
-  width: 100%; font-family: var(--sans); font-size: 18px; color: var(--ink);
+  width: 100%; font-family: var(--sans); font-size: max(16px, var(--fs-body)); color: var(--ink);
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-sm);
   padding: 9px 12px; outline: none; transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-tint); }
-.input.mono { font-family: var(--mono); font-size: 18px; letter-spacing: .01em; }
+.input.mono { font-family: var(--mono); font-size: max(16px, var(--fs-body)); letter-spacing: .01em; }
 .input.invalid, .textarea.invalid { border-color: var(--danger); }
 .input.invalid:focus { box-shadow: 0 0 0 3px var(--danger-ring); }
 .input.valid { border-color: var(--ok); }
@@ -305,7 +305,7 @@
   transition: background var(--t-fast), color var(--t-fast);
 }
 .date-clear:hover { background: var(--surface-2); color: var(--ink); }
-.calendar { position: fixed; z-index: 220; padding: 10px; width: 292px; box-shadow: var(--shadow-lg); animation: rise var(--t-fast); }
+.calendar { position: fixed; z-index: 220; padding: 10px; width: min(292px, calc(100% - 20px)); box-shadow: var(--shadow-lg); animation: rise var(--t-fast); }
 .calendar-head { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
 .calendar-title {
   flex: 1 1 auto; text-align: center; font-size: 16.5px; font-weight: 600; color: var(--ink);
@@ -437,9 +437,16 @@
 }
 .note {
   background: var(--spark-soft); border: 1px solid var(--spark-edge); border-radius: var(--r-md);
-  padding: 15px 17px; font-size: 16.5px; color: var(--ink-2); line-height: 1.6;
+  padding: 15px 17px; font-size: var(--fs-small); color: var(--ink-2); line-height: 1.6;
   display: flex; gap: 10px; align-items: flex-start;
+  /* Notes quote the things that have no spaces in them — Drive file ids,
+     checksums, filenames. `anywhere` rather than `break-word` because it also
+     lets the flex item shrink below that token's width, which is what actually
+     stops the row pushing past the screen. */
+  overflow-wrap: anywhere;
 }
+.note > div { min-width: 0; }
+.hint { overflow-wrap: anywhere; }
 .note b { color: var(--spark-deep); font-weight: 700; }
 .note svg { flex: none; margin-top: 2px; color: var(--spark-deep); }
 .note.indigo { background: var(--indigo-soft); border-color: var(--indigo-edge); }
@@ -462,8 +469,8 @@
 .stat.plain { cursor: default; }
 .stat.plain:hover { transform: none; box-shadow: var(--shadow); border-color: var(--line); }
 .stat-k { font-family: var(--mono); font-size: 14.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
-.stat-v { font-family: var(--display); font-weight: 600; font-size: 36px; letter-spacing: -.03em; line-height: 1.1; margin-top: 5px; font-variant-numeric: tabular-nums; }
-.stat-n { font-size: 15.5px; color: var(--ink-3); margin-top: 3px; }
+.stat-v { font-family: var(--display); font-weight: 600; font-size: var(--fs-h1); letter-spacing: -.03em; line-height: 1.1; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.stat-n { font-size: var(--fs-key); color: var(--ink-3); margin-top: 3px; }
 .stat-v.ok { color: var(--ok-ink); } .stat-v.danger { color: var(--danger-ink); }
 .stat-v.warn { color: var(--warn-ink); } .stat-v.indigo { color: var(--indigo-deep); }
 .meter { height: 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; display: flex; }
@@ -503,7 +510,7 @@
 .row-icon.info { background: var(--info-soft); color: var(--info); }
 .row-main { flex: 1; min-width: 0; }
 .row-title { display: block; font-weight: 600; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
-.row-sub { display: block; font-size: 15.5px; color: var(--ink-3); line-height: 1.45; overflow-wrap: anywhere; }
+.row-sub { display: block; font-size: var(--fs-key); color: var(--ink-3); line-height: 1.45; overflow-wrap: anywhere; }
 .row-meta {
   flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
   font-size: 15px; color: var(--ink-3); text-align: right; white-space: nowrap;
@@ -516,7 +523,7 @@
 .move-tick { flex: none; color: var(--indigo); }
 @media (max-width: 560px) { .move-option { padding-left: 14px !important; } }
 .row-menu {
-  position: fixed; z-index: 210; width: 226px; padding: 6px;
+  position: fixed; z-index: 210; width: min(226px, calc(100% - 24px)); padding: 6px;
   box-shadow: var(--shadow-lg); animation: rise var(--t-fast);
 }
 .row-menu-item {
@@ -610,8 +617,8 @@
 .def dt { font-size: 16px; color: var(--ink-3); font-weight: 500; }
 .def dd { margin: 0; font-size: 17px; word-break: break-word; }
 .toasts {
-  position: fixed; bottom: 20px; left: calc(var(--sidebar-w) + 20px); z-index: 200;
-  display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - var(--sidebar-w) - 40px));
+  position: fixed; bottom: 20px; left: calc(var(--sidebar-w) + 20px); right: 20px; z-index: 200;
+  display: flex; flex-direction: column; gap: 10px; max-width: 380px;
   pointer-events: none;
 }
 .toast {
@@ -680,7 +687,7 @@
 }
 .help:hover .bubble, .help:focus-visible .bubble { display: block; }
 .tour-card {
-  position: fixed; z-index: 300; width: min(340px, calc(100vw - 28px)); background: var(--surface);
+  position: fixed; z-index: 300; width: min(340px, calc(100% - 28px)); background: var(--surface);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--line);
   padding: 20px; animation: rise var(--t-med);
 }
@@ -726,16 +733,22 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
 }
 .pwa-card > svg { flex: none; margin-top: 3px; }
 .pwa-card .btn { flex: none; align-self: center; }
-.pwa-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
-.pwa-body { font-size: 15.5px; color: var(--ink-2); line-height: 1.5; margin-top: 1px; }
+/* A release note runs to eight bullets. Unbounded, that card grows past the
+   top of a phone screen and takes its dismiss button with it — the one control
+   that makes it go away. The text scrolls; the icon and the button do not. */
+.pwa-card .grow { min-width: 0; max-height: min(52dvh, 380px); overflow-y: auto; overscroll-behavior: contain; }
+.pwa-card.wide .btn { align-self: flex-start; }
+.pwa-title { font-size: var(--fs-small); font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.pwa-body { font-size: var(--fs-key); color: var(--ink-2); line-height: 1.5; margin-top: 1px; }
 .pwa-card.wide { width: min(560px, 100%); }
 .pwa-card .pwa-notes {
   margin: 8px 0 0; padding-left: 18px;
-  font-size: 15px; color: var(--ink-2); line-height: 1.5;
+  font-size: var(--fs-key); color: var(--ink-2); line-height: 1.5;
   display: flex; flex-direction: column; gap: 3px;
 }
+.pwa-card .pwa-notes li { overflow-wrap: anywhere; }
 .pwa-card .pwa-notes li { list-style: disc; }
-.pwa-version { font-family: var(--mono); font-size: 14.5px; letter-spacing: .06em; color: var(--indigo); }
+.pwa-version { font-family: var(--mono); font-size: var(--fs-eyebrow); letter-spacing: .06em; color: var(--indigo); }
 .pwa-card.offline { border-color: var(--warn); background: var(--warn-soft); }
 .pwa-card.offline > svg { color: var(--warn-ink); }
 .pwa-card.offline .pwa-title { color: var(--warn-ink); }
@@ -805,29 +818,37 @@ body:has(.shell) .pwa-dock { left: calc(var(--sidebar-w) + 16px); }
   }
   .sidebar.open { transform: none; box-shadow: var(--shadow-lg); }
   .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 79; background: var(--scrim-soft); animation: fade var(--t-fast); }
-  .toasts { left: 20px; width: min(380px, calc(100vw - 40px)); }
+  .toasts { left: 20px; right: 20px; max-width: 380px; }
   body:has(.shell) .pwa-dock { left: 16px; }
 }
 @media (max-width: 720px) {
-  body { font-size: 17.5px; }
-  .t-h1 { font-size: 28px; }
-  .t-h2 { font-size: 20.5px; }
-  .t-h3 { font-size: 18px; }
-  .t-body { font-size: 17px; }
-  .t-small { font-size: 15.5px; }
-  .eyebrow { font-size: 14px; letter-spacing: .09em; }
-  .stat-v { font-size: 29px; }
-  .wordmark { font-size: 21.5px; }
+  /* The type scale used to step down here. It is fluid now — see the --fs-*
+     tokens — so a 400px phone and a 700px tablet no longer get the same size.
+     Only the letter-spacing still needs a hand: tracking that reads as
+     deliberate at 14.5px reads as broken at 12.5px. */
+  .eyebrow { letter-spacing: .09em; }
   .empty { padding: 40px 18px; }
   .empty h3 { font-size: 20.5px; }
   .dropzone { padding: 30px 16px; }
   .panel-body, .panel-head { padding: 15px 16px; }
-  .note { padding: 13px 14px; font-size: 16px; }
+  .note { padding: 13px 14px; }
   .build-tag { padding: 15px 14px calc(15px + env(safe-area-inset-bottom)); }
   .preview-stage { min-height: 150px; }
   .preview-stage img { max-height: 240px; }
   .drawer-foot { max-height: 24vh; overflow-y: auto; padding-top: 12px; padding-bottom: 12px; }
   .drawer-foot .btn { flex: 0 1 auto; padding: 9px 13px; font-size: 16px; min-height: 40px; gap: 6px; }
+
+  /* 80vw is a sensible dialog on a desktop and a cramped column on a phone —
+     288px of usable width on a 360px screen, with 36px of wasted scrim either
+     side. On a small screen the dialog is the screen. */
+  .scrim, .drawer-scrim { padding: 3vh 10px calc(3vh + env(safe-area-inset-bottom)); }
+  .modal, .modal.narrow, .modal.wide { width: 100%; max-width: 100%; }
+  .drawer { width: 100%; }
+  .modal-head, .modal-body, .modal-foot,
+  .drawer-head, .drawer-body, .drawer-foot { padding-left: 16px; padding-right: 16px; }
+  .modal-head { padding-top: 18px; padding-bottom: 14px; }
+  .modal-body { padding-top: 18px; padding-bottom: 18px; }
+  .modal-foot .btn { flex: 1 1 auto; }
 }
 @media (pointer: coarse) {
   .btn { min-height: 44px; }

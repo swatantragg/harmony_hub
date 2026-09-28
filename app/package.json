@@ -40,6 +40,7 @@
     "backup:schedule": "bash scripts/install-backup-cron.sh",
     "smoke": "node scripts/smoke.mjs",
     "smoke:ui": "npm run --workspace client smoke:ui",
+    "smoke:responsive": "npm run --workspace client smoke:responsive",
     "test": "npm run --workspace server test",
     "typecheck": "npm run --workspace client typecheck",
     "docker:build": "docker compose build app",

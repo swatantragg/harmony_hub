@@ -3,18 +3,31 @@
 
 html, body, #root { height: 100%; }
 
+/* Replaced elements default to their intrinsic width, which is how one wide
+   image or one preview iframe gives the whole page a horizontal scrollbar. */
+img, svg, video, canvas, iframe, embed, object { max-width: 100%; }
+img, video, canvas { height: auto; }
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   overscroll-behavior-y: contain;
+  /* Nothing in this app is meant to be read sideways. `clip` rather than
+     `hidden` because `hidden` makes this element a scroll container, which
+     silently breaks the sticky top bar. */
+  overflow-x: clip;
+}
+@supports not (overflow: clip) {
+  html { overflow-x: hidden; }
 }
 body {
   margin: 0;
+  max-width: 100%;
   background: var(--canvas);
   color: var(--ink);
   transition: background-color 200ms var(--ease), color 200ms var(--ease);
   font-family: var(--sans);
-  font-size: 18px;
+  font-size: var(--fs-body);
   line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -36,16 +49,20 @@ button { font: inherit; color: inherit; }
 
 h1, h2, h3, h4 { margin: 0; }
 
+/* A heading is the most likely thing to overflow a narrow screen, because it
+   is the largest text and the least likely to contain a space where it needs
+   one — "Goongoonalo_Content_Mgt.xlsx" has none at all. */
+.t-display, .t-h1, .t-h2, .t-h3 { overflow-wrap: break-word; }
 .t-display { font-family: var(--display); font-weight: 600; letter-spacing: -.03em; line-height: 1.06; }
-.t-h1 { font-family: var(--display); font-weight: 600; font-size: 36px; letter-spacing: -.024em; line-height: 1.15; }
-.t-h2 { font-family: var(--sans); font-weight: 600; font-size: 23px; letter-spacing: -.01em; }
-.t-h3 { font-family: var(--sans); font-weight: 600; font-size: 18.5px; letter-spacing: -.006em; }
-.t-body { font-size: 18px; color: var(--ink-2); }
-.t-small { font-size: 16.5px; font-weight: 400; color: var(--ink-3); }
-.t-mono { font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; }
+.t-h1 { font-family: var(--display); font-weight: 600; font-size: var(--fs-h1); letter-spacing: -.024em; line-height: 1.15; }
+.t-h2 { font-family: var(--sans); font-weight: 600; font-size: var(--fs-h2); letter-spacing: -.01em; }
+.t-h3 { font-family: var(--sans); font-weight: 600; font-size: var(--fs-h3); letter-spacing: -.006em; }
+.t-body { font-size: var(--fs-body); color: var(--ink-2); }
+.t-small { font-size: var(--fs-small); font-weight: 400; color: var(--ink-3); }
+.t-mono { font-family: var(--mono); font-size: var(--fs-mono); font-variant-numeric: tabular-nums; }
 .eyebrow {
   font-family: var(--mono);
-  font-size: 14.5px;
+  font-size: var(--fs-eyebrow);
   letter-spacing: .11em;
   text-transform: uppercase;
   font-weight: 500;
@@ -55,7 +72,7 @@ h1, h2, h3, h4 { margin: 0; }
 .ink-2 { color: var(--ink-2); }
 .keytext {
   font-family: var(--mono);
-  font-size: 15.5px;
+  font-size: var(--fs-key);
   font-variant-numeric: tabular-nums;
   color: var(--indigo-deep);
   background: var(--indigo-soft);
@@ -66,7 +83,13 @@ h1, h2, h3, h4 { margin: 0; }
 .row { display: flex; align-items: center; gap: 10px; }
 .row-tight { display: flex; align-items: center; gap: 6px; }
 .col { display: flex; flex-direction: column; }
-.spread { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+/* Wraps rather than overflows. A page head is a heading beside a row of
+   buttons; the buttons will not shrink (they are nowrap by design) and the
+   heading may be one long unbreakable filename, so with no wrap the buttons
+   simply left the screen — off the right edge, where `overflow-x: clip` then
+   hid them. Wrapping only happens when there is genuinely no room, so a row
+   that fit before still looks the same. */
+.spread { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; flex-wrap: wrap; }
 /* Long unbreakable tokens — emails, Drive file ids — must not widen the row. */
 .spread > * { min-width: 0; }
 .wrap-gap { display: flex; flex-wrap: wrap; gap: 8px; }

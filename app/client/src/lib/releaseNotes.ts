@@ -17,6 +17,20 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V5.0.1',
+    date: '2026-09-28',
+    headline: 'Text now sizes itself to the device, and nothing needs scrolling sideways.',
+    highlights: [
+      'Type scales smoothly with the screen instead of stepping down once at 720px \u2014 a 360px phone and a 700px tablet no longer get the same size.',
+      'The app now respects the default font size set in your browser or phone, which a fixed size had been overriding. That is why it read as too large on one device and too small on the next.',
+      'Nothing scrolls sideways: wide images, long file ids and headings without spaces are all contained.',
+      'Tapping a search or text field on an iPhone no longer zooms the page in and leaves it there.',
+      'The update notice keeps its dismiss button on screen no matter how long the note is, and its text scrolls instead of the card growing past the top of the screen.',
+      'Dialogs use the full width of a phone screen rather than 80% of it.',
+      'Menus, the date picker and toasts fit within the narrowest screens.',
+    ],
+  },
+  {
     version: 'SK-V5.0.0',
     date: '2026-09-28',
     headline: 'Tags can now be renamed and deleted across every file at once — and searching is four to seventeen times faster.',

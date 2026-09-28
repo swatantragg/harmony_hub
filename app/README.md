@@ -24,6 +24,7 @@ vocabulary guard and the light/dark tokens, over a Google Drive.
 5. [Installing it as an app](#5-installing-it-as-an-app)
 6. [Commands](#6-commands)
 7. [Troubleshooting](#7-troubleshooting)
+7a. [Fitting the screen](#7a-fitting-the-screen)
 8. [Scale — what the catalogue costs, and where it stops](#8-scale)
 
 ---
@@ -663,6 +664,8 @@ npm run dedupe            # duplicate report in the terminal
 npm run dedupe -- --level exact --family Video --json
 
 npm run smoke             # end-to-end against a running instance and a real Drive
+npm run smoke:ui          # every page mounts, in jsdom
+npm run smoke:responsive  # layout measured in headless Chrome at 7 real widths
 ```
 
 ---
@@ -701,6 +704,55 @@ stripping the header.
 They have no catalogue record. Run the check on **Storage health**; they show as
 `UNTRACKED_IN_DRIVE` with an **Adopt** action. `GET /api/search/drive?q=...` searches the
 Drive directly and marks which results are catalogued.
+
+---
+
+## 7a. Fitting the screen
+
+The app is a PWA, so "the screen" runs from a 320px phone to a desktop, and the reader may
+have set their own default font size on top of that.
+
+**Type is fluid, not stepped.** Every size is a `clamp()` on a `rem` base — the `--fs-*`
+tokens in `styles/tokens.css`. Two things follow. A `rem` base means the default font size
+somebody has chosen in their browser or their OS is respected rather than overridden, which
+a fixed `px` size cannot do; that is why the same build read as too large on one device and
+too small on the next. And fluid means no cliff at a breakpoint: the scale used to jump once
+at 720px and then sit flat, so a 719px tablet and a 320px phone got identical text.
+
+The ceiling of each clamp is the size this app has always used on a wide screen, so nothing
+changes there:
+
+| | 320px | 390px | 768px | 1440px |
+|---|--:|--:|--:|--:|
+| Body | 15.5 | 15.5 | 16.6 | 18.0 |
+| Heading | 27.5 | 28.6 | 34.7 | 36.0 |
+| Text input | 16.0 | 16.0 | 16.6 | 18.0 |
+
+**Text inputs never go below 16px.** `font-size: max(16px, var(--fs-body))`. Below 16px iOS
+Safari zooms the page when a field takes focus and leaves it zoomed, which is where most
+reports of "it needs horizontal scrolling" on an iPhone actually come from.
+
+**Nothing scrolls sideways.** `overflow-x: clip` on `html` — `clip` rather than `hidden`,
+because `hidden` makes the element a scroll container and silently breaks the sticky top bar.
+That is a backstop, not the fix: replaced elements are capped at `max-width: 100%`, headings
+and notes break long unbroken tokens (a Drive file id has no spaces in it), and `.spread`
+wraps rather than pushing its buttons off the right edge.
+
+### Checking it
+
+```bash
+npm run build && npm run smoke:responsive
+```
+
+It renders representative markup into the real built stylesheet and measures it in headless
+Chrome at 320, 360, 390, 430, 768, 1024 and 1440px: whether the document scrolls sideways,
+whether any element reaches past the viewport, whether any input is under 16px, and whether
+the type scale actually moves between the narrowest and widest.
+
+Each width is measured **inside an iframe**, not in a browser window. Chrome will not open a
+window narrower than about 490px, so a 320px window silently measures 490px and reports a
+pass that means nothing. The check fails loudly if the width it measured is not the width it
+asked for.
 
 ---
 
