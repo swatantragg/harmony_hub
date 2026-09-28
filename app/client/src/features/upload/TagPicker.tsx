@@ -15,6 +15,16 @@ const SEARCHABLE_AT = 14;
 /** How many chips a searched section shows before it asks to be opened out. */
 const PREVIEW = 18;
 
+/**
+ * What to show before the server answers, and if it never does.
+ *
+ * Only Mood and Format are bundled. Song, Artist and Event are served, because
+ * they are three figures long, they come from the content sheets, and a name
+ * filed into one through the box below has to appear for everybody without a
+ * redeploy. The cost is that they are absent until the request lands — so this
+ * component says which state it is in rather than quietly showing two sections
+ * where there are five.
+ */
 const FALLBACK_SECTIONS: TagSection[] = Object.entries(CONTROLLED_TAGS).map(([group, names]) => ({
   group, names, searchable: names.length > SEARCHABLE_AT,
 }));
@@ -130,8 +140,12 @@ export function TagPicker({
   const debounced = useDebounced(custom, 240);
   const qc = useQueryClient();
 
-  const { data: served } = useTagSections();
+  const { data: served, isPending: sectionsPending, isError: sectionsFailed, refetch } = useTagSections();
   const sections = served?.length ? served : FALLBACK_SECTIONS;
+  const servedGroups = served?.length ? served.map((s) => s.group) : [];
+  const missing = sectionsPending || sectionsFailed
+    ? ['Song', 'Artist', 'Event'].filter((g) => !servedGroups.includes(g))
+    : [];
 
   const controlled = useMemo(() => sections.flatMap((s) => s.names), [sections]);
 
@@ -245,9 +259,27 @@ export function TagPicker({
         </div>
       </div>
 
+      {sectionsFailed && missing.length > 0 && (
+        <div className="note warn">
+          <Lightbulb size={15} />
+          <div className="grow">
+            <b>The {missing.join(', ')} lists could not be loaded.</b> Everything else still
+            works — a tag typed below is kept — but picking from the canonical names is how
+            two spellings of one song stay one tag.
+          </div>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void refetch()}>
+            Try again
+          </button>
+        </div>
+      )}
+
       {sections.map((s) => (
         <Section key={s.group} section={s} value={value} onToggle={toggle} />
       ))}
+
+      {sectionsPending && missing.length > 0 && (
+        <div className="hint" aria-live="polite">Loading the {missing.join(', ')} lists…</div>
+      )}
 
       <div>
         <div className="eyebrow" style={{ marginBottom: 7 }}>Custom tag</div>

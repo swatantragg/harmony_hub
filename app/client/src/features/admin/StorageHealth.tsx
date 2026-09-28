@@ -62,16 +62,53 @@ const REMEDIES: Record<string, Remedy[]> = {
   ],
 };
 
-function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
-  const critical = !quota.unlimited && quota.percentUsed >= 90;
-  const warn = !quota.unlimited && quota.percentUsed >= 75;
+interface Slice { label: string; value: number; colour: string; free?: boolean; width: number }
 
-  const segments = quota.unlimited ? [] : [
+// The bar is the whole allowance, not the used part of it: every used slice,
+// then the free space as its own labelled slice. Drawing only the used slices
+// made a nearly-full Drive look nearly empty, and left the one number people
+// actually act on — what is still free — as an unlabelled gap.
+function slices(quota: Quota): Slice[] {
+  const limit = quota.limit ?? 0;
+  if (quota.unlimited || limit <= 0) return [];
+
+  const used = Math.min(Math.max(0, quota.usage ?? 0), limit);
+  const free = Math.max(0, quota.available ?? limit - used);
+
+  const parts = [
     { label: 'This library', value: quota.libraryBytes ?? 0, colour: 'var(--indigo)' },
     { label: 'Other files in the Drive', value: quota.otherDriveBytes ?? 0, colour: 'var(--indigo-soft)' },
     { label: 'In the bin', value: quota.usageInTrash, colour: 'var(--mismatch)' },
     { label: 'Gmail and Photos', value: quota.usageElsewhere, colour: 'var(--ink-3)' },
-  ].filter((seg) => seg.value > 0);
+  ].map((seg) => ({ ...seg, value: Math.max(0, seg.value || 0) }));
+
+  // Drive reports the totals; the breakdown is only as good as what the server
+  // could attribute. Anything left over is still used space, so it gets a slice
+  // rather than quietly shrinking the bar.
+  const attributed = parts.reduce((n, seg) => n + seg.value, 0);
+  if (used - attributed > 0) {
+    parts.push({ label: 'Other Google usage', value: used - attributed, colour: 'var(--line-2)' });
+  }
+
+  // Widths come out of a running budget so rounding or an overlapping figure
+  // from Drive can never push the row past 100%.
+  let budget = limit;
+  return [...parts, { label: 'Free', value: free, colour: 'var(--surface-2)', free: true }]
+    .filter((seg) => seg.value > 0)
+    .map((seg) => {
+      const shown = Math.max(0, Math.min(seg.value, budget));
+      budget -= shown;
+      return { ...seg, width: (shown / limit) * 100 };
+    })
+    .filter((seg) => seg.width > 0);
+}
+
+function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
+  const critical = !quota.unlimited && quota.percentUsed >= 90;
+  const warn = !quota.unlimited && quota.percentUsed >= 75;
+
+  const segments = slices(quota);
+  const usedBytes = Math.min(Math.max(0, quota.usage ?? 0), quota.limit ?? 0);
 
   return (
     <div className={`panel ${critical ? 'danger' : ''}`} style={critical ? { borderColor: 'var(--danger)' } : undefined}>
@@ -97,24 +134,45 @@ function QuotaPanel({ quota, trashDays }: { quota: Quota; trashDays: number }) {
               <span className="t-small">free of {bytes(quota.limit ?? 0)}</span>
             </div>
 
-            <div style={{ display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden', background: 'var(--surface-2)' }}>
+            <div
+              role="img"
+              aria-label={`${bytes(usedBytes)} used, ${bytes(quota.available ?? 0)} free, of ${bytes(quota.limit ?? 0)}`}
+              style={{
+                display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden',
+                background: 'var(--surface-2)', border: '1px solid var(--line)',
+              }}
+            >
               {segments.map((seg) => (
                 <div
                   key={seg.label}
-                  title={`${seg.label} — ${bytes(seg.value)}`}
-                  style={{ width: `${(seg.value / (quota.limit || 1)) * 100}%`, background: seg.colour }}
+                  title={`${seg.label} — ${bytes(seg.value)} (${seg.width.toFixed(1)}%)`}
+                  style={{
+                    width: `${seg.width}%`,
+                    background: seg.colour,
+                    borderLeft: seg.free ? '1px solid var(--line-2)' : undefined,
+                  }}
                 />
               ))}
+            </div>
+
+            <div className="kv-row">
+              <span className="t-small">{bytes(usedBytes)} used · {quota.percentUsed}% of the allowance</span>
+              <span className="t-small" style={{ fontWeight: 600 }}>{bytes(quota.available ?? 0)} free</span>
             </div>
 
             <div className="stack-2">
               {segments.map((seg) => (
                 <div key={seg.label} className="kv-row">
                   <span className="row-tight t-small">
-                    <span style={{ width: 9, height: 9, borderRadius: 3, background: seg.colour, display: 'inline-block', flex: 'none' }} />
-                    <span className="truncate">{seg.label}</span>
+                    <span
+                      style={{
+                        width: 9, height: 9, borderRadius: 3, background: seg.colour, display: 'inline-block',
+                        flex: 'none', border: seg.free ? '1px solid var(--line-2)' : undefined,
+                      }}
+                    />
+                    <span className="truncate">{seg.free ? 'Free space' : seg.label}</span>
                   </span>
-                  <span className="t-small t-mono">{bytes(seg.value)}</span>
+                  <span className="t-small t-mono">{bytes(seg.value)} · {seg.width.toFixed(0)}%</span>
                 </div>
               ))}
             </div>

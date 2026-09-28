@@ -6,6 +6,7 @@ import { record } from '../services/audit.js';
 import { uuid } from '../util/crypto.js';
 import { CONTROLLED_TAGS, TAG_SECTIONS, SEARCHABLE_TAG_GROUP, LANGUAGES, MOODS, FAMILIES } from '../catalogue.js';
 import { similarTags, similarTypes, allTypes } from '../services/vocabulary.js';
+import * as tagAdmin from '../services/tags.js';
 import { LIMITS, fields, list, oneOf, str } from '../util/validate.js';
 
 export const artistsRouter = express.Router();
@@ -364,6 +365,88 @@ tagsRouter.post('/', requires('asset:upload'), (req, res) => {
       : `Created tag "${name}" in the ${group} section`,
   });
   res.status(201).json(tag);
+});
+
+// ── Managing the vocabulary itself ──────────────────────────────────────────
+// A tag is a string copied onto every file that carries it, so editing one is a
+// bulk operation over the whole catalogue rather than a row update. These three
+// are the only place that happens.
+
+tagsRouter.get('/manage', requires('catalogue:edit'), (_req, res) => {
+  const sections = tagAdmin.sections();
+  res.json({
+    sections,
+    totals: {
+      tags: sections.reduce((n, s) => n + s.tags.length, 0),
+      unused: sections.reduce((n, s) => n + s.tags.filter((t) => t.fileCount === 0).length, 0),
+    },
+  });
+});
+
+tagsRouter.patch('/manage/:key', requires('catalogue:edit'), (req, res) => {
+  const existing = tagAdmin.findByKey(req.params.key);
+  if (!existing) return problem(res, 404, 'Not Found', 'No tag by that name.');
+
+  const check = fields(req.body || {}, {
+    name: (v) => str(v, { max: LIMITS.tag, field: 'name', required: true }),
+  });
+  if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
+
+  const name = check.value.name;
+  const target = tagAdmin.findByKey(name);
+  const merging = Boolean(target && target.key !== existing.key);
+
+  // Merging is a bigger promise than renaming — two tags become one and there is
+  // no way back — so it is not something a typo can trigger.
+  if (merging && req.body?.merge !== true) {
+    return res.status(409).type('application/problem+json').json({
+      type: 'https://gcloud.internal/problems/tag-merge-required',
+      title: 'That tag already exists',
+      status: 409,
+      detail: `“${target.name}” is already in use on ${target.fileCount} ${target.fileCount === 1 ? 'file' : 'files'}. Renaming “${existing.name}” to it merges the two, and cannot be undone.`,
+      merge: { into: target.name, files: target.fileCount },
+    });
+  }
+
+  const out = tagAdmin.rename(existing.name, name);
+  if (!out) return problem(res, 422, 'Unprocessable Entity', 'That name has no letters or digits in it.');
+
+  persist();
+  record(req, {
+    action: 'TAG_RENAME',
+    entity: 'tag',
+    entityId: existing._id ?? existing.key,
+    label: merging
+      ? `Merged tag "${existing.name}" into "${out.to}" across ${out.files} files`
+      : `Renamed tag "${existing.name}" to "${out.to}" across ${out.files} files`,
+  });
+
+  tagAdmin.syncToDrive(out.touched);
+  res.json({
+    name: out.to,
+    previousName: existing.name,
+    files: out.files,
+    folders: out.folders,
+    merged: merging,
+    mergedFiles: out.merged,
+  });
+});
+
+tagsRouter.delete('/manage/:key', requires('catalogue:edit'), (req, res) => {
+  const existing = tagAdmin.findByKey(req.params.key);
+  if (!existing) return problem(res, 404, 'Not Found', 'No tag by that name.');
+
+  const out = tagAdmin.remove(existing.name);
+  persist();
+  record(req, {
+    action: 'TAG_DELETE',
+    entity: 'tag',
+    entityId: existing._id ?? existing.key,
+    label: `Removed tag "${existing.name}" from ${out.files} files and ${out.folders} folders`,
+  });
+
+  tagAdmin.syncToDrive(out.touched);
+  res.json({ name: existing.name, files: out.files, folders: out.folders });
 });
 
 tagsRouter.patch('/:id/promote', requires('admin:users'), (req, res) => {

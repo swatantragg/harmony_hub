@@ -24,6 +24,7 @@ import { UploadCenter } from './features/upload/UploadCenter';
 import { ShareManager } from './features/shares/ShareManager';
 import { PublicShare } from './features/share/PublicShare';
 import { StorageHealth } from './features/admin/StorageHealth';
+import { ManageTags } from './features/admin/ManageTags';
 import { Dedupe } from './features/dedupe/Dedupe';
 import { ActivityLog } from './features/admin/ActivityLog';
 import { Users } from './features/admin/Users';
@@ -100,6 +101,7 @@ function App() {
         <Route path="upload" element={<RequirePermission permission="asset:upload"><UploadCenter /></RequirePermission>} />
         <Route path="shares" element={<RequirePermission permission="share:create"><ShareManager /></RequirePermission>} />
         <Route path="admin/storage" element={<RequirePermission permission="admin:storage"><StorageHealth /></RequirePermission>} />
+        <Route path="admin/tags" element={<RequirePermission permission="catalogue:edit"><ManageTags /></RequirePermission>} />
         <Route path="admin/activity" element={<RequirePermission permission="admin:activity"><ActivityLog /></RequirePermission>} />
         <Route path="admin/users" element={<RequirePermission permission="admin:users"><Users /></RequirePermission>} />
       </Route>

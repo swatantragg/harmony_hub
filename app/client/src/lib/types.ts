@@ -260,6 +260,14 @@ export interface SearchResponse {
   limit: number;
   total: number;
   hasMore: boolean;
+  /**
+   * Keyset cursor for the page after this one, or null at the end.
+   *
+   * Pass it back as `?cursor=` instead of `?page=` to page without the
+   * repeats and skips an offset gives while the catalogue is being synced.
+   * `page` still works and is what the paged UI sends.
+   */
+  nextCursor: string | null;
   verifiedLive: boolean;
 }
 export interface SearchGroup {

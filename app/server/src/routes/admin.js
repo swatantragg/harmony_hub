@@ -10,8 +10,8 @@ import * as storage from '../services/storage.js';
 import { connectionInfo } from '../db/mongo.js';
 import { models } from '../db/models.js';
 import {
-  AUDIT_RETENTION_DAYS, DRIVE_ID, ENV, GOOGLE, GOOGLE_CONFIGURED, MIN_PASSWORD_LENGTH,
-  ROOTS, SEED_PASSWORD, TRASH_DAYS,
+  AUDIT_RETENTION_DAYS, CATALOGUE_LIMITS, DRIVE_ID, ENV, GOOGLE, GOOGLE_CONFIGURED,
+  MIN_PASSWORD_LENGTH, ROOTS, SEED_PASSWORD, TRASH_DAYS,
 } from '../config.js';
 import { uuid, hashPassword } from '../util/crypto.js';
 import { ROLES, PERMISSIONS, can, familyOf, normaliseRole } from '../catalogue.js';
@@ -34,9 +34,25 @@ adminRouter.get('/health', requires('admin:storage'), async (_req, res) => {
     ? { enabled: true, ...(await antivirus.ping()), version: await antivirus.version() }
     : { enabled: false };
   const drive = storage.driveStatus();
+
+  // The catalogue is resident in this process and search is an O(n) pass over
+  // it, so its size is an operational number, not a curiosity. Reported here so
+  // the point where that stops scaling is noticed when it is crossed rather
+  // than when a page starts timing out. `npm run measure` says more.
+  const assetCount = allAssets().length;
+  const catalogue = {
+    assets: assetCount,
+    warnAssets: CATALOGUE_LIMITS.warnAssets,
+    rewriteAssets: CATALOGUE_LIMITS.rewriteAssets,
+    verdict: assetCount >= CATALOGUE_LIMITS.rewriteAssets
+      ? 'REWRITE'
+      : assetCount >= CATALOGUE_LIMITS.warnAssets ? 'WARN' : 'HOLD',
+  };
+
   res.json({
     ok: mongo.readyState === 1 && GOOGLE_CONFIGURED && drive.ok,
     drive,
+    catalogue,
     scanner,
     env: ENV,
     uptime: process.uptime(),
@@ -61,11 +77,7 @@ adminRouter.get('/storage/quota', requires('admin:storage'), async (_req, res) =
     const rows = allAssets();
     const libraryBytes = rows.reduce((n, { asset }) => n + (asset.drive?.sizeBytes ?? 0), 0);
     res.json({
-      ...quota,
-      libraryBytes,
-      libraryFileCount: rows.length,
-      otherDriveBytes: Math.max(0, quota.usageInDrive - libraryBytes),
-      trashRecoverableForDays: TRASH_DAYS,
+      ...storage.withLibraryUsage(quota, { libraryBytes, libraryFileCount: rows.length }),
       mode: GOOGLE.mode,
       sharedDrive: Boolean(DRIVE_ID),
       rootFolderId: ROOTS.root,
@@ -89,8 +101,10 @@ adminRouter.get('/storage/health', requires('admin:storage'), async (_req, res) 
 
   const byFamily = {};
   const byFolder = {};
+  let libraryBytes = 0;
   for (const row of rows) {
     const { asset, folder } = row;
+    libraryBytes += asset.drive?.sizeBytes || 0;
     byFamily[asset.family] = byFamily[asset.family] || { count: 0, bytes: 0 };
     byFamily[asset.family].count += 1;
     byFamily[asset.family].bytes += asset.drive?.sizeBytes || 0;
@@ -101,7 +115,12 @@ adminRouter.get('/storage/health', requires('admin:storage'), async (_req, res) 
     byFolder[name].bytes += asset.drive?.sizeBytes || 0;
   }
 
-  const quota = await storage.quota().catch(() => null);
+  const raw = await storage.quota().catch(() => null);
+  // The space bar splits the whole allowance into used slices plus what is
+  // left. Without the breakdown every catalogued byte belonged to no slice at
+  // all, so a Drive with 1.4 TB in it drew as an almost-empty bar next to the
+  // words "623 GB free" — two contradictory readings of the same number.
+  const quota = raw && storage.withLibraryUsage(raw, { libraryBytes, libraryFileCount: rows.length });
 
   res.json({
     ...summary,

@@ -17,6 +17,43 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V5.0.0',
+    date: '2026-09-28',
+    headline: 'Tags can now be renamed and deleted across every file at once — and searching is four to seventeen times faster.',
+    highlights: [
+      'New: Manage tags, under Administration. Every tag by section, with the number of files carrying it beside it. Click one to see those files.',
+      'Renaming a tag rewrites it on every file and folder at once, and settles two spellings of one tag into one. Deleting a tag takes it off everything \u2014 no file is deleted, moved or re-uploaded.',
+      'Search now answers in 18\u201373ms where it took 259\u2013335ms. The folder lookup behind every result was scanning the whole folder list once per file \u2014 39 million comparisons for one search.',
+      'Opening a screen no longer waits up to six seconds for a Drive sync. The sync still runs; the screen arrives first.',
+      'The Song, Artist and Event tag lists are rebuilt straight from the content sheets: 133 songs, 98 artists, 12 events. Sixteen song titles carried an invisible character or a stray comma that made them a second tag matching nothing.',
+      'Storage health\u2019s space bar now covers the whole allowance \u2014 what is used, then free space as its own labelled slice \u2014 instead of leaving the free space as an unlabelled gap.',
+      'Search results can be paged by cursor, so a page no longer repeats or skips files while a Drive sync is changing the catalogue underneath it.',
+      'The catalogue is measured rather than guessed: `npm run measure` reports its size, memory and search latency, and Storage health warns before it outgrows the current design.',
+    ],
+  },
+  {
+    version: 'SK-V4.8.1',
+    date: '2026-09-28',
+    headline: 'The Song, Artist and Event tag lists are rebuilt from the content sheets.',
+    highlights: [
+      'Six song titles carried an invisible trailing comma, which made them a second tag that matched nothing. Ten more carried a hidden character from the spreadsheet. Both are gone.',
+      '133 songs, 98 artists and 12 events, generated straight from the sheets in doc/ rather than transcribed.',
+      'The tag picker now says when the Song, Artist and Event lists are still loading, or failed to \u2014 before, it quietly showed two sections where there are five.',
+    ],
+  },
+  {
+    version: 'SK-V4.8.0',
+    date: '2026-09-28',
+    headline: 'Search is four to seventeen times faster, and the Drive space bar reads as free space.',
+    highlights: [
+      'Search now answers in 18\u201373ms where it took 259\u2013335ms \u2014 the folder lookup behind every result was scanning the whole folder list once per file.',
+      'Opening a screen no longer waits up to six seconds for a Drive sync. The sync still runs; the screen arrives first.',
+      'The bar on Storage health covers the whole allowance: every used slice, then free space as its own labelled slice.',
+      'What the library itself takes up is shown again \u2014 it had been missing, so a full Drive could draw as an empty bar.',
+      'Bin space is no longer counted twice, and each slice carries its own share of the allowance.',
+    ],
+  },
+  {
     version: 'SK-V4.7.2',
     date: '2026-09-18',
     headline: 'Sign-in fixes: new accounts work straight away, and Google comes back to the right address.',

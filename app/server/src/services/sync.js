@@ -136,10 +136,27 @@ export async function ensureFresh({ waitMs = DRIVE_SYNC.waitMs, trigger = 'lazy'
     : { synced: false, reason: 'timeout' };
 }
 
-/** Express middleware: freshen the catalogue before serving a library read. */
+/**
+ * Express middleware: freshen the catalogue alongside serving a library read.
+ *
+ * This used to await the sync it kicked off, for up to `DRIVE_SYNC_WAIT_MS`
+ * (6s). That put a Drive round trip in front of a read that MongoDB could
+ * already answer, on the one request people notice most — and the wait grows
+ * with the library, because the sync it is waiting for does. The catalogue is a
+ * mirror, so serving it a sync-interval stale is the trade it was built for.
+ *
+ * `DRIVE_SYNC_PAGE_WAIT_MS` still governs this, and setting it back to 6000
+ * restores the old behaviour exactly. The explicit paths — the Sync button and
+ * `ensureFresh` called directly — are untouched and still wait.
+ */
 export function freshen(req, _res, next) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-  ensureFresh({ trigger: 'page-load' }).catch(() => null).then(() => next());
+  const waitMs = DRIVE_SYNC.pageWaitMs;
+  if (waitMs <= 0) {
+    ensureFresh({ trigger: 'page-load', waitMs: 0 }).catch(() => null);
+    return next();
+  }
+  ensureFresh({ trigger: 'page-load', waitMs }).catch(() => null).then(() => next());
 }
 
 // ── The mirror ──────────────────────────────────────────────────────────────

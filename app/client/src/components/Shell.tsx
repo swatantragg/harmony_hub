@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Home, Search, Users, Disc3, UploadCloud, Share2, ShieldCheck, ScrollText,
   UserCog, HelpCircle, Bell, LogOut, Menu, Command, RotateCcw, Folder, Copy, UserCircle2,
-  RefreshCw,
+  RefreshCw, Tags,
 } from 'lucide-react';
 import { Brandmark, ThemeToggle, useClickOutside, useToast } from './ui';
 import { CommandPalette } from './CommandPalette';
@@ -31,6 +31,7 @@ const LIBRARY: NavEntry[] = [
 ];
 const ADMIN: NavEntry[] = [
   { to: '/admin/storage', label: 'Storage health', icon: ShieldCheck, perm: 'admin:storage' },
+  { to: '/admin/tags', label: 'Manage tags', icon: Tags, perm: 'catalogue:edit' },
   { to: '/admin/activity', label: 'Activity log', icon: ScrollText, perm: 'admin:activity' },
   { to: '/admin/users', label: 'People', icon: UserCog, perm: 'admin:users' },
 ];
