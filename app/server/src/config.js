@@ -105,6 +105,17 @@ const Env = z.object({
   DRIVE_SYNC_FIRST_RUN_SEC: int(20, 0),
   DRIVE_SYNC_INCREMENTAL: bool(true),
   DRIVE_SYNC_MAX_PROBES: int(200, 0),
+  // A page load used to block on the Drive sync it triggered. That is a Drive
+  // round trip in front of a MongoDB read, and it gets slower as the library
+  // grows. Zero means the sync still starts, but the screen is served from the
+  // catalogue immediately. Set it back to 6000 to restore the old behaviour.
+  DRIVE_SYNC_PAGE_WAIT_MS: int(0, 0),
+
+  // The catalogue lives in process memory (db/store.js) and search is an O(n)
+  // pass over it. That holds comfortably for a few thousand assets. These are
+  // the counts at which it stops holding — `npm run measure` reads them.
+  CATALOGUE_WARN_ASSETS: int(20_000, 100),
+  CATALOGUE_REWRITE_ASSETS: int(75_000, 100),
 
   SEED_ON_BOOT: bool(true),
   SEED_PASSWORD: z.string().min(8).default('changeme123'),
@@ -553,4 +564,14 @@ export const DRIVE_SYNC = {
   // Ceiling on the files.get calls one run will spend confirming that a file the
   // walk did not see is genuinely gone rather than merely moved out of the tree.
   maxProbes: env.DRIVE_SYNC_MAX_PROBES,
+  // What a *page load* will wait for, as opposed to an explicit refresh.
+  pageWaitMs: env.DRIVE_SYNC_PAGE_WAIT_MS,
+};
+
+// Where the in-memory catalogue stops being the right shape. Reported by
+// `npm run measure` and surfaced on /api/admin/health so the threshold is
+// noticed when it is crossed rather than when something falls over.
+export const CATALOGUE_LIMITS = {
+  warnAssets: env.CATALOGUE_WARN_ASSETS,
+  rewriteAssets: env.CATALOGUE_REWRITE_ASSETS,
 };

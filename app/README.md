@@ -15,6 +15,7 @@ vocabulary guard and the light/dark tokens, over a Google Drive.
 
 ## Contents
 
+0. [What this is, in one page](#0-what-this-is-in-one-page)
 1. [Set up Google Drive — the full walkthrough](#1-set-up-google-drive)
 2. [Run it](#2-run-it)
 3. [How storage behaves](#3-how-storage-behaves)
@@ -23,9 +24,141 @@ vocabulary guard and the light/dark tokens, over a Google Drive.
 5. [Installing it as an app](#5-installing-it-as-an-app)
 6. [Commands](#6-commands)
 7. [Troubleshooting](#7-troubleshooting)
+8. [Scale — what the catalogue costs, and where it stops](#8-scale)
 
 ---
 
+## 0. What this is, in one page
+
+**A search layer over a Google Drive.** Drive holds the bytes. MongoDB holds everything
+that makes those bytes findable — the name people gave a file, its tags, its type, its
+folder, its language, who uploaded it and when. Neither is a copy of the other, and that
+split is the whole design:
+
+| | Google Drive | MongoDB |
+|---|---|---|
+| Holds | The file itself, all 39 GB of it if need be | ~2 KB of metadata about that file |
+| Addresses it by | Immutable `fileId` | `assetId`, plus the `fileId` as the join |
+| Names it | `IMG_1234.zip`, whatever the camera said | `Mumbai Legal Documents` — what a person typed |
+| Knows about tags | Nothing | Everything |
+| Survives if the other is lost | Yes — files stay openable in Drive | Yes — `npm run import:drive` rebuilds from Drive |
+
+A Drive rename never deletes a tag. A tag edit never touches Drive bytes. The two are
+reconciled, not merged.
+
+### How a file gets in
+
+**Through the app.** The browser asks the API to open an upload, and gets back a Google
+**resumable session URI** and a chunk size. It then sends the bytes *straight to Google*,
+8 MB at a time — the API never sees them. Each chunk is answered with a `308` naming the
+byte Google now holds, so a dropped connection resumes from Google's own count rather than
+from zero. A 39 GB file costs this server a few hundred bytes of bookkeeping.
+
+The session URI is a bearer credential, so the server records every one it opens
+(`uploadSessions`, with a TTL index) and refuses to resume or cancel one it did not.
+
+**Straight into Drive, bypassing the app entirely.** Somebody drags a folder into
+drive.google.com, or their desktop client syncs one. Nothing tells the app. So the app
+asks: a **mirror** runs every `DRIVE_SYNC_INTERVAL_SEC` (120s) and calls Drive's
+**Changes API** with a stored page token, which returns only what moved since last time —
+not the whole Drive. New files are adopted with a catalogue record, renames and moves are
+followed, a trashed file is flagged rather than dropped. The page token is saved after
+each successful pass, so a failure resumes from the last good page instead of rescanning
+1.4 TB.
+
+Nothing in the mirror invents a tag or a category. An adopted file arrives with a name and
+a family inferred from its MIME type, and waits for a person.
+
+**What the mirror will not do is delete.** A file that vanished from Drive is marked
+`MISSING` and handed to reconciliation, because silently dropping the row would take its
+tags, its version history and its live share links with it.
+
+### How a file gets out
+
+Downloads *do* pass through this process, deliberately. Drive has no expiring
+self-authorising link for a file held under a server credential — the only alternative is
+`anyone: reader`, which is permanent public exposure, not a five-minute grant. So
+`/api/files/:token` streams from Drive against a short-lived HMAC ticket. Nothing is
+buffered, `Range` is forwarded so video scrubs, and aborts propagate.
+
+### How search works
+
+**Every search is answered from MongoDB's data, never from Drive.** A Drive round trip per
+keystroke would be unusable, and Drive cannot answer "everything tagged Mumbai and Legal,
+newest first" at all.
+
+The catalogue is read into process memory once at boot and written back through on change
+(`server/src/db/store.js`). A search is then a pass over that working set:
+
+1. **Score** — if there is a search term, each asset is scored across eleven fields with
+   different weights. An exact tag match is worth 24; a display-name match 6; a hit in the
+   description, 1. Prefix matches score double, exact matches triple.
+2. **Filter** — family, type, language, mood, tags, availability, version, artist, year,
+   folder and placement. All independent, all combinable.
+3. **Facet** — every filter reports its counts *with itself relaxed*, which is what makes
+   "Audio (1,991)" still visible while you are looking at Video.
+4. **Sort** — relevance, newest, oldest, recently updated, name, largest, smallest.
+5. **Page** — `?page=` or `?cursor=`. The cursor is a keyset, and is the one to use while
+   a sync is running: offsets repeat and skip rows when the catalogue shifts underneath.
+
+`GET /api/search/drive?q=` is the exception — it queries Drive directly, and exists only
+to find files that have no catalogue record yet.
+
+### Where tags come from
+
+Five sections, and the split between them is what is bundled versus what is served:
+
+| Section | Names | Source |
+|---|--:|---|
+| Mood / theme | 7 | Bundled in the client and the server |
+| Format / use | 7 | Bundled in the client and the server |
+| **Song** | 133 | `doc/Goongoonalo_Content_Mgt_Songs_*.xlsx`, column *Song Name* |
+| **Artist** | 98 | `doc/Total Goongoonalo Artist.xlsx`, column *Artist Name* |
+| **Event** | 12 | `doc/Goongoonalo_Content_Mgt_Events_*.xlsx`, column *Event Name* |
+
+The three from the sheets are **generated**, not transcribed — `npm run tags:build` reads
+the workbooks and writes `server/src/tag-vocabulary.js`; `npm run tags:check` fails if the
+two have drifted. Transcribing them by hand is what produced six song titles with a comma
+baked into the string and ten more carrying an invisible U+2060, each of which looked
+correct on screen and matched nothing in a search.
+
+They are **served**, not bundled, because a name filed into one of them through the
+**Custom tag** box has to appear for everybody without a redeploy. The box has an optional
+section dropdown beside it: leave it blank and the tag is a one-off, or choose Song, Artist
+or Event and it joins that list — `POST /api/tags` with `group`, recorded in the activity
+log either way. A section over 14 names gets a filter box instead of a wall of chips, and
+whatever is already on the file stays pinned at the front of its section, so nothing a
+person chose can be hidden behind a search term.
+
+### Renaming and deleting a tag
+
+**Administration → Manage tags.** Every tag by section, with the number of files carrying it
+beside it; click one to see those files.
+
+A tag is a string copied onto every file that carries it — there is no join — so editing one
+is a bulk rewrite of the whole catalogue rather than a row update:
+
+| | What happens |
+|---|---|
+| **Rename** | The new name replaces the old on every asset *and every folder*, in one pass. Order within each file's tag list is preserved. |
+| **Rename onto a name already in use** | A merge, and it is refused with a `409` until confirmed. A file that carried both ends up with one, and there is no way back. |
+| **Delete** | The tag comes off everything. **No file is deleted, moved or re-uploaded** — a tag is metadata. |
+| **Drive** | `appProperties` on each affected file is updated afterwards, in the background, with bounded concurrency. The catalogue is already correct before that starts. |
+
+Matching is case- and punctuation-insensitive, using the same `normalise` that decides two
+tags are the same everywhere else. So renaming `Demo` also rewrites `demo` and `DEMO` —
+which is usually the point, since search already treats those three as one tag and the
+picker already refuses to create the second one. Where a tag has more than one spelling in
+circulation, Manage tags says so on the row.
+
+The count beside each tag is recomputed from the files on every request rather than read
+from the stored `usageCount`, which is incremented on upload and has no way of noticing an
+edit that took a tag off a file. A number that disagrees with what clicking it shows would
+be worse than no number.
+
+Deleting a tag that is on 25 files or more asks for the tag name to be typed first.
+
+---
 ## 1. Set up Google Drive
 
 There are two ways to connect. **Use OAuth to test.** Read the comparison before choosing —
@@ -213,6 +346,7 @@ There are two roles, and the line between them is drawn at what cannot be undone
 | Upload, edit, rename, move, share | ✅ | ✅ |
 | Delete — to the Drive bin, recoverable for 30 days | ✅ | ✅ |
 | Storage health and drift remediation | ✅ | ✅ |
+| Manage tags — rename or delete a tag across every file | ✅ | ✅ |
 | **Purge permanently** (no bin, no revisions, no undo) | ❌ | ✅ |
 | **Empty the Drive bin** (the whole account's, not just ours) | ❌ | ✅ |
 | Activity log, add and manage accounts | ❌ | ✅ |
@@ -520,6 +654,11 @@ npm run dev:web           # Vite dev server on :8101
 npm run seed              # fill an empty library
 npm run reseed            # wipe MongoDB and the Drive folder, then seed
 npm run reconcile         # one reconciliation pass, from the CLI
+npm run measure           # catalogue size, memory and search latency — read-only
+npm run measure -- --json # the same, as JSON, for trending it over time
+npm run tags:build        # rebuild the Song/Artist/Event tag lists from doc/*.xlsx
+npm run tags:check        # fail if those lists and the sheets disagree
+npm test                  # server suite — needs a MongoDB at TEST_MONGODB_URI
 npm run dedupe            # duplicate report in the terminal
 npm run dedupe -- --level exact --family Video --json
 
@@ -565,6 +704,76 @@ Drive directly and marks which results are catalogued.
 
 ---
 
+## 8. Scale
+
+> Measured on the live catalogue, 2026-09-28, with `npm run measure`. Re-run it before
+> trusting any of these numbers — they are a snapshot, not a property of the code.
+
+| | Measured | Headroom |
+|---|---|---|
+| Assets | **17,941** | warn at 20,000, act at 75,000 |
+| Bytes in Drive | **1.37 TB** across those assets | Drive's problem, not this process's |
+| Largest single file | **38.9 GB** | streamed and chunked, never resident |
+| Folders | 2,179 | |
+| Working set | 34.8 MB as JSON | |
+| RSS after load | **512 MB** | container cap is **1 GB** — this is the tight one |
+| Boot `load()` | 3.3 s | before the first request is served |
+
+**The number that matters is the asset count, not the terabytes.** 1.37 TB is Drive's
+concern; it costs this process nothing, because bytes never pass through it on upload and
+are streamed on download. What costs this process is *rows* — every one of them is resident
+in RAM and walked by every search.
+
+### What was slow, and what it cost
+
+A search was three things at once: `allAssets()` rebuilding the joined row set, eleven
+filtered passes to count the facets, and the scoring pass. Two of those were doing far more
+work than they needed to.
+
+`allAssets()` resolved each asset's folder with `Array.find` over the folder list — a linear
+scan **per asset**. At 17,941 assets across 2,179 folders that is ~39M comparisons to answer
+one search. It now indexes the joins once per call. Separately, the facet counter ran a full
+filtered pass for each of eleven filters; passes that skip a filter nobody set are all the
+same pass, so it computes that one once and shares it.
+
+| Search, p50 / p95 | Before | After |
+|---|---|---|
+| Unfiltered first page | 334.6 / 404.5 ms | **73.2 / 88.2 ms** |
+| One filter applied | 305.0 / 326.0 ms | **17.6 / 23.5 ms** |
+| Typed term | 258.6 / 278.3 ms | **18.8 / 24.3 ms** |
+
+This matters more than the ratio suggests: Node runs one thread, so 400 ms in a search was
+400 ms during which nothing else was answered. Two people searching at once queued.
+
+A page load also used to *block* on the Drive sync it triggered, for up to 6 s, putting a
+Drive round trip in front of a read MongoDB could already answer. `DRIVE_SYNC_PAGE_WAIT_MS`
+now defaults to `0`: the sync still starts, the screen is served immediately from the
+catalogue, and the result arrives on the next poll. Set it back to `6000` for the old
+behaviour.
+
+### Where this design ends
+
+The catalogue is resident in one process, and one process owns the write. That holds fine
+at 18k assets. It ends at two specific places, neither of which is reached yet:
+
+1. **RAM.** 512 MB resident against a 1 GB container. Roughly linear in asset count, so
+   ~35k assets is where the cap starts to bite. Raising `mem_limit` buys time, not a fix.
+2. **Concurrency.** Nothing else may write to these collections — see the architecture note
+   on `flushCollection`. So there can be no second container, and no background worker
+   process, until this changes.
+
+**When either one binds, the move is the same one:** assets get their own MongoDB
+collection with indexes on the fields that are actually filtered, and search becomes a query
+instead of a scan. Everything else — a job queue, a worker, horizontal scale — waits on
+that, because all of it needs a second writer. `?cursor=` on the search API is already the
+keyset shape that move needs, so the wire format will not change when it happens.
+
+Until then: `npm run measure`. `/api/admin/health` reports the same verdict (`HOLD`,
+`WARN`, `REWRITE`) on every call, so the threshold gets noticed when it is crossed rather
+than when a page starts timing out.
+
+---
+
 ## Architecture notes
 
 - **`server/src/storage/drive.js`** — the only file that knows what a Drive HTTP request
@@ -577,4 +786,11 @@ Drive directly and marks which results are catalogued.
   claim.
 - **`server/src/db/store.js`** — the catalogue is held in memory and written through to
   MongoDB. Search facets, health roll-ups and the entire duplicate scan are O(n) passes over
-  it, which is why they cost nothing.
+  it, which is why they cost nothing *at this size*. [Section 8](#8-scale) has the
+  measurements and the point where that stops being true.
+- **`server/src/cli/measure.js`** — read-only. The numbers section 8 is argued from.
+- **One process owns the catalogue.** `flushCollection` deletes any MongoDB row absent from
+  this process's working set, which is correct for a single writer and destructive for two.
+  A second process writing to these collections — a worker, a second container, a script
+  holding its own `load()` — will have its rows deleted on the next flush. Anything
+  concurrent has to wait on the move described in section 8.

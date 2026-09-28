@@ -101,10 +101,30 @@ export function runSearch(query) {
   };
 
   const facetKeys = Object.keys(filters);
-  const narrowed = (skip) =>
-    rows.filter((row) => facetKeys.every((k) => k === skip || filters[k].length === 0 || matches(row, k)));
 
-  const results = narrowed(null);
+  // Facets are counted "as if this one filter were off", which is eleven
+  // filtered passes over the catalogue plus one for the results themselves.
+  // At 18k assets that was ~2M predicate calls per search, on the one thread
+  // that also has to answer everything else.
+  //
+  // Almost all of it is redundant. A pass that skips a filter nobody set is the
+  // unfiltered pass, so it is computed once and shared; with no filters set at
+  // all — the common case, a bare page load — there is nothing to filter and
+  // `rows` is the answer to every one of them. Only a key somebody actually
+  // filtered on earns its own pass.
+  const active = facetKeys.filter((k) => filters[k].length > 0);
+  const applyAll = (skip) =>
+    rows.filter((row) => active.every((k) => k === skip || matches(row, k)));
+
+  const base = active.length === 0 ? rows : applyAll(null);
+  const byKey = new Map();
+  const narrowed = (skip) => {
+    if (skip === null || !active.includes(skip)) return base;
+    if (!byKey.has(skip)) byKey.set(skip, applyAll(skip));
+    return byKey.get(skip);
+  };
+
+  const results = [...base];
 
   const facets = {
     family: tally(narrowed('family'), (r) => r.asset.family),
@@ -120,21 +140,86 @@ export function runSearch(query) {
   };
 
   const sort = query.sort || (terms.length ? 'relevance' : 'newest');
-  const updatedAt = (row) => Date.parse(row.asset.updatedAt || row.asset.createdAt);
-  const sorters = {
-    relevance: (a, b) => (b._score ?? 0) - (a._score ?? 0) || Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
-    newest: (a, b) => Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
-    oldest: (a, b) => Date.parse(a.asset.createdAt) - Date.parse(b.asset.createdAt),
-    updated: (a, b) => updatedAt(b) - updatedAt(a),
-    updatedOldest: (a, b) => updatedAt(a) - updatedAt(b),
-    name: (a, b) => a.asset.displayName.localeCompare(b.asset.displayName),
-    nameDesc: (a, b) => b.asset.displayName.localeCompare(a.asset.displayName),
-    largest: (a, b) => (b.asset.drive?.sizeBytes || 0) - (a.asset.drive?.sizeBytes || 0),
-    smallest: (a, b) => (a.asset.drive?.sizeBytes || 0) - (b.asset.drive?.sizeBytes || 0),
-  };
-  results.sort(sorters[sort] || sorters.newest);
+  results.sort(SORTERS[sort] || SORTERS.newest);
 
   return { results, facets, sort };
+}
+
+const updatedAt = (row) => Date.parse(row.asset.updatedAt || row.asset.createdAt);
+
+const SORTERS = {
+  relevance: (a, b) => (b._score ?? 0) - (a._score ?? 0) || Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
+  newest: (a, b) => Date.parse(b.asset.createdAt) - Date.parse(a.asset.createdAt),
+  oldest: (a, b) => Date.parse(a.asset.createdAt) - Date.parse(b.asset.createdAt),
+  updated: (a, b) => updatedAt(b) - updatedAt(a),
+  updatedOldest: (a, b) => updatedAt(a) - updatedAt(b),
+  name: (a, b) => a.asset.displayName.localeCompare(b.asset.displayName),
+  nameDesc: (a, b) => b.asset.displayName.localeCompare(a.asset.displayName),
+  largest: (a, b) => (b.asset.drive?.sizeBytes || 0) - (a.asset.drive?.sizeBytes || 0),
+  smallest: (a, b) => (a.asset.drive?.sizeBytes || 0) - (b.asset.drive?.sizeBytes || 0),
+};
+
+// ── Cursor pagination ───────────────────────────────────────────────────────
+// `page` is still honoured and still what the UI sends. A cursor is offered
+// alongside it because offsets and a live catalogue disagree: adopt forty files
+// from Drive while somebody is on page 3 and every later page shifts under
+// them, silently repeating rows and skipping others.
+//
+// The cursor is a keyset — the sort value of the last row served, plus its
+// assetId as the tie-break — which is the same shape a `find()` with a range
+// filter would need. That is deliberate: when assets move into a collection of
+// their own, this becomes a Mongo query and the wire format does not change.
+
+const SORT_KEY = {
+  relevance: (row) => row._score ?? 0,
+  newest: (row) => Date.parse(row.asset.createdAt),
+  oldest: (row) => Date.parse(row.asset.createdAt),
+  updated: updatedAt,
+  updatedOldest: updatedAt,
+  name: (row) => row.asset.displayName,
+  nameDesc: (row) => row.asset.displayName,
+  largest: (row) => row.asset.drive?.sizeBytes || 0,
+  smallest: (row) => row.asset.drive?.sizeBytes || 0,
+};
+
+const DESCENDING = new Set(['relevance', 'newest', 'updated', 'largest', 'nameDesc']);
+
+const compareKeys = (a, b) => (typeof a === 'string' || typeof b === 'string'
+  ? String(a ?? '').localeCompare(String(b ?? ''))
+  : (Number(a) || 0) - (Number(b) || 0));
+
+const sortsAfter = (sort, value, key) =>
+  (DESCENDING.has(sort) ? compareKeys(value, key) < 0 : compareKeys(value, key) > 0);
+
+const encodeCursor = (payload) =>
+  Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+
+function decodeCursor(raw) {
+  const text = String(raw ?? '');
+  if (!text || text.length > 512) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.s !== 'string' || typeof parsed.id !== 'string') return null;
+    return { s: parsed.s, k: parsed.k ?? null, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where the next page starts.
+ *
+ * Normally that is one past the row the cursor names. When that row has been
+ * deleted or renamed out of the result set since, it falls forward to the first
+ * row that sorts strictly after the recorded key — so a mutation mid-scroll
+ * costs at most the rows that genuinely left, and never repeats one.
+ */
+function resolveCursor(results, cursor) {
+  const at = results.findIndex((row) => row.asset.assetId === cursor.id);
+  if (at >= 0) return at + 1;
+  const after = results.findIndex((row) => sortsAfter(cursor.s, SORT_KEY[cursor.s]?.(row), cursor.k));
+  return after < 0 ? results.length : after;
 }
 
 const MAX_PAGE = 500;
@@ -159,15 +244,28 @@ const SECTION_KEYS = new Set(SECTIONS.map((s) => s.key));
 const PER_SECTION_MAX = 96;
 
 searchRouter.get('/', async (req, res) => {
-  const page = Math.max(1, Math.min(10_000, Number(req.query.page) || 1));
   const limit = Math.min(MAX_PAGE, Math.max(1, Number(req.query.limit) || 24));
   const q = String(req.query.q ?? '');
   if (q.length > 200) {
     return problem(res, 422, 'Unprocessable Entity', 'That search term is too long.');
   }
+  if (req.query.cursor && !decodeCursor(req.query.cursor)) {
+    return problem(res, 422, 'Unprocessable Entity', 'That cursor is not one this API issued.');
+  }
+
+  const cursor = decodeCursor(req.query.cursor);
   const { results, facets, sort } = runSearch(req.query);
 
-  const slice = results.slice((page - 1) * limit, page * limit);
+  // A cursor is only meaningful under the ordering it was issued for. Changing
+  // the sort restarts from the top rather than landing somewhere arbitrary.
+  const usable = cursor && cursor.s === sort ? cursor : null;
+  const from = usable
+    ? resolveCursor(results, usable)
+    : (Math.max(1, Math.min(10_000, Number(req.query.page) || 1)) - 1) * limit;
+
+  const slice = results.slice(from, from + limit);
+  const page = Math.floor(from / limit) + 1;
+  const last = slice[slice.length - 1];
 
   if (req.query.verify === 'live') {
     await storage.verifyAssets(slice.slice(0, MAX_LIVE_VERIFY).map((row) => row.asset));
@@ -181,7 +279,10 @@ searchRouter.get('/', async (req, res) => {
     page,
     limit,
     total: results.length,
-    hasMore: page * limit < results.length,
+    hasMore: from + slice.length < results.length,
+    nextCursor: last && from + slice.length < results.length
+      ? encodeCursor({ s: sort, k: SORT_KEY[sort]?.(last) ?? null, id: last.asset.assetId })
+      : null,
     verifiedLive: req.query.verify === 'live',
   });
 });

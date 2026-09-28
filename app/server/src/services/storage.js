@@ -530,6 +530,20 @@ export async function quota() {
 }
 
 
+// Drive reports `usageInDriveTrash` as a *subset* of `usageInDrive`, so the
+// trashed bytes have to come out of the "other files" slice — otherwise the
+// slices add up to more than the account actually uses and the bar overflows.
+export function withLibraryUsage(quota, { libraryBytes = 0, libraryFileCount = 0 } = {}) {
+  const inTrash = quota.usageInTrash ?? 0;
+  return {
+    ...quota,
+    libraryBytes,
+    libraryFileCount,
+    otherDriveBytes: Math.max(0, (quota.usageInDrive ?? 0) - libraryBytes - inTrash),
+    trashRecoverableForDays: TRASH_DAYS,
+  };
+}
+
 const driveState = {
   ok: false,
   checkedAt: null,

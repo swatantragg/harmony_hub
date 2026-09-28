@@ -2,7 +2,9 @@ import { Download, RefreshCw, Sparkles, WifiOff, X } from 'lucide-react';
 import { usePwa } from '../app/pwa';
 import { BUILD_TAG } from '../lib/version';
 
-const MAX_HIGHLIGHTS = 5;
+// A point release gets a line or two. A release that changes how the app is
+// operated gets room to say so — this is the only time most people will read it.
+const MAX_HIGHLIGHTS = 8;
 
 function Highlights({ items }: { items: string[] }) {
   if (items.length === 0) return null;

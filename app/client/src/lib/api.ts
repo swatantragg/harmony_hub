@@ -19,6 +19,12 @@ export class ApiError extends Error {
   passcodeRequired: boolean;
   otpRequired: boolean;
   canResume: boolean;
+  /**
+   * The whole problem document. A 409 that offers a way forward — "this tag
+   * already exists, confirm to merge" — carries the terms of that offer here,
+   * and the caller needs them to put the choice to somebody.
+   */
+  details: Record<string, unknown>;
   constructor(status: number, title: string, detail: string, extra: Record<string, unknown> = {}) {
     super(detail || title);
     this.status = status;
@@ -27,6 +33,7 @@ export class ApiError extends Error {
     this.passcodeRequired = Boolean(extra.passcodeRequired);
     this.otpRequired = Boolean(extra.otpRequired);
     this.canResume = Boolean(extra.canResume);
+    this.details = extra;
   }
 }
 

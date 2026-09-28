@@ -13,6 +13,7 @@
     "seed": "node src/cli/seed.js",
     "reseed": "node src/cli/seed.js --force",
     "reconcile": "node src/cli/reconcile.js",
+    "measure": "node src/cli/measure.js",
     "import:drive": "node src/cli/import-drive.js",
     "import:drive:plan": "node src/cli/import-drive.js --dry-run",
     "mark-lost": "node src/cli/mark-lost.js",
