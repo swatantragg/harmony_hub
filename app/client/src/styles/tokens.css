@@ -51,6 +51,29 @@
   --r-pill: 999px;
   --sidebar-w: 268px;
   --topbar-h: 70px;
+
+  /* ── Type scale ──────────────────────────────────────────────────────────
+     Every size is clamp(floor, preferred, ceiling).
+
+     The ceiling is the size this app has always used on a wide screen, so
+     nothing changes there. The floor is what stops a 36px heading from eating
+     a 360px phone. And the preferred term is in `rem`, which is the part that
+     was missing: a fixed px size ignores the default font size somebody has
+     set in their browser or their OS, so the app read as too large on one
+     device and too small on the next with no way for the reader to correct it.
+
+     Fluid also means no step at a breakpoint. The scale used to jump at
+     720px — full size at 721, one flat smaller size everywhere below, whether
+     the screen was 719px or 320px. */
+  --fs-eyebrow: clamp(12.5px, 0.72rem + 0.18vw, 14.5px);
+  --fs-mono:    clamp(13.5px, 0.78rem + 0.20vw, 16px);
+  --fs-key:     clamp(13px,   0.76rem + 0.20vw, 15.5px);
+  --fs-small:   clamp(14px,   0.82rem + 0.22vw, 16.5px);
+  --fs-body:    clamp(15.5px, 0.90rem + 0.28vw, 18px);
+  --fs-h3:      clamp(16px,   0.92rem + 0.30vw, 18.5px);
+  --fs-h2:      clamp(19px,   1.05rem + 0.60vw, 23px);
+  --fs-h1:      clamp(26px,   1.40rem + 1.60vw, 36px);
+  --fs-stat:    clamp(24px,   1.20rem + 1.20vw, 34px);
   --ease: cubic-bezier(.22, .61, .36, 1);
   --t-fast: 120ms var(--ease);
   --t-med: 220ms var(--ease);

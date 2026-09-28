@@ -33,6 +33,7 @@ export const FILE_KEY = randomBytes(32).toString('hex');
 
 let child = null;
 let base = null;
+let currentDb = null;
 
 export async function start({ env = {}, port = 8300 + Math.floor(Math.random() * 400) } = {}) {
   const dbName = `gcloudtest_${Date.now()}_${Math.floor(Math.random() * 1e5)}`;
@@ -105,15 +106,46 @@ export async function start({ env = {}, port = 8300 + Math.floor(Math.random() *
   });
 
   await ready;
+  currentDb = dbNameUsed;
   return { base, dbName: dbNameUsed };
 }
 
+/**
+ * Drop the scratch database this run created.
+ *
+ * Every `start()` makes a fresh `gcloudtest_*` database and nothing used to
+ * remove it, so a machine that had run the suite a few times was carrying
+ * dozens of dead databases — each one files MongoDB has to keep open. That is
+ * how a suite that passes one file at a time starts failing at the eighth,
+ * with a connection the server cannot explain.
+ *
+ * Best effort: a failure here is not a test failure, and must not mask one.
+ */
+async function dropScratchDb(dbName) {
+  if (!dbName) return;
+  try {
+    const { default: mongoose } = await import('mongoose');
+    const conn = await mongoose.createConnection(TEST_MONGO, {
+      dbName,
+      serverSelectionTimeoutMS: 4000,
+    }).asPromise();
+    await conn.dropDatabase();
+    await conn.close();
+  } catch {
+    // The database outlives the run rather than the run failing over cleanup.
+  }
+}
+
 export async function stop() {
-  if (!child) return;
-  child.kill('SIGTERM');
-  await Promise.race([once(child, 'exit'), new Promise((r) => { setTimeout(r, 5000); })]);
-  child.kill('SIGKILL');
-  child = null;
+  const dbName = currentDb;
+  currentDb = null;
+  if (child) {
+    child.kill('SIGTERM');
+    await Promise.race([once(child, 'exit'), new Promise((r) => { setTimeout(r, 5000); })]);
+    child.kill('SIGKILL');
+    child = null;
+  }
+  await dropScratchDb(dbName);
 }
 
 // ── A tiny client that keeps cookies, like a browser does ────────────────────
