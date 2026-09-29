@@ -2,6 +2,7 @@ import express from 'express';
 import { db, persist } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { context, shape, validateName } from '../services/assets.js';
+import { markReviewed } from '../services/review.js';
 import { alert, record, notify } from '../services/audit.js';
 import * as storage from '../services/storage.js';
 import { APP_ORIGIN, CHUNK_SIZE, ROOTS, TRASH_DAYS, TTL, VERIFY_BATCH_MAX } from '../config.js';
@@ -49,6 +50,35 @@ assetsRouter.post('/verify-batch', async (req, res) => {
     label: `Verified ${ids.length} assets against Google Drive`, after: summary,
   });
   res.json({ checkedAt: new Date().toISOString(), summary, results });
+});
+
+// "Looks right as it is" for files adopted from Drive — takes the New badge off
+// without making anybody open and re-save each one. Editing a file's details
+// clears it too; see PATCH /:id.
+assetsRouter.post('/review', requires('asset:edit'), (req, res) => {
+  const idCheck = list(req.body?.assetIds, { max: LIMITS.ids, itemMax: 80, field: 'assetIds' });
+  if (idCheck.problem) return problem(res, 422, 'Unprocessable Entity', idCheck.problem);
+  const ids = idCheck.value ?? [];
+  if (!ids.length) return problem(res, 422, 'Unprocessable Entity', 'assetIds is required.');
+
+  const now = new Date().toISOString();
+  const reviewed = [];
+  for (const id of ids) {
+    const ctx = context(id);
+    if (ctx && markReviewed(ctx.asset, req.user.sub, now)) reviewed.push(ctx.asset);
+  }
+  if (reviewed.length) {
+    persist();
+    record(req, {
+      action: 'ASSET_REVIEW', entity: 'asset',
+      entityId: reviewed.length === 1 ? reviewed[0].assetId : 'batch',
+      label: reviewed.length === 1
+        ? `Reviewed ${reviewed[0].displayName}, added straight to Google Drive`
+        : `Reviewed ${reviewed.length} files added straight to Google Drive`,
+      after: { assetIds: reviewed.map((a) => a.assetId) },
+    });
+  }
+  res.json({ ok: true, reviewed: reviewed.length });
 });
 
 assetsRouter.get('/catalogue', (_req, res) => {
@@ -385,6 +415,9 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     after.language = '';
   }
   ctx.asset.updatedAt = new Date().toISOString();
+  // Somebody has now chosen this file's details, which is the review a file
+  // adopted from Drive was waiting for.
+  const reviewed = markReviewed(ctx.asset, req.user.sub, ctx.asset.updatedAt);
   persist();
 
   const synced = await storage.syncMetadata(ctx.asset, {
@@ -395,7 +428,7 @@ assetsRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
 
   record(req, {
     action: 'ASSET_UPDATE', entity: 'asset', entityId: ctx.asset.assetId,
-    label: `Updated ${ctx.asset.displayName}`, before, after, meta: { drivePropertiesSynced: synced },
+    label: `Updated ${ctx.asset.displayName}`, before, after, meta: { drivePropertiesSynced: synced, reviewed },
   });
   res.json(shape(ctx));
 });

@@ -2,6 +2,7 @@ import express from 'express';
 import { db, allAssets, live } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 import { shape } from '../services/assets.js';
+import { awaitingReview } from '../services/review.js';
 import { healthSummary } from '../services/reconcile.js';
 import { scan } from '../services/dedupe.js';
 import * as storage from '../services/storage.js';
@@ -31,6 +32,13 @@ dashboardRouter.get('/', async (req, res) => {
   ).length;
 
   const stale = rows.filter(({ asset }) => (asset.availability?.status ?? 'UNVERIFIED') === 'UNVERIFIED').length;
+
+  // Put straight into Drive and not yet looked at by anybody — not to be
+  // confused with `needsReview` above, which is about missing bytes.
+  const fromDrive = {
+    files: rows.filter(({ asset }) => awaitingReview(asset)).length,
+    folders: db.folders.filter((f) => !f.deletedAt && awaitingReview(f)).length,
+  };
 
   const activeShares = db.shares.filter(isLiveShare).length;
 
@@ -74,6 +82,7 @@ dashboardRouter.get('/', async (req, res) => {
       openFindings: health.openFindings,
       duplicateGroups: duplicates.totals.groups,
       needsReview,
+      fromDrive,
     },
     recent,
     trendingTags,

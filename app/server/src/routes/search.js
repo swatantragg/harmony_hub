@@ -2,6 +2,7 @@ import express from 'express';
 import { db, allAssets, persist } from '../db.js';
 import { authenticate, problem } from '../middleware/auth.js';
 import { shape, resolveLanguage } from '../services/assets.js';
+import { awaitingReview } from '../services/review.js';
 import * as storage from '../services/storage.js';
 import { escapeQuery, listFiles, FOLDER_MIME } from '../storage/drive.js';
 import { ROOTS } from '../config.js';
@@ -70,6 +71,7 @@ export function runSearch(query) {
     year: asArray(query.year),
     folderId: asArray(query.folderId),
     placement: asArray(query.placement),
+    review: asArray(query.review),
   };
 
   let rows = allAssets();
@@ -95,6 +97,7 @@ export function runSearch(query) {
       year: () => (row.song ? String(new Date(row.song.releaseDate).getFullYear()) : null),
       folderId: () => row.folder?._id ?? 'none',
       placement: () => [row.song ? 'song' : 'unfiled', row.folder ? 'foldered' : 'loose'],
+      review: () => (awaitingReview(row.asset) ? 'pending' : 'done'),
     }[key];
     const value = [].concat(get() ?? []);
     return filters[key].some((f) => value.includes(f));
@@ -137,6 +140,8 @@ export function runSearch(query) {
     version: tally(narrowed('version'), (r) => r.asset.version),
     artist: tally(narrowed('artistId'), (r) => r.artist?.name),
     year: tally(narrowed('year'), (r) => (r.song ? String(new Date(r.song.releaseDate).getFullYear()) : null)),
+    // Only the files still waiting are worth a chip; "done" is everything else.
+    review: tally(narrowed('review'), (r) => (awaitingReview(r.asset) ? 'pending' : null)),
   };
 
   const sort = query.sort || (terms.length ? 'relevance' : 'newest');

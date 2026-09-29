@@ -84,6 +84,13 @@
 .chip .count { font-family: var(--mono); font-size: 14.5px; opacity: .7; }
 .chip-static { cursor: default; }
 .chip-static:hover { border-color: var(--line-2); color: var(--ink-2); }
+/* "Show all 133" is an action on the list, not one more tag in it — dashed
+   and in the accent colour so it cannot be mistaken for something to pick. */
+.chip.chip-more {
+  background: transparent; border-style: dashed; border-color: var(--indigo-edge);
+  color: var(--indigo-deep); font-weight: 600;
+}
+.chip.chip-more:hover { background: var(--indigo-soft); border-color: var(--indigo); color: var(--indigo-deep); }
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 15px; font-weight: 500; padding: 5px 12px; border-radius: var(--r-pill);
@@ -105,6 +112,79 @@
   padding: 3px 8px; border-radius: 6px; background: var(--indigo-soft); color: var(--indigo-deep);
 }
 .vchip.current { background: var(--indigo); color: var(--on-accent); }
+/* Added straight to Google Drive and not reviewed yet. Spark rather than a
+   status colour: it is a nudge to tag the thing, not a problem with its bytes. */
+.new-badge {
+  display: inline-flex; align-items: center; flex: none;
+  font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  line-height: 1.2; padding: 3px 7px; border-radius: 6px; white-space: nowrap;
+  background: var(--spark-soft); color: var(--spark-deep); border: 1px solid var(--spark-edge);
+}
+.name-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.name-line > .truncate, .name-line > .row-title { min-width: 0; }
+
+/* The upload screen's "put all in a folder" picker. Folder names run long, so
+   a chip truncates rather than widening the page on a phone. */
+.chip.folder-chip { max-width: 100%; }
+.chip.folder-chip .chip-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 34ch; }
+.chip.folder-chip .count { overflow: hidden; text-overflow: ellipsis; max-width: 26ch; }
+.bulk-verdict {
+  display: flex; align-items: flex-start; gap: 9px; flex-wrap: wrap;
+  font-size: var(--fs-small); color: var(--ink-2); line-height: 1.5;
+  padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+.bulk-verdict.set { border-color: var(--indigo-edge); background: var(--indigo-soft); color: var(--indigo-deep); }
+.bulk-verdict svg { flex: none; margin-top: 3px; }
+.bulk-verdict > span { min-width: 0; flex: 1 1 220px; }
+.tag.new-tag { background: var(--spark-soft); color: var(--spark-deep); border-color: var(--spark-edge); }
+
+/* The Folders page's "New": lit while folders added straight to Drive are
+   waiting for review, grey otherwise — and it says which, on hover or tap. */
+.new-pill {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 13.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: var(--r-pill); cursor: pointer;
+  background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line-2);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.new-pill[aria-disabled="true"] { cursor: help; }
+.new-pill.on { background: var(--spark); border-color: var(--spark); color: var(--spark-ink); box-shadow: var(--shadow-spark); }
+.new-pill.on:hover { background: var(--spark-deep); border-color: var(--spark-deep); }
+.new-pill.on[aria-pressed="true"] { outline: 2px solid var(--spark-edge); outline-offset: 2px; }
+.new-pill-count {
+  font-family: var(--mono); font-size: 12.5px; letter-spacing: 0;
+  background: rgba(0, 0, 0, .14); border-radius: var(--r-pill); padding: 0 7px;
+}
+.tip { position: relative; display: inline-flex; }
+/* Lined up under the whole row rather than under the pill, so on a phone the
+   bubble starts at the page edge instead of running off the right of it. */
+.tip-host { position: relative; }
+.tip-host .tip { position: static; }
+.tip-bubble {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
+  width: max-content; max-width: min(290px, 78vw);
+  background: var(--ink); color: var(--canvas); font-size: 14.5px; font-weight: 400; line-height: 1.5;
+  padding: 9px 12px; border-radius: var(--r-sm); text-transform: none; letter-spacing: 0; text-align: left;
+  pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(-3px);
+  transition: opacity var(--t-fast), transform var(--t-fast), visibility var(--t-fast);
+}
+.tip:hover .tip-bubble, .tip:focus-within .tip-bubble, .tip.open .tip-bubble {
+  opacity: 1; visibility: visible; transform: none;
+}
+
+/* Upload queue actions, pinned to the bottom of the screen while the queue is
+   longer than it — nobody should scroll back up to press Upload. */
+.queue-bar {
+  position: sticky; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 15;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: var(--r-lg); border: 1px solid var(--line-2);
+  background: var(--glass); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: var(--shadow-lg);
+}
+.queue-bar-status { font-size: var(--fs-small); color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.queue-bar-status b { color: var(--ink); }
+.queue-bar .row-tight { flex-wrap: wrap; margin-left: auto; }
 .searchbar {
   display: flex; align-items: center; gap: 12px;
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md);
@@ -291,6 +371,21 @@
 }
 .select-group:not(:first-child) { margin-top: 3px; border-top: 1px solid var(--line); padding-top: 11px; }
 .select-empty { padding: 12px 10px; font-size: 16px; color: var(--ink-3); }
+/* A searchable list: the box stays at the top while the options scroll under it. */
+.select-search {
+  position: sticky; top: -6px; z-index: 1;
+  display: flex; align-items: center; gap: 8px;
+  margin: -6px -6px 6px; padding: 9px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--line); color: var(--ink-3);
+}
+.select-search-input {
+  flex: 1 1 auto; min-width: 0; border: none; outline: none; background: transparent;
+  color: var(--ink); font-family: var(--sans); font-size: max(16px, var(--fs-body)); padding: 2px 0;
+}
+.select-option.pinned { color: var(--indigo-deep); font-weight: 600; }
+/* Scrolled into view below the search box, not under it. */
+.select-menu.searchable .select-option { scroll-margin-top: 52px; }
+.select-more { padding: 9px 10px 5px; font-size: 14.5px; color: var(--ink-3); border-top: 1px solid var(--line); margin-top: 4px; }
 .date-trigger {
   display: flex; align-items: center; gap: 8px;
   text-align: left; cursor: pointer; line-height: 1.45; min-width: 0;

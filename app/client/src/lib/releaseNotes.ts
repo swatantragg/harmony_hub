@@ -17,6 +17,32 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V5.2.0',
+    date: '2026-09-29',
+    headline: 'A folder can hand its tags to the files inside it, and every folder list can be searched.',
+    highlights: [
+      'Editing a folder asks where its tags go: the folder only, the folder and the files in it, or every file down through its subfolders. Tagging a folder dropped into Drive tags its files in the same step.',
+      'Folders has a New button beside its heading. It lights up while folders added straight to Google Drive wait for review and stays grey otherwise; hover or tap to see what it means, press it to open the new folder, or the list of them.',
+      'The folder list says when a folder holds files added straight to Drive that nobody has reviewed.',
+      'Every folder picker can be searched — each file’s folder on the upload screen, Edit details and Move — with New folder at the top, named after whatever you typed.',
+      'The upload queue has Clear queue, and a bar pinned to the bottom of the screen with Upload in it, so a long queue never means scrolling back to the top.',
+      '“Show all” under the tags now looks like the button it is, not like one more tag to pick.',
+    ],
+  },
+  {
+    version: 'SK-V5.1.0',
+    date: '2026-09-29',
+    headline: 'Uploading many files shows where they are all going, and anything added straight to Drive is marked New.',
+    highlights: [
+      '“Apply to every file” now shows what the whole queue shares: the folder they are all going into, spelt out in a line you can check, and the tags every file carries, lit up and listed.',
+      'Putting a queue in a folder works like the tags: every folder is a chip, a search box narrows them, and a new folder can be made right there. A folder made by uploading a whole folder shows up already chosen.',
+      'Fixed: picking a second tag under “Tag them all” replaced every file’s tags with that one tag. It now adds or removes just the tag you clicked, and leaves each file’s own tags alone.',
+      'Fixed: the “Language for all” box could not be typed in, and leaving it cleared every file’s language.',
+      'Files and folders put straight into Google Drive carry a New badge until somebody reviews and tags them. Home counts them, and “New from Drive” finds them in search and in Folders.',
+      'The empty “Harness folder …” and “Harness tags …” folders in Drive were made by the automated tests, which were using the live Drive. The tests are now cut off from it, and Storage health removes the leftovers in one click.',
+    ],
+  },
+  {
     version: 'SK-V5.0.1',
     date: '2026-09-28',
     headline: 'Text now sizes itself to the device, and nothing needs scrolling sideways.',

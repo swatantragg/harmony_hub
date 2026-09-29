@@ -104,6 +104,11 @@ export interface Asset {
   versions?: VersionRow[];
   activity?: ActivityEntry[];
   shares?: AssetShareRef[];
+  /** 'DRIVE' when the sync adopted it from Google Drive rather than it being uploaded here. */
+  origin?: 'DRIVE' | null;
+  reviewedAt?: string | null;
+  /** Added straight to Drive and not yet reviewed by anybody — shows the New badge. */
+  awaitingReview?: boolean;
 }
 
 /**
@@ -242,6 +247,11 @@ export interface Folder {
   assetsByFamily?: Record<string, Asset[]>;
   breadcrumb?: { _id: string; name: string }[];
   subfolders?: Folder[];
+  origin?: 'DRIVE' | null;
+  reviewedAt?: string | null;
+  awaitingReview?: boolean;
+  /** Files directly inside, put straight into Drive and not reviewed yet. */
+  newFileCount?: number;
 }
 export interface FolderOption { _id: string; name: string; path: string; depth: number; assetCount: number }
 export interface FolderTreeNode {
@@ -511,7 +521,10 @@ export interface Dashboard {
     artists: number; songs: number; assets: number;
     staleVerification: number; activeShares: number; openFindings: number;
     folders: number; unfiled: number; duplicateGroups: number;
+    /** Missing or mismatched bytes — a storage problem. */
     needsReview: number;
+    /** Added straight to Google Drive and not yet reviewed by a person. */
+    fromDrive?: { files: number; folders: number };
   };
   recent: Asset[];
   trendingTags: { _id: string; name: string; type: string; usageCount: number }[];

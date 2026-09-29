@@ -70,7 +70,7 @@ const FIXTURES = {
     { _id: 'fo2', name: 'Artwork', path: 'Artwork', depth: 0, assetCount: 3 },
     { _id: 'fo3', name: '2024', path: 'Masters / 2024', depth: 1, assetCount: 4 },
   ],
-  '/folders': { data: [folder('fo1', 'Masters'), folder('fo2', 'Artwork')] },
+  '/folders': { data: [folder('fo1', 'Masters'), { ...folder('fo2', 'Artwork'), origin: 'DRIVE', awaitingReview: true }] },
   '/tags': { languages: ['Hindi'], moods: [], data: [] },
   '/admin/activity': {
     data: [{
@@ -101,10 +101,17 @@ const FIXTURES = {
 };
 
 FIXTURES['/assets/a1'] = asset;
+const fromDrive = {
+  ...asset, assetId: 'a2', displayName: 'dropped-in-drive.mp3', tags: ['Imported'],
+  origin: 'DRIVE', reviewedAt: null, awaitingReview: true,
+};
+FIXTURES['/assets/a2'] = fromDrive;
 folderDetail.assets = [asset];
 folderDetail.assetsByFamily = { Audio: [asset] };
 
 const calls = [];
+// What GET /folders?review=pending answers — changed by the "New" button checks.
+let pendingFolders = [];
 globalThis.fetch = async (url, init = {}) => {
   const path = String(url).replace(/^.*\/api/, '').split('?')[0];
   calls.push({ method: init.method || 'GET', path, raw: String(url), body: init.body ? JSON.parse(init.body) : null });
@@ -114,6 +121,9 @@ globalThis.fetch = async (url, init = {}) => {
       expiresAt: new Date(Date.now() + 6e5).toISOString(), maxDownloads: 10, canDownload: true,
       target: 'FOLDER', fileCount: 9, recipients: [],
     }), { status: 201, headers: { 'content-type': 'application/json' } });
+  }
+  if (path === '/folders' && /review=pending/.test(String(url))) {
+    return new Response(JSON.stringify({ data: pendingFolders, total: pendingFolders.length }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   if (path.endsWith('/assets') && init.method === 'POST') {
     return new Response(JSON.stringify({ ok: true, moved: 1, failed: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -140,13 +150,21 @@ console.error = (...a) => { errors.push(a.map(String).join(' ')); };
 const React = (await import('react')).default;
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { MemoryRouter, Routes, Route } = await import('react-router');
+const { MemoryRouter, Routes, Route, useLocation } = await import('react-router');
+/** Writes the router's location onto <body>, so a check can see where a click went. */
+function Where() {
+  const at = useLocation();
+  document.body.dataset.where = `${at.pathname}${at.search}`;
+  return null;
+}
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { FolderList, FolderDetail } = await server.ssrLoadModule('/src/features/folders/Folders.tsx');
 const { AssetDrawer } = await server.ssrLoadModule('/src/features/assets/AssetDrawer.tsx');
 const { Users } = await server.ssrLoadModule('/src/features/admin/Users.tsx');
 const { ActivityLog } = await server.ssrLoadModule('/src/features/admin/ActivityLog.tsx');
 const { AssetList } = await server.ssrLoadModule('/src/features/assets/AssetCard.tsx');
+const { UploadCenter } = await server.ssrLoadModule('/src/features/upload/UploadCenter.tsx');
+const { useQueue } = await server.ssrLoadModule('/src/features/upload/useUploadQueue.ts');
 const { ToastHost } = await server.ssrLoadModule('/src/components/ui.tsx');
 const { useSession } = await server.ssrLoadModule('/src/app/session.ts');
 
@@ -169,7 +187,7 @@ const mount = async (element, path = '/') => {
   root = createRoot(document.getElementById('root'));
   await act(async () => {
     root.render(el(QueryClientProvider, { client: qc }, el(ToastHost, null,
-      el(MemoryRouter, { initialEntries: [path] }, el(Routes, null, el(Route, { path: '/folders/:id', element }), el(Route, { path: '/', element }))))));
+      el(MemoryRouter, { initialEntries: [path] }, el(Where), el(Routes, null, el(Route, { path: '/folders/:id', element }), el(Route, { path: '/', element }))))));
   });
   await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
 };
@@ -229,6 +247,14 @@ const destinations = [...document.querySelectorAll('.move-option .row-title')].m
 check('the folder itself and its subtree are not offered as destinations',
   !destinations.includes('Masters') && !destinations.includes('2024'), destinations.join(', '));
 check('a sibling is offered', destinations.includes('Artwork'), destinations.join(', '));
+const moveSearch = document.querySelector('.modal input[aria-label="Search folders"]');
+await act(async () => {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  setter.call(moveSearch, 'art');
+  moveSearch.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+});
+const found = [...document.querySelectorAll('.move-option .row-title')].map((t) => t.textContent);
+check('the destinations can be searched', found.join() === 'Library root,Artwork', found.join(', '));
 
 await press([...document.querySelectorAll('.move-option')].find((b) => /Artwork/.test(b.textContent)), 'Artwork');
 const moveBtn = footBtn(/Move here/);
@@ -308,6 +334,175 @@ check('the only tab offered is Folders',
   [...document.querySelectorAll('.tab')].map((t) => t.textContent.trim()).join(' | '));
 check('it lands on that tab rather than on a selection it does not offer',
   !!rowNamed('2024') && !!rowNamed('2025'));
+
+console.log('\nNew from Drive');
+await mount(el(AssetList, { assets: [asset, fromDrive], onOpen: () => {} }));
+const badgeRows = [...document.querySelectorAll('.tbl tbody tr')].map((r) => Boolean(r.querySelector('.new-badge')));
+check('only the file added straight to Drive carries the New badge', badgeRows.join() === 'false,true', badgeRows.join());
+await mount(el(AssetDrawer, { assetId: 'a2', onClose: () => {} }));
+check('its drawer says it was added straight to Drive', /added straight to Google Drive/.test(document.querySelector('.drawer')?.textContent ?? ''));
+await press([...document.querySelectorAll('.drawer .btn')].find((b) => /mark reviewed/i.test(b.textContent)), 'mark reviewed');
+const reviewed = calls.find((c) => c.method === 'POST' && c.path === '/assets/review');
+check('Looks right sends it to be marked reviewed', reviewed?.body?.assetIds?.join() === 'a2', JSON.stringify(reviewed?.body));
+await mount(el(FolderList));
+check('a folder added straight to Drive is badged in the list',
+  !!rowNamed('Artwork')?.querySelector('.new-badge') && !rowNamed('Masters')?.querySelector('.new-badge'));
+const pill = () => document.querySelector('.new-pill');
+const pillTip = () => document.querySelector('.tip-bubble')?.textContent ?? '';
+check('with nothing new from Drive, New is grey', !!pill() && !pill().classList.contains('on') && pill().getAttribute('aria-disabled') === 'true');
+check('and says what it would mean', /Nothing new from Google Drive/.test(pillTip()), pillTip());
+await press(pill(), 'grey New');
+check('a tap on the grey New shows that explanation', !!document.querySelector('.tip.open'));
+check('and goes nowhere', document.body.dataset.where === '/', document.body.dataset.where);
+
+pendingFolders = [{ ...folder('fo2', 'Artwork'), origin: 'DRIVE', awaitingReview: true }];
+qc.removeQueries({ queryKey: ['folders'] });
+await mount(el(FolderList));
+check('one folder new from Drive lights New up, with its count',
+  pill()?.classList.contains('on') && pill()?.querySelector('.new-pill-count')?.textContent === '1');
+check('the lit New says it opens that folder', /Click to open it/.test(pillTip()), pillTip());
+await press(pill(), 'lit New');
+check('pressing it opens the new folder', document.body.dataset.where === '/folders/fo2', document.body.dataset.where);
+
+pendingFolders = [
+  { ...folder('fo2', 'Artwork'), origin: 'DRIVE', awaitingReview: true },
+  { ...folder('fo5', 'Stems'), origin: 'DRIVE', awaitingReview: true },
+];
+qc.removeQueries({ queryKey: ['folders'] });
+await mount(el(FolderList));
+await press(pill(), 'lit New');
+check('with several, it lists them instead', document.body.dataset.where === '/?review=pending', document.body.dataset.where);
+check('the list is the pending folders only', calls.some((c) => c.path === '/folders' && /review=pending/.test(c.raw)));
+check('and the page says so', /Only folders added straight to Google Drive/.test(document.querySelector('.page')?.textContent ?? ''));
+await press(pill(), 'New again');
+check('pressing New again shows every folder', document.body.dataset.where === '/', document.body.dataset.where);
+pendingFolders = [];
+qc.removeQueries({ queryKey: ['folders'] });
+
+console.log('\nTagging a folder, and where the tags go');
+await mount(el(FolderDetail), '/folders/fo1');
+await press(document.querySelector('.page-head, .spread')?.querySelector('.row-menu-trigger')
+  ?? document.querySelector('.row-menu-trigger'), 'folder page menu trigger');
+await press(menuItem('Edit folder'), 'Edit folder');
+const scopeChoices = () => [...document.querySelectorAll('.modal [role="radio"]')];
+check('the edit dialog asks where the tags go',
+  scopeChoices().map((c) => c.querySelector('.label')?.textContent).join(' | ') === 'Only this folder | This folder and the 1 file in it',
+  scopeChoices().map((c) => c.querySelector('.label')?.textContent).join(' | '));
+check('only the folder, unless told otherwise', scopeChoices()[0]?.getAttribute('aria-checked') === 'true');
+await press(scopeChoices()[1], 'folder and its file');
+await press([...document.querySelectorAll('.modal button.chip')].find((b) => b.textContent.trim() === 'Romantic'), 'Romantic');
+check('choosing the files says what each one gets',
+  /Each of the 1 file gets\s*Romantic/.test(document.querySelector('.modal .bulk-verdict')?.textContent ?? ''),
+  document.querySelector('.modal .bulk-verdict')?.textContent);
+await press(footBtn(/Save changes/), 'Save changes');
+const folderPatch = [...calls].reverse().find((c) => c.method === 'PATCH' && c.path === '/folders/fo1');
+check('the save carries the choice', folderPatch?.body?.tagScope === 'files', JSON.stringify(folderPatch?.body));
+
+console.log('\nUpload queue — apply to every file');
+const queued = (id, name) => ({
+  id, file: new dom.window.File(['x'], name, { type: 'audio/mpeg' }), displayName: name, state: 'READY',
+  progress: 0, error: null, checksum: 'abc', songId: '', folderId: '', assetType: 'Master Audio',
+  version: 'V1', tags: [], description: '', language: '', uploadedBytes: 0, bytesSent: 0,
+});
+useQueue.setState({ items: [queued('q1', 'one.mp3'), queued('q2', 'two.mp3'), queued('q3', 'three.mp3')] });
+useQueue.getState().update('q1', { tags: ['Sad'] });
+await mount(el(UploadCenter));
+const bulk = () => [...document.querySelectorAll('.panel')]
+  .find((p) => /Apply to every file in the queue/.test(p.querySelector('.t-h3')?.textContent ?? ''));
+const bulkChip = (label) => [...(bulk()?.querySelectorAll('button.chip') ?? [])]
+  .find((b) => b.textContent.trim() === label || b.querySelector('.chip-label')?.textContent === label);
+const verdicts = () => [...(bulk()?.querySelectorAll('.bulk-verdict') ?? [])].map((v) => v.textContent);
+const queue = () => useQueue.getState().items;
+check('the bulk panel renders for a queue of three', !!bulk());
+check('with no folder chosen it says so', /No folder — the files go to the top of the library/.test(verdicts()[0] ?? ''), verdicts()[0]);
+check('No folder is lit', bulkChip('No folder')?.classList.contains('on'));
+
+await press(bulkChip('Masters'), 'Masters');
+check('choosing a folder files every file in it', queue().every((i) => i.folderId === 'fo1'), queue().map((i) => i.folderId).join());
+check('the section says where all of them are going', /All 3 files go into “Masters”/.test(verdicts()[0] ?? ''), verdicts()[0]);
+check('the chosen folder is lit, and No folder is not',
+  bulkChip('Masters')?.classList.contains('on') && !bulkChip('No folder')?.classList.contains('on'));
+
+const folderSearch = bulk().querySelector('input[aria-label="Search folders"]');
+await act(async () => {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  setter.call(folderSearch, '2024');
+  folderSearch.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+});
+check('searching narrows the folders, and the chosen one stays in view',
+  !!bulkChip('2024') && !bulkChip('Artwork') && bulkChip('Masters')?.classList.contains('on'));
+await act(async () => {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  setter.call(folderSearch, '');
+  folderSearch.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+});
+
+await press(bulkChip('Romantic'), 'Romantic');
+await press(bulkChip('Promo'), 'Promo');
+check('a second tag is added to every file instead of replacing the first',
+  queue().every((i) => i.tags.includes('Romantic') && i.tags.includes('Promo')), queue().map((i) => i.tags.join('+')).join(' | '));
+check('a tag only one file had is left on that file', queue()[0].tags.includes('Sad'), queue()[0].tags.join('+'));
+check('the shared tags are lit in the bulk section',
+  bulkChip('Romantic')?.classList.contains('on') && bulkChip('Promo')?.classList.contains('on') && !bulkChip('Sad')?.classList.contains('on'));
+check('and listed as what every file carries', /On all 3 files:\s*RomanticPromo/.test(verdicts()[1] ?? ''), verdicts()[1]);
+await press(bulkChip('Romantic'), 'Romantic again');
+check('pressing a lit tag takes it off every file and nothing else',
+  queue().every((i) => !i.tags.includes('Romantic') && i.tags.includes('Promo')) && queue()[0].tags.includes('Sad'),
+  queue().map((i) => i.tags.join('+')).join(' | '));
+
+await act(async () => { useQueue.getState().update('q3', { folderId: 'fo2' }); });
+check('files split across folders are called mixed, with nothing lit',
+  /in different folders/.test(verdicts()[0] ?? '') && !bulkChip('Masters')?.classList.contains('on'), verdicts()[0]);
+const queueBar = () => document.querySelector('.queue-bar');
+check('the queue bar sits below the queue, with Upload in it',
+  !!queueBar() && /Upload 3 files/.test(queueBar().textContent) && !queueBar().querySelector('.btn-spark').disabled,
+  queueBar()?.textContent);
+check('it says what is ready', /3 ready to upload/.test(queueBar()?.textContent ?? ''), queueBar()?.textContent);
+check('a bulk New folder sits at the top, beside the search',
+  [...bulk().querySelectorAll('.btn')].some((b) => /New folder/.test(b.textContent)) && !bulkChip('New folder'));
+
+await press([...queueBar().querySelectorAll('.btn')].find((b) => /Clear queue/.test(b.textContent)), 'Clear queue');
+check('clearing the queue asks first', /Clear 3 files from the queue/.test(modalTitle()), modalTitle());
+await press(footBtn(/Clear queue/), 'confirm clear');
+check('and then empties it', queue().length === 0, String(queue().length));
+check('with the queue empty, the bar goes too', !queueBar());
+
+console.log('\nOne file’s folder');
+useQueue.setState({ items: [queued('q9', 'solo.mp3')] });
+await mount(el(UploadCenter));
+const folderTrigger = () => document.querySelector('[aria-label="Folder"].select-trigger');
+await press(folderTrigger(), 'folder dropdown');
+const searchInput = () => document.querySelector('.select-search-input');
+const optionTexts = () => [...document.querySelectorAll('.select-menu .select-option-label')].map((o) => o.textContent);
+check('the folder dropdown opens with a search box', !!searchInput());
+check('the search box has the focus', document.activeElement === searchInput());
+check('New folder is the first thing in it', optionTexts()[0] === '＋ New folder…', optionTexts().join(' | '));
+const typeInto = async (input, text) => {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, text);
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  });
+};
+const keyIn = async (node, k) => {
+  await act(async () => { node.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true })); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+};
+await typeInto(searchInput(), '2024');
+check('typing narrows the folders, New folder staying on top',
+  optionTexts().join(' | ') === '＋ New folder “2024”… | 2024', optionTexts().join(' | '));
+await keyIn(searchInput(), 'Enter');
+check('Enter picks the folder that matched, not New folder', queue()[0].folderId === 'fo3', queue()[0].folderId);
+await press(folderTrigger(), 'folder dropdown');
+await typeInto(searchInput(), 'Zeta Masters');
+check('a name nothing matches offers to make it', optionTexts().join(' | ') === '＋ New folder “Zeta Masters”…', optionTexts().join(' | '));
+await keyIn(searchInput(), 'Enter');
+check('and Enter opens New folder with that name',
+  modalTitle() === 'New folder' && document.querySelector('.modal input.input')?.value === 'Zeta Masters',
+  `${modalTitle()} / ${document.querySelector('.modal input.input')?.value}`);
+await press(footBtn(/Cancel/), 'Cancel');
+check('cancelling leaves the file where it was', queue()[0].folderId === 'fo3', queue()[0].folderId);
+await act(async () => { useQueue.setState({ items: [] }); });
 
 console.log('\nPeople');
 await mount(el(Users));

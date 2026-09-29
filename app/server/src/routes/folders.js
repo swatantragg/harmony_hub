@@ -2,25 +2,33 @@ import express from 'express';
 import { db, persist, assetsInFolder, assetsUnderFolder, assetContext } from '../db.js';
 import { authenticate, requires, problem } from '../middleware/auth.js';
 import { shape } from '../services/assets.js';
+import { awaitingReview, markReviewed } from '../services/review.js';
 import { record } from '../services/audit.js';
 import * as storage from '../services/storage.js';
+import { syncToDrive } from '../services/tags.js';
+import { normalise } from '../services/vocabulary.js';
 import { ROOTS } from '../config.js';
 import { uuid } from '../util/crypto.js';
-import { LIMITS, fields, list, str } from '../util/validate.js';
+import { LIMITS, fields, list, oneOf, str } from '../util/validate.js';
 
 export const foldersRouter = express.Router();
 foldersRouter.use(authenticate);
+
+/** Where a folder's tags go when it is edited — see tagFilesLikeFolder. */
+const TAG_SCOPES = ['folder', 'files', 'tree'];
 
 const stats = (folder) => {
   const rows = assetsInFolder(folder._id);
   const byFamily = {};
   let bytes = 0;
+  let newFiles = 0;
   const statuses = {};
   for (const { asset } of rows) {
     byFamily[asset.family] = (byFamily[asset.family] || 0) + 1;
     bytes += asset.drive?.sizeBytes ?? 0;
     const s = asset.availability?.status ?? 'UNVERIFIED';
     statuses[s] = (statuses[s] || 0) + 1;
+    if (awaitingReview(asset)) newFiles += 1;
   }
   return {
     assetCount: rows.length,
@@ -28,6 +36,8 @@ const stats = (folder) => {
     byFamily,
     byStatus: statuses,
     needsAttention: (statuses.MISSING ?? 0) + (statuses.MISMATCH ?? 0) + (statuses.TRASHED ?? 0),
+    // Files put straight into Drive, inside this folder, that nobody has reviewed.
+    newFileCount: newFiles,
   };
 };
 
@@ -56,6 +66,7 @@ const decorate = (folder) => {
     parentName: parent?.name ?? null,
     subfolderCount: childrenOf(folder._id).length,
     createdByName: db.users.find((u) => u._id === folder.createdBy)?.name ?? 'Unknown',
+    awaitingReview: awaitingReview(folder),
     ...stats(folder),
     ...deepStats(folder),
   };
@@ -90,9 +101,11 @@ foldersRouter.get('/', (req, res) => {
   const q = String(req.query.q || '').toLowerCase();
   const tags = String(req.query.tags || '').split(',').filter(Boolean);
   const parentId = req.query.parentId === 'root' ? null : req.query.parentId;
+  const pendingOnly = req.query.review === 'pending';
 
   const rows = db.folders
     .filter((f) => !f.deletedAt)
+    .filter((f) => !pendingOnly || awaitingReview(f))
     .filter((f) => (parentId === undefined ? true : (f.parentId ?? null) === (parentId ?? null)))
     .filter((f) => !q || `${f.name} ${f.description} ${f.tags.join(' ')}`.toLowerCase().includes(q))
     .filter((f) => tags.length === 0 || tags.every((t) => f.tags.includes(t)))
@@ -194,6 +207,9 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     parentId: (v) => str(v, { max: 80, field: 'parentId' }),
     songId: (v) => str(v, { max: 80, field: 'songId' }),
     artistId: (v) => str(v, { max: 80, field: 'artistId' }),
+    // Where the folder's tags go: the folder alone, its files as well, or every
+    // file in it and in the folders inside it.
+    tagScope: (v) => oneOf(v, TAG_SCOPES, { field: 'tagScope', fallback: 'folder' }),
   });
   if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
   if ('name' in check.value && !check.value.name) {
@@ -254,13 +270,88 @@ foldersRouter.patch('/:id', requires('asset:edit'), async (req, res) => {
     if (field in (req.body || {})) folder[field] = check.value[field] ?? null;
   }
   folder.updatedAt = new Date().toISOString();
+  // Editing a folder's details is the review a folder adopted from Drive was
+  // waiting for. Moving it is not — that is filing, not tagging.
+  const edited = ['name', 'description', 'tags', 'songId', 'artistId'].some((f) => f in (req.body || {}));
+  const reviewed = edited && markReviewed(folder, req.user.sub, folder.updatedAt);
+
+  const tagScope = check.value.tagScope ?? 'folder';
+  const cascade = 'tags' in (req.body || {}) && tagScope !== 'folder'
+    ? tagFilesLikeFolder(folder, before.tags, { tree: tagScope === 'tree', userId: req.user.sub, now: folder.updatedAt })
+    : { filesTagged: 0, filesReviewed: 0 };
+
   persist();
   record(req, {
     action: 'FOLDER_UPDATE', entity: 'folder', entityId: folder._id,
-    label: `Updated folder “${folder.name}”`, before, after: check.value,
-    meta: { bytesMoved: 0, renamedInDrive, movedInDrive },
+    label: cascade.filesTagged
+      ? `Updated folder “${folder.name}” and the tags on ${cascade.filesTagged} file${cascade.filesTagged === 1 ? '' : 's'} in it`
+      : `Updated folder “${folder.name}”`,
+    before, after: check.value,
+    meta: { bytesMoved: 0, renamedInDrive, movedInDrive, reviewed, tagScope, ...cascade },
   });
-  res.json(decorate(folder));
+  res.json({ ...decorate(folder), tagScope, ...cascade });
+});
+
+/**
+ * Carries a folder's tag edit onto the files inside it.
+ *
+ * A folder's tags used to stay on the folder: tagging a folder dropped into
+ * Drive left every file in it untagged, and each had to be opened one by one.
+ * Every tag the folder now has goes onto each file, and every tag this edit
+ * took off the folder comes off each file too. A file's other tags — the ones
+ * the folder never had — are left exactly as they were. Files tagged this way
+ * count as reviewed.
+ */
+function tagFilesLikeFolder(folder, previousTags, { tree, userId, now }) {
+  const same = (a, b) => normalise(a) === normalise(b);
+  const finalTags = folder.tags ?? [];
+  const dropped = (previousTags ?? []).filter((t) => !finalTags.some((f) => same(f, t)));
+  const rows = tree ? assetsUnderFolder(folder._id) : assetsInFolder(folder._id);
+
+  const touched = [];
+  let filesReviewed = 0;
+  for (const row of rows) {
+    const current = Array.isArray(row.asset.tags) ? row.asset.tags : [];
+    const kept = current.filter((t) => !dropped.some((d) => same(d, t)));
+    const next = [...kept, ...finalTags.filter((t) => !kept.some((k) => same(k, t)))].slice(0, LIMITS.tags);
+    if (next.length !== current.length || next.some((t, i) => t !== current[i])) {
+      row.asset.tags = next;
+      row.asset.updatedAt = now;
+      touched.push(row);
+    }
+    if (markReviewed(row.asset, userId, now)) filesReviewed += 1;
+  }
+  // Drive keeps a copy of each file's tags in its appProperties.
+  syncToDrive(touched);
+  return { filesTagged: touched.length, filesReviewed };
+}
+
+// Takes the New badge off a folder adopted from Drive. With `files: true` it
+// does the same for every file directly inside it that is still waiting, which
+// is usually the point: a folder dropped into Drive arrives full.
+foldersRouter.post('/:id/review', requires('asset:edit'), (req, res) => {
+  const folder = db.folders.find((f) => f._id === req.params.id && !f.deletedAt);
+  if (!folder) return problem(res, 404, 'Not Found', 'No folder with that id.');
+
+  const now = new Date().toISOString();
+  const folderReviewed = markReviewed(folder, req.user.sub, now);
+  let filesReviewed = 0;
+  if (req.body?.files === true) {
+    for (const { asset } of assetsInFolder(folder._id)) {
+      if (markReviewed(asset, req.user.sub, now)) filesReviewed += 1;
+    }
+  }
+  if (folderReviewed || filesReviewed) {
+    persist();
+    record(req, {
+      action: 'FOLDER_REVIEW', entity: 'folder', entityId: folder._id,
+      label: filesReviewed
+        ? `Reviewed folder “${folder.name}” and ${filesReviewed} file${filesReviewed === 1 ? '' : 's'} in it`
+        : `Reviewed folder “${folder.name}”`,
+      after: { folderReviewed, filesReviewed },
+    });
+  }
+  res.json({ ...decorate(folder), folderReviewed, filesReviewed });
 });
 
 foldersRouter.delete('/:id', requires('asset:delete'), async (req, res) => {

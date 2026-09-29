@@ -5,6 +5,8 @@ import { uuid } from '../util/crypto.js';
 import { allTypes, resolveFamily } from './vocabulary.js';
 import { FOLDER_MIME, isNotFound, listChanges, mapLimit, startPageToken } from '../storage/drive.js';
 import { notify, record } from './audit.js';
+import { arrivedFromDrive } from './review.js';
+import { isTestLeftover } from './leftovers.js';
 
 // ── Why this exists ─────────────────────────────────────────────────────────
 // Every screen in the app reads MongoDB, never Drive. That is deliberate — a
@@ -40,6 +42,7 @@ const EMPTY_COUNTS = () => ({
   missing: 0,
   restored: 0,
   contentChanged: 0,
+  leftoversRemoved: 0,
   skippedBlocked: 0,
   skippedQuarantined: 0,
 });
@@ -309,6 +312,20 @@ async function run({ userId, trigger, mode }) {
 
     if (existing) {
       if (drive.trashed) {
+        // A folder the test suite once left in Drive, now in the bin, comes off
+        // the lists here too. Every instance does this on its own pass, so one
+        // that loaded the row before the cleanup cannot quietly save it back.
+        // Two instances syncing one database can each have adopted it, so every
+        // row pointing at this Drive folder goes, not only the first.
+        if (isTestLeftover(existing)) {
+          for (const row of db.folders) {
+            if (row.driveFolderId !== drive.id || !isTestLeftover(row)) continue;
+            row.deletedAt = now;
+            row.updatedAt = now;
+            counts.leftoversRemoved += 1;
+          }
+          continue;
+        }
         if (existing.driveState !== 'TRASHED') {
           existing.driveState = 'TRASHED';
           existing.updatedAt = now;
@@ -358,6 +375,7 @@ async function run({ userId, trigger, mode }) {
       createdAt: drive.createdTime ?? now,
       updatedAt: now,
       deletedAt: null,
+      ...arrivedFromDrive(),
     };
     folderByDriveId.set(drive.id, folder);
     knownFolderDriveIds.add(drive.id);
@@ -446,6 +464,7 @@ async function run({ userId, trigger, mode }) {
       renamedAt: null,
       deletedAt: null,
       relocateStatus: null,
+      ...arrivedFromDrive(),
     };
     adoptedAssets.push(asset);
     tracked.set(file.id, { asset, song: null });
@@ -621,6 +640,7 @@ function announce(summary, { userId, trigger }) {
   if (summary.counts.foldersAdopted) parts.push(`${summary.counts.foldersAdopted} folder${summary.counts.foldersAdopted === 1 ? '' : 's'}`);
   const renames = summary.counts.renamed + summary.counts.foldersRenamed;
   const moves = summary.counts.refiled + summary.counts.foldersRefiled;
+  const leftovers = summary.counts.leftoversRemoved;
 
   record(worker(userId), {
     action: 'DRIVE_SYNC',
@@ -628,7 +648,9 @@ function announce(summary, { userId, trigger }) {
     entityId: ROOTS.assets ?? 'drive',
     label: parts.length
       ? `Picked up ${parts.join(' and ')} added straight to Google Drive`
-      : `Followed ${renames + moves} change${renames + moves === 1 ? '' : 's'} made in Google Drive`,
+      : leftovers && !(renames + moves)
+        ? `Took ${leftovers} test-suite folder${leftovers === 1 ? '' : 's'} in the Drive bin off the folder lists`
+        : `Followed ${renames + moves} change${renames + moves === 1 ? '' : 's'} made in Google Drive`,
     after: summary.counts,
     meta: { trigger, mode: summary.mode, durationMs: summary.durationMs },
   });
@@ -639,8 +661,8 @@ function announce(summary, { userId, trigger }) {
       category: 'storage',
       level: 'ok',
       title: `${parts.join(' and ')} added from Google Drive`,
-      body: 'Somebody put these into the Drive folder directly. They are in the library now and ready to tag.',
-      link: '/folders',
+      body: 'Somebody put these into the Drive folder directly. They are in the library now, marked New until somebody reviews and tags them.',
+      link: summary.counts.filesAdopted ? '/?review=pending' : '/folders?review=pending',
     });
   }
 }

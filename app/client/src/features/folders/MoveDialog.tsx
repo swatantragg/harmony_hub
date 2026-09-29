@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, FolderPlus, Home, Loader2, Folder as FolderIcon } from 'lucide-react';
+import { Check, FolderPlus, Home, Loader2, Folder as FolderIcon, Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Modal, useToast } from '../../components/ui';
 import { useFolderOptions } from '../../lib/vocabulary';
@@ -20,6 +20,7 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
   const { data: folders } = useFolderOptions();
   const [selected, setSelected] = useState<string>(target.currentParentId ?? ROOT);
   const [creating, setCreating] = useState(false);
+  const [term, setTerm] = useState('');
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -31,6 +32,16 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
     const prefix = `${self.path}${' / '}`;
     return all.filter((f) => f._id !== target.id && !f.path.startsWith(prefix));
   }, [folders, target]);
+
+  // Whole-Drive libraries run to thousands of folders, so the list is searched,
+  // by name or by path. Whatever is picked stays listed while the term changes.
+  const q = term.trim().toLowerCase();
+  const shown = useMemo(
+    () => (q
+      ? options.filter((f) => f._id === selected || f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
+      : options),
+    [options, q, selected],
+  );
 
   const move = useMutation({
     mutationFn: async () => {
@@ -91,8 +102,18 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
       >
         <div className="stack-3">
           <button className="btn btn-secondary btn-block" onClick={() => setCreating(true)}>
-            <FolderPlus size={15} /> New folder…
+            <FolderPlus size={15} /> {term.trim() ? `New folder “${term.trim()}”…` : 'New folder…'}
           </button>
+
+          <div className="searchbar" style={{ boxShadow: 'none', padding: '9px 13px' }}>
+            <Search size={16} color="var(--ink-3)" />
+            <input
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder={`Search ${pluralise(options.length, 'folder')}…`}
+              aria-label="Search folders"
+            />
+          </div>
 
           <div className="panel rows move-list">
             <button
@@ -108,7 +129,12 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
               {selected === ROOT && <Check size={18} className="move-tick" />}
             </button>
 
-            {options.map((f) => (
+            {q && shown.every((f) => f._id === selected) && (
+              <div className="row-item" style={{ cursor: 'default' }}>
+                <span className="row-main"><span className="row-sub">No folder matches “{term.trim()}”.</span></span>
+              </div>
+            )}
+            {shown.map((f) => (
               <button
                 key={f._id}
                 type="button"
@@ -139,6 +165,7 @@ export function MoveDialog({ target, onClose }: { target: MoveTarget; onClose: (
 
       {creating && (
         <NewFolderDialog
+          defaultName={term.trim()}
           parentId={selected === ROOT ? null : selected}
           onClose={() => setCreating(false)}
           onCreated={(f) => { setSelected(f._id); setCreating(false); }}

@@ -6,7 +6,7 @@ import {
   HardDrive, FileWarning, Info, ExternalLink, Folder as FolderIcon, Trash2, FolderSync,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { AvailabilityBadge, EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
+import { AvailabilityBadge, ConfirmDialog, EmptyState, Modal, Skeleton, useToast } from '../../components/ui';
 import { Select } from '../../components/Select';
 import { AssetList } from '../assets/AssetCard';
 import { Pagination } from '../../components/Pagination';
@@ -27,6 +27,110 @@ interface SyncStatus {
 }
 
 interface Remedy { action: string; label: string; hint: string; danger?: boolean; needsSong?: boolean }
+
+interface Leftover {
+  name: string;
+  driveFolderId: string | null;
+  /** Every library row that points at it — more than one where two instances both adopted it. */
+  folderIds: string[];
+  createdAt: string | null;
+  webViewLink: string | null;
+  inDrive: boolean;
+  inLibrary: boolean;
+  blocked: string | null;
+}
+interface Leftovers { driveChecked: boolean; total: number; removable: number; data: Leftover[] }
+
+/**
+ * Empty folders earlier runs of the automated tests made in the live Drive,
+ * before the test server was cut off from it. Shown only while there are some.
+ */
+function TestLeftovers() {
+  const [confirming, setConfirming] = useState(false);
+  const qc = useQueryClient();
+  const toast = useToast();
+
+  const { data } = useQuery({
+    queryKey: ['test-leftovers'],
+    queryFn: () => api<Leftovers>('/admin/storage/test-leftovers'),
+    staleTime: 60_000,
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api<{ removed: number; trashedInDrive: number; removedFromLibrary: number; failed: string[]; recoverableForDays: number }>(
+      '/admin/storage/test-leftovers/remove', { method: 'POST' },
+    ),
+    onSuccess: (r) => {
+      qc.invalidateQueries();
+      toast({
+        kind: r.failed.length ? 'warn' : 'ok',
+        title: r.removed ? `Removed ${pluralise(r.removed, 'test folder')}` : 'Nothing was removed',
+        body: `${r.trashedInDrive} moved to the Google Drive bin (recoverable for ${r.recoverableForDays} days), ${r.removedFromLibrary} taken off the folder lists.`
+          + (r.failed.length ? ` Google Drive refused ${r.failed.length}: ${r.failed.join(', ')}.` : ''),
+      });
+    },
+    onError: (e: Error) => toast({ kind: 'danger', title: 'Could not remove them', body: e.message }),
+  });
+
+  if (!data?.total || !Array.isArray(data.data)) return null;
+
+  return (
+    <section>
+      <div className="note warn">
+        <Trash2 size={16} />
+        <div className="grow">
+          <b>{pluralise(data.total, 'folder')} left in Google Drive by the automated tests.</b>{' '}
+          Before SK-V5.1.0 every run of <span className="t-mono">npm test</span> made real, empty
+          folders called “Harness folder …” and “Harness tags …” in this Drive, and the sync then listed
+          them here as ordinary folders. The tests can no longer reach Drive.{' '}
+          {data.removable > 0
+            ? `${data.removable === data.total ? 'All' : data.removable} of them can go: they move to the Drive bin and off the lists here.`
+            : 'None can be removed right now — the reasons are below.'}
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: 'pointer' }}>Show the folders</summary>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, lineHeight: 1.7 }}>
+              {data.data.map((f) => (
+                <li key={f.driveFolderId ?? f.folderIds[0] ?? f.name}>
+                  <span className="t-mono">{f.name}</span>
+                  {' — '}
+                  {f.blocked
+                    ? <>kept: {f.blocked}</>
+                    : [f.inDrive && 'in Drive', f.inLibrary && 'listed here'].filter(Boolean).join(' and ')}
+                </li>
+              ))}
+            </ul>
+          </details>
+          {!data.driveChecked && (
+            <div className="hint" style={{ marginTop: 6 }}>
+              Google Drive is not answering, so only what is listed here was checked.
+            </div>
+          )}
+        </div>
+        {data.removable > 0 && (
+          <button className="btn btn-secondary btn-sm" disabled={remove.isPending} onClick={() => setConfirming(true)}>
+            {remove.isPending ? <Loader2 size={13} /> : <Trash2 size={13} />} Remove {data.removable}
+          </button>
+        )}
+      </div>
+
+      {confirming && (
+        <ConfirmDialog
+          title={`Remove ${pluralise(data.removable, 'test folder')}?`}
+          body={
+            <>
+              Each one is empty and was made by the test suite — its name carries the moment it was
+              created, and Drive agrees. They go to the Google Drive bin, where they stay recoverable
+              for 30 days, and off the folder lists here. No file is touched.
+            </>
+          }
+          confirmLabel={`Remove ${data.removable}`}
+          onConfirm={() => remove.mutate()}
+          onClose={() => setConfirming(false)}
+        />
+      )}
+    </section>
+  );
+}
 
 const REMEDIES: Record<string, Remedy[]> = {
   MISSING_IN_DRIVE: [
@@ -322,6 +426,8 @@ export function StorageHealth() {
             )}
         </div>
       </div>
+
+      <TestLeftovers />
 
       {data.quota && (
         <QuotaPanel quota={data.quota} trashDays={data.storage?.trashRecoverableForDays ?? 30} />

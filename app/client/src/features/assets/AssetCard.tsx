@@ -1,6 +1,6 @@
 import { FileText, Film, Image as ImageIcon, Music2 } from 'lucide-react';
 import type { Asset, Family } from '../../lib/types';
-import { AvailabilityBadge } from '../../components/ui';
+import { AvailabilityBadge, NewFromDriveBadge } from '../../components/ui';
 import { RowMenu } from '../../components/RowMenu';
 import { useAssetActions } from './assetActions';
 import { bytes } from '../../lib/format';
@@ -68,7 +68,10 @@ export function AssetRow({
             <Icon size={14} />
           </span>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }} className="truncate">{asset.displayName}</div>
+            <div className="name-line">
+              <div style={{ fontWeight: 600 }} className="truncate">{asset.displayName}</div>
+              {asset.awaitingReview && <NewFromDriveBadge />}
+            </div>
             <div className="t-small" style={{ fontSize: 14 }}>
               {asset.songTitle ? `${asset.songTitle} · ${asset.artistName}` : asset.folderName ?? 'Not tied to a song'}
             </div>

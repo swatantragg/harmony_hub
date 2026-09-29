@@ -7,16 +7,17 @@
 // same tag twice, and nothing may be deleted except the label itself.
 //
 // Drive is unreachable in the harness, so assets cannot be created here.
-// Folders carry tags and need no Drive, so they are what the bulk path is
-// driven through — it is the same code path for both, `carriers()` in
-// services/tags.js.
+// Folders carry tags and are what the bulk path is driven through — it is the
+// same code path for both, `carriers()` in services/tags.js. They are seeded
+// straight into the scratch database: creating one through POST /api/folders
+// makes a real Drive folder, which is how earlier runs of this file left
+// "Harness tags one …" folders behind in the live Drive.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { client, start, stop } from './harness.mjs';
 
 let admin;
-const folders = [];
 
 const stamp = Date.now();
 const TAG_A = `Harness Alpha ${stamp}`;
@@ -30,24 +31,28 @@ const findTag = async (name) => {
   return res.body.sections.flatMap((s) => s.tags).find((t) => t.key === key(name)) ?? null;
 };
 
-async function makeFolder(name, tags) {
-  const res = await admin.send('/api/folders', { method: 'POST', body: { name, tags } });
-  if (res.status === 201) {
-    const id = res.body._id ?? res.body.folder?._id ?? null;
-    if (id) folders.push(id);
-    return id;
-  }
-  return null;
-}
+const seededFolder = (id, name, tags) => {
+  const now = new Date().toISOString();
+  return {
+    _id: id, name, description: 'Seeded by the test suite.', tags,
+    parentId: null, driveFolderId: null, driveWebViewLink: null, songId: null, artistId: null,
+    createdBy: 'harness', createdAt: now, updatedAt: now, deletedAt: null,
+  };
+};
 
 before(async () => {
-  await start({ env: { RATE_LIMIT_STORE: 'memory' } });
+  await start({
+    env: { RATE_LIMIT_STORE: 'memory' },
+    seed: {
+      folders: [
+        seededFolder('folder_tags_one', 'Tags one', [TAG_A]),
+        seededFolder('folder_tags_two', 'Tags two', [TAG_A, TAG_B]),
+        seededFolder('folder_tags_three', 'Tags three', [TAG_B]),
+      ],
+    },
+  });
   admin = client();
   assert.equal((await admin.signIn()).status, 200);
-
-  await makeFolder(`Harness tags one ${stamp}`, [TAG_A]);
-  await makeFolder(`Harness tags two ${stamp}`, [TAG_A, TAG_B]);
-  await makeFolder(`Harness tags three ${stamp}`, [TAG_B]);
 });
 
 after(async () => { await stop(); });

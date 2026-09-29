@@ -19,8 +19,8 @@ const FAMILY_HINT: Record<Family, string> = {
 };
 
 export function TypePicker({
-  value, onChange, label = 'What kind of file? *',
-}: { value: string; onChange: (type: string) => void; label?: string }) {
+  value, onChange, label = 'What kind of file? *', placeholder = 'Choose a type…',
+}: { value: string; onChange: (type: string) => void; label?: string; placeholder?: string }) {
   const { data } = useAssetTypes();
   const [adding, setAdding] = useState(false);
   const types = data?.data ?? [];
@@ -32,7 +32,7 @@ export function TypePicker({
         <label className="label">{label}</label>
         <Select
           value={value}
-          placeholder="Choose a type…"
+          placeholder={placeholder}
           onChange={(v) => {
             if (v === ADD) { setAdding(true); return; }
             onChange(v);

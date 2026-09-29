@@ -70,6 +70,19 @@ each successful pass, so a failure resumes from the last good page instead of re
 Nothing in the mirror invents a tag or a category. An adopted file arrives with a name and
 a family inferred from its MIME type, and waits for a person.
 
+It waits visibly. Every file and folder the mirror adopts is stamped `origin: 'DRIVE'`,
+`reviewedAt: null`, and carries a **New** badge everywhere it is listed until somebody edits
+its details (that counts as reviewing it) or presses **Looks right — mark reviewed**
+(`POST /api/assets/review`, `POST /api/folders/:id/review` with `files: true` for a folder and
+its contents). Home counts them; `?review=pending` narrows search and the folder list to them.
+Rows adopted before SK-V5.1.0 carry no stamp and are left alone, so the badge means *new*
+rather than *everything the sync ever touched*.
+
+The Folders page has a **New** button beside its heading: lit, with a count, while folders
+adopted from Drive wait for review; grey otherwise, with the explanation on hover or tap.
+Pressed, it opens the one new folder, or lists them all (`/folders?review=pending`). A folder
+row also says how many files inside it are still new from Drive (`newFileCount`).
+
 **What the mirror will not do is delete.** A file that vanished from Drive is marked
 `MISSING` and handed to reconciliation, because silently dropping the row would take its
 tags, its version history and its live share links with it.
@@ -130,6 +143,23 @@ or Event and it joins that list — `POST /api/tags` with `group`, recorded in t
 log either way. A section over 14 names gets a filter box instead of a wall of chips, and
 whatever is already on the file stays pinned at the front of its section, so nothing a
 person chose can be hidden behind a search term.
+
+### A folder's tags, and its files
+
+A folder's tags used to stay on the folder: tagging a folder dropped into Drive left every
+file in it untagged. **Edit folder** now asks where the tags go — `tagScope` on
+`PATCH /api/folders/:id`:
+
+| `tagScope` | What changes |
+|---|---|
+| `folder` (default) | The folder only. Its files keep exactly the tags they have. |
+| `files` | The folder, and every file directly inside it. |
+| `tree` | The folder, and every file in it and in every folder below it. |
+
+For `files` and `tree`, each file gets every tag the folder now has, and loses every tag this
+edit took off the folder; tags a file has of its own are left alone, and two spellings of one
+tag never end up side by side. Files tagged this way count as reviewed, and their Drive
+`appProperties` are updated in the background, as a tag rename does.
 
 ### Renaming and deleting a tag
 
@@ -659,7 +689,7 @@ npm run measure           # catalogue size, memory and search latency — read-o
 npm run measure -- --json # the same, as JSON, for trending it over time
 npm run tags:build        # rebuild the Song/Artist/Event tag lists from doc/*.xlsx
 npm run tags:check        # fail if those lists and the sheets disagree
-npm test                  # server suite — needs a MongoDB at TEST_MONGODB_URI
+npm test                  # server suite — needs a MongoDB at TEST_MONGODB_URI; never touches Drive
 npm run dedupe            # duplicate report in the terminal
 npm run dedupe -- --level exact --family Video --json
 
@@ -704,6 +734,17 @@ stripping the header.
 They have no catalogue record. Run the check on **Storage health**; they show as
 `UNTRACKED_IN_DRIVE` with an **Adopt** action. `GET /api/search/drive?q=...` searches the
 Drive directly and marks which results are catalogued.
+
+**Empty folders called “Harness folder 1790…” or “Harness tags one 1790…” in Drive**
+Left by `npm test` before SK-V5.1.0. The test harness started its server with the live
+`app/.env`, so `POST /api/folders` in `shares.test.mjs` and `tags.test.mjs` made real Drive
+folders (the number is `Date.now()` at the moment of the run), the scratch database was
+dropped afterwards, and the live Drive sync adopted each folder into the library. The harness
+now sets `GCLOUD_SKIP_DOTENV=1`, blanks every Google credential, seeds its folders straight into
+the scratch database, and refuses to run if its server reports a working Drive. The leftovers
+show on **Storage health** with a **Remove** button: only empty folders whose name matches
+exactly and whose creation time matches the number in it, moved to the Drive bin (recoverable
+for 30 days) and off the lists here.
 
 ---
 
