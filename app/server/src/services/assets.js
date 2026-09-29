@@ -1,5 +1,6 @@
 import { db, assetContext, folderOf } from '../db.js';
 import { staleness } from './storage.js';
+import { awaitingReview } from './review.js';
 
 export const resolveLanguage = (asset, song) => ({
   language: asset?.language || song?.language || null,
@@ -30,6 +31,7 @@ export function shape({ asset, song, artist, folder }) {
     uploadedByName: db.users.find((u) => u._id === asset.uploadedBy)?.name ?? 'Unknown',
     verificationStale: stale,
     verificationAgeHours: ageHours,
+    awaitingReview: awaitingReview(asset),
   };
 }
 export const context = assetContext;

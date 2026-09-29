@@ -6,6 +6,8 @@ import { importDrive } from '../services/import-drive.js';
 import { syncDrive, syncState } from '../services/sync.js';
 import { alert, record, notify, visibleTo } from '../services/audit.js';
 import { context, shape } from '../services/assets.js';
+import { arrivedFromDrive } from '../services/review.js';
+import { findTestLeftovers, removeTestLeftovers } from '../services/leftovers.js';
 import * as storage from '../services/storage.js';
 import { connectionInfo } from '../db/mongo.js';
 import { models } from '../db/models.js';
@@ -181,6 +183,49 @@ adminRouter.get('/storage/sync', requires('admin:storage'), (_req, res) => {
   res.json(syncState());
 });
 
+// Folders the automated test suite left in the live Drive before its server
+// was cut off from it. See services/leftovers.js for what qualifies.
+adminRouter.get('/storage/test-leftovers', requires('admin:storage'), async (_req, res) => {
+  try {
+    res.json(await findTestLeftovers());
+  } catch (err) {
+    return problem(res, 502, 'Bad Gateway', `Google Drive would not list its folders: ${err.message}`);
+  }
+});
+
+adminRouter.post('/storage/test-leftovers/remove', requires('admin:storage'), async (req, res) => {
+  // Both sides or neither: taking a folder out of the lists here while it
+  // stays in Drive would only move the litter somewhere nobody looks.
+  if (!storage.driveReady()) {
+    return problem(res, 503, 'Service Unavailable',
+      'Google Drive is not reachable, so nothing was removed. Try again once it answers.', { degraded: true });
+  }
+  let out;
+  try {
+    out = await removeTestLeftovers();
+  } catch (err) {
+    return problem(res, 502, 'Bad Gateway', `Google Drive would not list its folders: ${err.message}`);
+  }
+  if (out.removed.length) {
+    record(req, {
+      action: 'TEST_LEFTOVERS_REMOVE',
+      entity: 'storage',
+      entityId: 'test-leftovers',
+      label: `Removed ${out.removed.length} empty folder${out.removed.length === 1 ? '' : 's'} the test suite had left in Google Drive`,
+      after: { names: out.removed.map((f) => f.name) },
+      meta: { trashedInDrive: out.removed.filter((f) => f.inDrive).length, failed: out.failed, skipped: out.skipped.length },
+    });
+  }
+  res.json({
+    removed: out.removed.length,
+    trashedInDrive: out.removed.filter((f) => f.inDrive).length,
+    removedFromLibrary: out.removed.reduce((n, f) => n + f.folderIds.length, 0),
+    failed: out.failed,
+    skipped: out.skipped.map((f) => ({ name: f.name, reason: f.blocked })),
+    recoverableForDays: TRASH_DAYS,
+  });
+});
+
 adminRouter.get('/storage/runs', requires('admin:storage'), (_req, res) => {
   res.json({ data: db.reconciliationRuns, total: db.reconciliationRuns.length });
 });
@@ -263,6 +308,7 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
             driveFolderId: parentId, driveWebViewLink: null,
             songId: null, artistId: null,
             createdBy: req.user.sub, createdAt: now, updatedAt: now, deletedAt: null,
+            ...arrivedFromDrive(),
           };
           db.folders.unshift(folder);
         }
@@ -335,6 +381,7 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
           mimeType: drive.mimeType, durationSec: drive.durationSec, dimensions: drive.dimensions,
           tags: ['Adopted'], checksumSHA256: drive.sha256,
           uploadedBy: req.user.sub, createdAt: now, updatedAt: now, renamedAt: null, deletedAt: null, relocateStatus: null,
+          ...arrivedFromDrive(),
         };
         (song ? song.assets : db.unfiled).push(asset);
         void storage.syncMetadata(asset, { song, folder, renameFile: false });
@@ -356,6 +403,7 @@ adminRouter.post('/storage/findings/:findingId/resolve', requires('admin:storage
           driveFolderId: fileId, driveWebViewLink: drive.webViewLink,
           songId: null, artistId: null,
           createdBy: req.user.sub, createdAt: now, updatedAt: now, deletedAt: null,
+          ...arrivedFromDrive(),
         };
         db.folders.unshift(folder);
         return complete(`Adopted “${drive.name}”. Run the check again to adopt the files inside it.`);

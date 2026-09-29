@@ -27,12 +27,15 @@ export const FACETS: { key: string; label: string; hint?: string }[] = [
   { key: 'mood', label: 'Mood' },
   { key: 'version', label: 'Version' },
   { key: 'year', label: 'Release year' },
+  { key: 'review', label: 'New from Drive', hint: 'Added straight to Google Drive and not reviewed by anybody yet' },
 ];
+
+const REVIEW_LABEL: Record<string, string> = { pending: 'New — needs review' };
 
 const FILTER_TABS: { id: string; label: string; facets: string[] }[] = [
   { id: 'assets', label: 'Assets', facets: ['family', 'type', 'version'] },
   { id: 'tags', label: 'Tags', facets: ['tags'] },
-  { id: 'availability', label: 'Availability', facets: ['availability'] },
+  { id: 'availability', label: 'Availability', facets: ['availability', 'review'] },
   { id: 'folders', label: 'Folders', facets: ['folder'] },
   { id: 'people', label: 'Artists', facets: ['artist'] },
   { id: 'release', label: 'Release', facets: ['language', 'mood', 'year'] },
@@ -132,6 +135,7 @@ export function useAssetSearch(
     artistId: selected.artist, language: selected.language, mood: selected.mood,
     tags: selected.tags, version: selected.version, year: selected.year,
     folderId: selected.folder,
+    review: selected.review,
     sort,
     page,
     limit: pageSize === 0 ? 5000 : pageSize,
@@ -562,7 +566,7 @@ function FacetGroup({
               {facetKey === 'availability' ? (
                 <AvailabilityBadge status={name as Availability} />
               ) : (
-                <span className="facet-chip-name">{name}</span>
+                <span className="facet-chip-name">{facetKey === 'review' ? REVIEW_LABEL[name] ?? name : name}</span>
               )}
               <span className="facet-chip-count">{f.count}</span>
             </button>

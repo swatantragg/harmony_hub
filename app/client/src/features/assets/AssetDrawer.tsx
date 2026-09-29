@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
   Download, Pencil, RefreshCw, Share2, Trash2, X, ShieldCheck, Archive,
-  History, Info, ScrollText, Loader2, ExternalLink, Undo2, Folder as FolderIcon, FolderInput,
+  History, Info, ScrollText, Loader2, ExternalLink, Undo2, Folder as FolderIcon, FolderInput, Inbox,
 } from 'lucide-react';
 import {
-  AvailabilityBadge, ConfirmDialog, CopyButton, Drawer, Skeleton, TagChip, useToast,
+  AvailabilityBadge, ConfirmDialog, CopyButton, Drawer, NewFromDriveBadge, Skeleton, TagChip, useToast,
 } from '../../components/ui';
 import { api } from '../../lib/api';
 import { bytes, date, duration, relative } from '../../lib/format';
@@ -91,6 +91,15 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
     },
   });
 
+  const review = useMutation({
+    mutationFn: () => api('/assets/review', { method: 'POST', body: { assetIds: [assetId] } }),
+    onSuccess: () => {
+      qc.invalidateQueries();
+      toast({ kind: 'ok', title: 'Marked as reviewed', body: 'The New badge is gone. Nothing else about the file changed.' });
+    },
+    onError: (e: Error) => toast({ kind: 'danger', title: 'Could not mark it reviewed', body: e.message }),
+  });
+
   const purge = useMutation({
     mutationFn: () => api(`/assets/${assetId}/purge`, { method: 'DELETE', body: { confirm: asset?.displayName } }),
     onSuccess: () => {
@@ -124,6 +133,7 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
               <div className="row-tight" style={{ marginBottom: 6 }}>
                 <span className="eyebrow">{asset.type}</span>
                 <span className={`vchip ${asset.isCurrent ? 'current' : ''}`}>{asset.version}</span>
+                {asset.awaitingReview && <NewFromDriveBadge long />}
               </div>
               <h2 className="t-h2" style={{ wordBreak: 'break-word' }}>{asset.displayName}</h2>
               <div className="t-small" style={{ marginTop: 3 }}>
@@ -184,6 +194,27 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
 
           {tab === 'overview' && (
             <>
+              {asset.awaitingReview && (
+                <div className="note">
+                  <Inbox size={15} />
+                  <div className="grow">
+                    <b>New — added straight to Google Drive {relative(asset.createdAt)}.</b> Nobody
+                    has reviewed it yet: its type was guessed as {asset.type} and it has no real tags.
+                    Check both and save, or mark it reviewed if it is right as it is.
+                    {can('asset:edit') && (
+                      <div className="row-tight" style={{ marginTop: 10, flexWrap: 'wrap' }}>
+                        <button className="btn btn-primary btn-sm" onClick={() => setEditing(true)}>
+                          <Pencil size={13} /> Review and tag
+                        </button>
+                        <button className="btn btn-secondary btn-sm" disabled={review.isPending} onClick={() => review.mutate()}>
+                          {review.isPending ? <Loader2 size={13} /> : <ShieldCheck size={13} />} Looks right — mark reviewed
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <AssetPreview asset={asset} />
 
               {asset.description && <p className="t-body" style={{ margin: 0 }}>{asset.description}</p>}
@@ -215,7 +246,11 @@ export function AssetDrawer({ assetId, onClose }: { assetId: string; onClose: ()
                     </div>
                   </dd>
                 </div>
-                <div className="def"><dt>Uploaded</dt><dd>{date(asset.createdAt, true)} by {asset.uploadedByName}</dd></div>
+                {asset.origin === 'DRIVE' ? (
+                  <div className="def"><dt>Added</dt><dd>{date(asset.createdAt, true)}, straight to Google Drive</dd></div>
+                ) : (
+                  <div className="def"><dt>Uploaded</dt><dd>{date(asset.createdAt, true)} by {asset.uploadedByName}</dd></div>
+                )}
                 {asset.renamedAt && <div className="def"><dt>Last renamed</dt><dd>{relative(asset.renamedAt)}</dd></div>}
                 <div className="def">
                   <dt>Original filename</dt>

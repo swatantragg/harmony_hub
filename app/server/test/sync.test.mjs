@@ -30,6 +30,7 @@ mock.module('../src/db.js', {
   namedExports: {
     db,
     persist: () => { persisted += 1; },
+    flushNow: async () => ({ written: 0 }),
     readMeta: async () => ({}),
     writeMeta: async () => {},
     allAssets: () => [],
@@ -116,6 +117,12 @@ test('adopts a nested folder tree dropped straight into Drive', async () => {
   assert.equal(vocal.availability.status, 'AVAILABLE');
   assert.equal(vocal.drive.path, 'Stems/vocal.wav');
   assert.ok(persisted > 0, 'the new rows were written');
+
+  // Nobody chose a type or tags for these, so they wait for a person.
+  for (const row of [album, stems, vocal]) {
+    assert.equal(row.origin, 'DRIVE', `${row.name ?? row.displayName} remembers it came from Drive`);
+    assert.equal(row.reviewedAt, null, `${row.name ?? row.displayName} starts out unreviewed`);
+  }
 });
 
 test('a second run over the same drive changes nothing', async () => {
@@ -175,4 +182,33 @@ test('confirms a vanished file with a live probe before calling it missing', asy
   assert.equal(out.counts.missing, 1);
   assert.equal(db.unfiled.find((a) => a.drive.fileId === 'f-2').availability.status, 'MISSING');
   assert.equal(db.unfiled.length, 2, 'nothing is ever deleted from the catalogue');
+});
+
+test('a folder the test suite left, once in the Drive bin, comes off the lists — every copy of it', async () => {
+  const stamp = 1790573744235;
+  const at = new Date(stamp + 1200).toISOString();
+  const row = (id) => ({
+    _id: id, name: `Harness folder ${stamp}`, description: 'Found in Google Drive and added automatically.',
+    tags: ['Imported'], parentId: null, driveFolderId: 'd-harness', driveWebViewLink: null, driveState: null,
+    songId: null, artistId: null, createdBy: 'system', createdAt: at, updatedAt: at, deletedAt: null,
+  });
+  // Two rows for one Drive folder: two instances syncing one database both adopted it.
+  db.folders.push(row('folder_h1'), row('folder_h2'));
+  drive.folders.push({ ...folder('d-harness', `Harness folder ${stamp}`, ASSETS_ROOT), trashed: true, createdTime: at });
+
+  const out = await syncDrive({ trigger: 'test', mode: 'full' });
+
+  assert.equal(out.counts.leftoversRemoved, 2);
+  for (const id of ['folder_h1', 'folder_h2']) {
+    assert.ok(db.folders.find((f) => f._id === id).deletedAt, `${id} is off the lists`);
+  }
+});
+
+test('any other folder put in the Drive bin is only flagged, as before', async () => {
+  drive.folders[0] = { ...drive.folders[0], trashed: true };
+  const out = await syncDrive({ trigger: 'test', mode: 'full' });
+  const album = db.folders.find((f) => f.driveFolderId === 'd-album');
+  assert.equal(out.counts.leftoversRemoved, 0);
+  assert.equal(album.driveState, 'TRASHED');
+  assert.equal(album.deletedAt, null, 'a real folder is never taken off the lists by the sync');
 });

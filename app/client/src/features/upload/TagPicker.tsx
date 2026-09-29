@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Tag as TagIcon, Lightbulb, Check, CornerDownLeft, Search } from 'lucide-react';
+import { Plus, Tag as TagIcon, Lightbulb, Check, CornerDownLeft, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { CONTROLLED_TAGS } from '../../lib/assetTypes';
 import {
   fetchSimilarTags, registerTag, isNearTag, isSameTag, nearTagConfidence, useTagSections,
@@ -100,14 +101,15 @@ function Section({
       <div className="wrap-gap">
         {selected.map(chip)}
         {shown.map(chip)}
+        {/* Styled as an action, not a tag — it used to read as one more chip to pick. */}
         {truncated && (
-          <button type="button" className="chip chip-static" onClick={() => setOpenedOut(true)}>
-            Show all {rest.length}
+          <button type="button" className="chip chip-more" onClick={() => setOpenedOut(true)}>
+            Show all {rest.length} <ChevronDown size={13} aria-hidden />
           </button>
         )}
         {openedOut && !term.trim() && (
-          <button type="button" className="chip chip-static" onClick={() => setOpenedOut(false)}>
-            Show fewer
+          <button type="button" className="chip chip-more" onClick={() => setOpenedOut(false)}>
+            Show fewer <ChevronUp size={13} aria-hidden />
           </button>
         )}
       </div>
@@ -123,7 +125,7 @@ function Section({
 }
 
 export function TagPicker({
-  value, onChange, required = false, label = 'Tags', hint, knownTags = [],
+  value, onChange, required = false, label = 'Tags', hint, knownTags = [], summary,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
@@ -131,6 +133,8 @@ export function TagPicker({
   label?: string;
   hint?: string;
   knownTags?: string[];
+  /** Shown under the label — the upload screen uses it to list what every file shares. */
+  summary?: ReactNode;
 }) {
   const [custom, setCustom] = useState('');
   const [section, setSection] = useState('');
@@ -257,6 +261,7 @@ export function TagPicker({
             </>
           )}
         </div>
+        {summary}
       </div>
 
       {sectionsFailed && missing.length > 0 && (

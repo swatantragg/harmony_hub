@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Search, ArrowRight, UploadCloud, Users as UsersIcon, Disc3, Share2, Clock,
-  AlertTriangle, Sparkles, X,
+  AlertTriangle, Sparkles, X, Inbox,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Skeleton, useDebounced } from '../../components/ui';
@@ -24,6 +24,7 @@ const QUICK_FILTERS = [
   { label: 'Cover art', to: '/?family=Image' },
   { label: 'Added this month', to: '/?sort=newest' },
   { label: 'Needs checking', to: '/?availability=UNVERIFIED' },
+  { label: 'New from Drive', to: '/?review=pending' },
 ];
 
 const ARTISTS_ON_HOME = 5;
@@ -66,6 +67,8 @@ export function Dashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const needsReview = data?.counts.needsReview ?? 0;
+  const fromDrive = data?.counts.fromDrive ?? { files: 0, folders: 0 };
+  const fromDriveTotal = fromDrive.files + fromDrive.folders;
 
   return (
     <div className="page stack-5">
@@ -184,6 +187,33 @@ export function Dashboard() {
                   <b>{needsReview} {needsReview === 1 ? 'file needs' : 'files need'} review</b>
                 </div>
                 <Link className="btn btn-secondary btn-sm" to="/admin/storage?focus=review">Review</Link>
+              </div>
+            </section>
+          )}
+
+          {fromDriveTotal > 0 && (
+            <section>
+              <div className="note">
+                <Inbox size={15} />
+                <div className="grow">
+                  <b>
+                    {[
+                      ...(fromDrive.files ? [pluralise(fromDrive.files, 'file')] : []),
+                      ...(fromDrive.folders ? [pluralise(fromDrive.folders, 'folder')] : []),
+                    ].join(' and ')}{' '}
+                    added straight to Google Drive {fromDriveTotal === 1 ? 'needs' : 'need'} review.
+                  </b>{' '}
+                  Types were guessed and nothing is tagged yet. Each one is marked New until somebody tags
+                  it or marks it reviewed.
+                </div>
+                <div className="row-tight" style={{ flexWrap: 'wrap' }}>
+                  {fromDrive.files > 0 && (
+                    <Link className="btn btn-secondary btn-sm" to="/?review=pending">Review files</Link>
+                  )}
+                  {fromDrive.folders > 0 && (
+                    <Link className="btn btn-secondary btn-sm" to="/folders?review=pending">Review folders</Link>
+                  )}
+                </div>
               </div>
             </section>
           )}

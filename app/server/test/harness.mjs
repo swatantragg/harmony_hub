@@ -35,12 +35,73 @@ let child = null;
 let base = null;
 let currentDb = null;
 
-export async function start({ env = {}, port = 8300 + Math.floor(Math.random() * 400) } = {}) {
+// A test server must never reach a real Google Drive. It used to: config.js
+// read app/.env, which holds the live credentials, so every POST /api/folders a
+// test made created a real folder in the real Drive — the "Harness folder
+// 1790573744235" and "Harness tags one …" litter — and the live app's Drive sync
+// then adopted each one into the library. Nothing here cleans Drive up, and the
+// scratch database dropped after a run takes no Drive folder with it.
+//
+// So the harness shuts every door: app/.env is not read at all, and each
+// credential the parent shell might export is blanked. `blankIsUnset` in
+// config.js turns '' into "not configured", and dotenv never overrides a key
+// that is already present.
+const NO_DRIVE = {
+  GCLOUD_SKIP_DOTENV: '1',
+  GOOGLE_CLIENT_ID: '',
+  GOOGLE_CLIENT_SECRET: '',
+  GOOGLE_REFRESH_TOKEN: '',
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: '',
+  GOOGLE_PRIVATE_KEY: '',
+  GOOGLE_SERVICE_ACCOUNT_KEY_FILE: '',
+  GOOGLE_IMPERSONATE_SUBJECT: '',
+  GOOGLE_SIGNIN_CLIENT_ID: '',
+  GOOGLE_SIGNIN_CLIENT_SECRET: '',
+  DRIVE_ID: '',
+  DRIVE_ROOT_FOLDER_ID: '',
+  DRIVE_WHOLE_DRIVE: 'false',
+  ALERT_WEBHOOK_URL: '',
+  KEEPALIVE_ENABLED: 'false',
+};
+
+/**
+ * Writes rows straight into the scratch database before the server boots, so
+ * it loads them the way it loads a real library.
+ *
+ * This is how a test gets folders and files to work on. Creating them through
+ * the API needs Drive, and Drive is exactly what the harness must not touch.
+ * `seed` maps a collection name to its rows; each row needs the id field that
+ * collection is keyed on (`_id`, or `assetId` for `unfiled`).
+ */
+async function seedScratchDb(dbName, seed) {
+  const entries = Object.entries(seed ?? {}).filter(([, rows]) => rows?.length);
+  if (!entries.length) return;
+  const { default: mongoose } = await import('mongoose');
+  const conn = await mongoose.createConnection(TEST_MONGO, {
+    dbName,
+    serverSelectionTimeoutMS: 4000,
+  }).asPromise();
+  try {
+    for (const [name, rows] of entries) {
+      await conn.collection(name).insertMany(rows.map((row, i) => ({
+        ...row,
+        _id: String(row._id ?? row.assetId),
+        _seq: i,
+      })));
+    }
+  } finally {
+    await conn.close();
+  }
+}
+
+export async function start({ env = {}, seed = null, port = 8300 + Math.floor(Math.random() * 400) } = {}) {
   const dbName = `gcloudtest_${Date.now()}_${Math.floor(Math.random() * 1e5)}`;
+  await seedScratchDb(dbName, seed);
 
   child = spawn(process.execPath, [SERVER], {
     env: {
       ...process.env,
+      ...NO_DRIVE,
       NODE_ENV: 'development',
       PORT: String(port),
       PUBLIC_ORIGIN: `http://localhost:${port}`,
@@ -102,11 +163,23 @@ export async function start({ env = {}, port = 8300 + Math.floor(Math.random() *
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
     child.once('exit', (code) => reject(new Error(`server exited early (${code})\n${out.slice(-4000)}`)));
-    setTimeout(() => reject(new Error(`server did not start in time\n${out.slice(-4000)}`)), 60_000);
+    // Unref'd: a pending timer keeps the test process alive, and this one used
+    // to hold every file open for the full minute after its tests had finished.
+    setTimeout(() => reject(new Error(`server did not start in time\n${out.slice(-4000)}`)), 60_000).unref();
   });
 
   await ready;
   currentDb = dbNameUsed;
+
+  // Tripwire. /healthz only reports ok when Google Drive is configured and
+  // answering, which a harness server must never be. Better to stop the whole
+  // run here than to find out from the Drive web UI again.
+  const health = await fetch(`${base}/healthz`).then((r) => r.json()).catch(() => null);
+  if (health?.ok) {
+    await stop();
+    throw new Error('The test server reached a real Google Drive. Refusing to run — tests would write into it.');
+  }
+
   return { base, dbName: dbNameUsed };
 }
 

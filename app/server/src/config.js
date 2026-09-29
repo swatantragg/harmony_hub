@@ -7,8 +7,15 @@ import { z } from 'zod';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, '..');
 
-for (const file of [path.join(ROOT, '.env'), path.resolve(ROOT, '../.env')]) {
-  if (fs.existsSync(file)) dotenv.config({ path: file });
+// app/.env holds the live Drive and database credentials. The test harness
+// boots this file in a child process, and while it read that file every
+// `npm test` created real "Harness folder …" folders in the real Drive, which
+// the live sync then adopted into the library. It sets GCLOUD_SKIP_DOTENV so a
+// test server only ever sees the environment it was handed.
+if (!/^(1|true|yes)$/i.test(process.env.GCLOUD_SKIP_DOTENV ?? '')) {
+  for (const file of [path.join(ROOT, '.env'), path.resolve(ROOT, '../.env')]) {
+    if (fs.existsSync(file)) dotenv.config({ path: file });
+  }
 }
 
 const bool = (fallback) =>

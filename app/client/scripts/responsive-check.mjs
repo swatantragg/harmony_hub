@@ -89,7 +89,31 @@ const FIXTURES = `
         <td>track_${i}_a_rather_long_display_name.wav</td><td>Master Audio</td><td>Hariharan</td>
         <td>4.8 GB</td><td>2026-09-17</td><td>Available</td></tr>`).join('')}</tbody></table></div>
       <div class="wrap-gap">${Array.from({ length: 14 }, (_, i) => `<button class="chip">Aaona (Hariharan Version) ${i}</button>`).join('')}</div>
-      <footer class="build-tag">SK-V5.0.1</footer>
+      <div class="panel"><div class="panel-body stack-4">
+        <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div class="row-tight"><span class="label">Put all in a folder</span><span class="t-small">· 214</span></div>
+          <div class="row-tight"><input class="input" style="max-width:210px;padding:6px 9px" placeholder="Search folders…"></div>
+        </div>
+        <div class="wrap-gap"><button class="chip on">No folder</button>
+          ${Array.from({ length: 4 }, (_, i) => `<button class="chip folder-chip ${i ? '' : 'on'}"><svg width="13" height="13"></svg><span class="chip-label">GG Soft Launch Event - 5th May - Goongoonalo Song Creative ${i}</span><span class="count">in Goongoonalo_Content_Mgt_Songs_2026-09-17</span></button>`).join('')}
+        </div>
+        <div class="bulk-verdict set"><svg width="14" height="14"></svg><span>All 12 files go into <b>“GG_Soft_Launch_Event_5th_May_Goongoonalo_Song_Creative”</b> — Library / Goongoonalo Song Creative / GG Soft Launch Event. It is a real Google Drive folder.</span></div>
+        <div class="bulk-verdict set"><svg width="14" height="14"></svg><span>On all 12 files: <span class="wrap-gap" style="display:inline-flex;vertical-align:middle;gap:6px"><span class="tag">Aaona (Hariharan Version)</span><span class="tag">Promo</span></span></span></div>
+      </div></div>
+      <div class="panel rows"><div class="row-item"><span class="row-main"><span class="name-line">
+        <span class="row-title">Harness_tags_one_1790576143748_a_folder_name_without_any_spaces</span><span class="new-badge">New</span>
+      </span></span></div></div>
+      <div class="spread page-head"><div class="row tip-host" style="gap:12px;align-items:center;flex-wrap:wrap">
+        <h1 class="t-h1">Folders</h1>
+        <span class="tip open"><button class="new-pill on" aria-pressed="false">New<span class="new-pill-count">12</span></button>
+        <span class="tip-bubble" role="tooltip">12 folders were added straight to Google Drive and nobody has reviewed them yet. Click to list them.</span></span>
+      </div><button class="btn btn-primary">New folder</button></div>
+      <div class="wrap-gap"><button class="chip">Romantic</button><button class="chip chip-more">Show all 133 <svg width="13" height="13"></svg></button></div>
+      <div class="choice on"><span class="choice-mark"></span><span><span class="label">…and every file in its subfolders — 1,204 in all</span>
+        <span class="hint">The same, reaching down through every folder inside this one.</span></span></div>
+      <div class="queue-bar"><div class="queue-bar-status"><b>12 ready to upload</b> · 3 still need a type or a tag · 2 being fingerprinted · 1 paused or stopped</div>
+        <div class="row-tight"><button class="btn btn-ghost btn-sm">Clear queue</button><button class="btn btn-spark">Upload 12 files</button></div></div>
+      <footer class="build-tag">SK-V5.2.0</footer>
     </div>
   </div>
 </div>

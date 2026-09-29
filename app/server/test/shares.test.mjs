@@ -5,9 +5,13 @@ import assert from 'node:assert/strict';
 import { client, start, stop } from './harness.mjs';
 
 let admin;
-let folderId = null;
+// The scratch database is empty, so seed something shareable. Seeded rather
+// than made through POST /api/folders: that creates a real Drive folder, which
+// is where the "Harness folder <timestamp>" folders in the live Drive came from.
+const folderId = 'folder_share_target';
 
 before(async () => {
+  const now = new Date().toISOString();
   await start({
     env: {
       SHARE_PASSCODE_MAX_ATTEMPTS: '3',
@@ -16,17 +20,17 @@ before(async () => {
       SHARE_PASSCODE_WINDOW_SEC: '900',
       RATE_LIMIT_STORE: 'memory',
     },
+    seed: {
+      folders: [{
+        _id: folderId, name: 'Share target', description: 'Seeded by the test suite.', tags: [],
+        parentId: null, driveFolderId: null, driveWebViewLink: null, songId: null, artistId: null,
+        createdBy: 'harness', createdAt: now, updatedAt: now, deletedAt: null,
+      }],
+    },
   });
   admin = client();
   const signedIn = await admin.signIn();
   assert.equal(signedIn.status, 200);
-
-  // The scratch database is empty, so make something shareable.
-  const made = await admin.send('/api/folders', {
-    method: 'POST',
-    body: { name: `Harness folder ${Date.now()}`, description: 'created by the test suite' },
-  });
-  if (made.status === 201) folderId = made.body._id ?? made.body.folder?._id ?? null;
 });
 
 after(async () => { await stop(); });

@@ -264,6 +264,21 @@ const CONTROLLED = new Set([
 export const TagChip = ({ name }: { name: string }) => (
   <span className={`tag ${CONTROLLED.has(name) ? 'controlled' : ''}`}>{name}</span>
 );
+
+/**
+ * Put straight into Google Drive — from the Drive website, the desktop app or
+ * a phone — and picked up by the sync, so nobody has chosen its type or tags
+ * yet. Stays until somebody edits its details or marks it reviewed.
+ */
+export function NewFromDriveBadge({ long = false }: { long?: boolean }) {
+  const meaning = 'Added straight to Google Drive, not uploaded here. Its type was guessed and it has no real tags yet — review it and tag it.';
+  return (
+    <span className="new-badge" title={meaning}>
+      New{long ? ' · from Drive' : <span className="sr-only"> from Google Drive</span>}
+      <span className="sr-only">, needs review</span>
+    </span>
+  );
+}
 export function FamilyArt({ family, seed, children }: { family: Family; seed: string; children?: ReactNode }) {
   const bars = useMemo(() => {
     let h = 0;
