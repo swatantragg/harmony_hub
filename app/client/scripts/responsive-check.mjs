@@ -113,7 +113,7 @@ const FIXTURES = `
         <span class="hint">The same, reaching down through every folder inside this one.</span></span></div>
       <div class="queue-bar"><div class="queue-bar-status"><b>12 ready to upload</b> · 3 still need a type or a tag · 2 being fingerprinted · 1 paused or stopped</div>
         <div class="row-tight"><button class="btn btn-ghost btn-sm">Clear queue</button><button class="btn btn-spark">Upload 12 files</button></div></div>
-      <footer class="build-tag">SK-V5.2.0</footer>
+      <footer class="build-tag">SK-V5.3.0</footer>
     </div>
   </div>
 </div>

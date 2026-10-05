@@ -44,8 +44,10 @@ export function Shell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [showTour, setShowTour] = useState(!tour.done());
-  const queue = useQueue((s) => s.items);
-  const uploading = queue.filter((i) => ['UPLOADING', 'FINALISING', 'HASHING'].includes(i.state)).length;
+  // A count, not the list: the list changes with every progress tick, and the
+  // whole shell would re-render with it.
+  const uploading = useQueue((s) => s.items.filter((i) =>
+    i.state === 'UPLOADING' || i.state === 'FINALISING' || i.hashState === 'QUEUED' || i.hashState === 'RUNNING').length);
 
   // Files put straight into the Drive folder have no catalogue row until a sync
   // makes one, and until then the library cannot show them. The server syncs on a
