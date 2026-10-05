@@ -1,9 +1,9 @@
 import express from 'express';
-import { db, persist, allAssets } from '../db.js';
+import { db, persist, allAssets, assetContext } from '../db.js';
 import { authenticate, requires, problem } from '../middleware/auth.js';
 import { record, notify } from '../services/audit.js';
 import * as storage from '../services/storage.js';
-import { APP_ORIGIN, CHUNK_SIZE, ROOTS, TRASH_DAYS, UPLOAD_DAILY_BYTES, UPLOAD_MAX_BYTES } from '../config.js';
+import { APP_ORIGIN, ROOTS, TRASH_DAYS, UPLOAD_DAILY_BYTES, UPLOAD_MAX_BYTES, chunkSizeFor } from '../config.js';
 import { uuid } from '../util/crypto.js';
 import { resolveFamily, resolveTier, typeExists } from '../services/vocabulary.js';
 import { carriesLanguage } from '../catalogue.js';
@@ -145,7 +145,7 @@ uploadsRouter.post('/initiate', requires('asset:upload'), requireDrive, async (r
     uploadUrl: session.sessionUri,
     sessionExpiresAt: session.expiresAt,
     parentId,
-    chunkSize: CHUNK_SIZE,
+    chunkSize: chunkSizeFor(size),
     storageTier: resolveTier(assetType),
     duplicate,
   });
@@ -193,6 +193,17 @@ uploadsRouter.post('/complete', requires('asset:upload'), async (req, res) => {
   });
   if (!check.ok) return problem(res, 422, 'Unprocessable Entity', check.problem);
   const { assetId, fileId, songId, folderId } = check.value;
+
+  // The browser asks again when it never heard back — the answer lost on the
+  // way home after hours of uploading, say. An upload already catalogued gets
+  // its record back instead of being filed a second time.
+  const already = assetContext(assetId);
+  if (already) {
+    if (already.asset.drive?.fileId !== fileId || already.asset.uploadedBy !== req.user.sub) {
+      return problem(res, 409, 'Conflict', 'That upload is already catalogued against a different file.');
+    }
+    return res.status(201).json(shape(already));
+  }
 
   const meta = fields(req.body?.metadata || {}, {
     displayName: (v) => str(v, { max: LIMITS.name, field: 'displayName' }),

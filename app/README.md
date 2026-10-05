@@ -51,9 +51,23 @@ reconciled, not merged.
 
 **Through the app.** The browser asks the API to open an upload, and gets back a Google
 **resumable session URI** and a chunk size. It then sends the bytes *straight to Google*,
-8 MB at a time — the API never sees them. Each chunk is answered with a `308` naming the
-byte Google now holds, so a dropped connection resumes from Google's own count rather than
-from zero. A 39 GB file costs this server a few hundred bytes of bookkeeping.
+8 MB at a time — the API never sees them. Above about 8 GB the chunk grows to keep a file
+near 1,000 round trips, up to 128 MB, so a 150 GB file is ~1,200 chunks rather than 19,200.
+Each chunk is answered with a `308` naming the byte Google now holds, so a dropped
+connection resumes from Google's own count rather than from zero. A 39 GB file costs this
+server a few hundred bytes of bookkeeping.
+
+**Nothing heavy runs on the page.** The SHA-256 that warns "this file is already in the
+library" is worked out in a Web Worker (`client/src/features/upload/hash.worker.ts`):
+crypto.subtle for files up to 64 MB, an incremental hasher in 8 MB slices above that. It
+fills in while somebody chooses a type and tags, and pressing Upload stops it — the upload
+never waits for it, and Google's own SHA-256, computed on arrival, is what duplicate
+detection uses afterwards. Before SK-V5.3.0 that hash ran on the page itself — measured in
+Chrome, a 1 GB file held the tab for 51 seconds without a single repaint, so 10 GB was eight
+minutes — and restarted for every file still hashing whenever anything in the queue
+changed: the "page unresponsive" prompt. In the worker the same 1 GB takes ~13 s and the
+page never stalls for more than a frame. Upload progress is written to the screen at most
+every 400 ms, however many files are moving.
 
 The session URI is a bearer credential, so the server records every one it opens
 (`uploadSessions`, with a TTL index) and refuses to resume or cancel one it did not.

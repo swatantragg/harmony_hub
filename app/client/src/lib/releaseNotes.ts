@@ -17,6 +17,19 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V5.3.0',
+    date: '2026-10-05',
+    headline: 'Uploading huge files no longer freezes the page — and a single file can now be up to 750 GB.',
+    highlights: [
+      'Fixed: adding large files (10 GB and up) made the browser say the page was unresponsive. The duplicate check read every byte of every file on the page itself, and started over for each file still being read whenever anything in the queue changed. It now runs in the background, and the page stays usable at any file size.',
+      'Upload no longer waits for that check. Press it as soon as the type and tags are chosen; the check fills in meanwhile, and only warns about a duplicate if it finished before the upload started.',
+      'A single file can now be up to 750 GB, and an account can send 750 GB a day — Google Drive’s own daily limit. It was 25 GB and 50 GB.',
+      'Very large files go up in bigger pieces, so a 150 GB file makes about 1,200 trips to Google instead of 19,200.',
+      'A dropped connection waits to come back instead of failing, a connection that stalls for a minute is retried, and closing the tab while an upload is running asks first.',
+      'Pause works after leaving the upload screen and coming back, and the speed shown for a resumed upload is the real one.',
+    ],
+  },
+  {
     version: 'SK-V5.2.0',
     date: '2026-09-29',
     headline: 'A folder can hand its tags to the files inside it, and every folder list can be searched.',

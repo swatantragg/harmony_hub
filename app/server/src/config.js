@@ -195,8 +195,11 @@ const Env = z.object({
   RENDER: z.string().optional(),
   RENDER_EXTERNAL_URL: blankIsUnset(z.string().url().optional()),
 
-  UPLOAD_MAX_BYTES: int(25 * 1024 ** 3, 1024),
-  UPLOAD_DAILY_BYTES: int(50 * 1024 ** 3, 1024),
+  // Google Drive's own ceiling is 750 GB uploaded per account per day (and 5 TB
+  // per file). These were 25 GB and 50 GB, which refused a 150 GB master and
+  // stopped a batch of ten 15 GB files part-way through.
+  UPLOAD_MAX_BYTES: int(750 * 1024 ** 3, 1024),
+  UPLOAD_DAILY_BYTES: int(750 * 1024 ** 3, 1024),
 
   CLAMAV_ENABLED: bool(false),
   CLAMAV_HOST: z.string().default('127.0.0.1'),
@@ -424,6 +427,18 @@ export const TTL = {
 
 const QUANTUM = 256 * 1024;
 export const CHUNK_SIZE = Math.max(QUANTUM, Math.floor((env.DRIVE_CHUNK_MB * 1024 * 1024) / QUANTUM) * QUANTUM);
+
+// Every chunk is a round trip to Google, so at a fixed 8 MB a 150 GB file is
+// 19,200 of them, each idle for its round trip. Above ~8 GB the chunk grows to
+// keep a file near 1,000 chunks, up to 128 MB. The bytes are read from disk as
+// they are sent, so a bigger chunk costs the browser no memory; a dropped one
+// resumes from Google's own count, so it costs no resend either.
+const CHUNKS_PER_FILE = 1000;
+const CHUNK_SIZE_MAX = 128 * 1024 * 1024;
+export const chunkSizeFor = (sizeBytes) => {
+  const wanted = Math.ceil(Number(sizeBytes || 0) / CHUNKS_PER_FILE / QUANTUM) * QUANTUM;
+  return Math.max(CHUNK_SIZE, Math.min(CHUNK_SIZE_MAX, wanted));
+};
 
 export const LIST_PAGE_SIZE = env.DRIVE_LIST_PAGE_SIZE;
 export const HEAD_CONCURRENCY = env.HEAD_CONCURRENCY;

@@ -1,8 +1,19 @@
 import { create } from 'zustand';
 import { api } from '../../lib/api';
 import type { Asset } from '../../lib/types';
+import type { HashReply } from './hash.worker';
 
-export type UploadState = 'HASHING' | 'READY' | 'UPLOADING' | 'FINALISING' | 'DONE' | 'FAILED' | 'PAUSED';
+export type UploadState = 'READY' | 'UPLOADING' | 'FINALISING' | 'DONE' | 'FAILED' | 'PAUSED';
+
+/**
+ * The fingerprint (SHA-256) is what lets the server warn that a file is already
+ * in the library, and that warning is only worth anything before the upload
+ * starts. So it is worked out in a background worker while somebody fills in
+ * the details, and it never holds the upload back: pressing Upload stops it
+ * (SKIPPED). Google computes its own SHA-256 when the bytes arrive, and that is
+ * the one duplicate detection runs on afterwards.
+ */
+export type HashState = 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED';
 
 export interface QueueItem {
   id: string;
@@ -12,6 +23,9 @@ export interface QueueItem {
   progress: number;
   error: string | null;
   checksum: string | null;
+  /** Absent means there is no fingerprint to wait for. */
+  hashState?: HashState;
+  hashedBytes?: number;
   songId: string;
   folderId: string;
   relativePath?: string;
@@ -28,6 +42,8 @@ export interface QueueItem {
   duplicate?: { assetId: string; displayName: string; songTitle: string; folderName?: string | null } | null;
   result?: Asset;
   startedAt?: number;
+  /** What Google already held when this run started, so a resumed upload's speed is not inflated by it. */
+  startedBytes?: number;
   bytesSent: number;
 }
 interface QueueStore {
@@ -37,105 +53,186 @@ interface QueueStore {
   remove: (id: string) => void;
   clearDone: () => void;
 }
+
+// Progress arrives far faster than anyone can read it — every XHR reports
+// roughly every 50ms, and ten uploads at once is two hundred reports a second.
+// Each one used to be a store write, and each write re-rendered the whole
+// upload screen. Now they collect here and land as one write every FLUSH_MS.
+// A state change (update) takes whatever is waiting for that file first, so a
+// late progress report can never undo it.
+const FLUSH_MS = 400;
+const pending = new Map<string, Partial<QueueItem>>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useQueue = create<QueueStore>((set) => ({
   items: [],
-  add: (files, defaults) =>
-    set((s) => ({
-      items: [
-        ...s.items,
-        ...files.map((file) => ({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          file,
-          displayName: file.name,
-          state: 'HASHING' as UploadState,
-          progress: 0,
-          error: null,
-          checksum: null,
-          songId: '',
-          folderId: '',
-          assetType: '',
-          version: 'V1',
-          tags: [] as string[],
-          description: '',
-          language: '',
-          uploadedBytes: 0,
-          bytesSent: 0,
-          ...defaults,
-        })),
-      ],
-    })),
-  update: (id, patch) => set((s) => ({ items: s.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) })),
-  remove: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
+  add: (files, defaults) => {
+    const added: QueueItem[] = files.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      displayName: file.name,
+      state: 'READY',
+      progress: 0,
+      error: null,
+      checksum: null,
+      hashState: 'QUEUED',
+      hashedBytes: 0,
+      songId: '',
+      folderId: '',
+      assetType: '',
+      version: 'V1',
+      tags: [],
+      description: '',
+      language: '',
+      uploadedBytes: 0,
+      bytesSent: 0,
+      ...defaults,
+    }));
+    set((s) => ({ items: [...s.items, ...added] }));
+    for (const item of added) fingerprint(item);
+  },
+  update: (id, patch) => {
+    const waiting = pending.get(id);
+    pending.delete(id);
+    set((s) => ({ items: s.items.map((i) => (i.id === id ? { ...i, ...waiting, ...patch } : i)) }));
+  },
+  remove: (id) => {
+    pending.delete(id);
+    stopFingerprint(id);
+    set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+  },
   clearDone: () => set((s) => ({ items: s.items.filter((i) => i.state !== 'DONE') })),
 }));
 
-export async function checksum(file: File): Promise<string> {
-  if (file.size <= 64 * 1024 * 1024) {
-    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
-  return streamingSha256(file);
+function flush() {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+  if (!pending.size) return;
+  const patches = new Map(pending);
+  pending.clear();
+  useQueue.setState((s) => ({
+    items: s.items.map((i) => {
+      const patch = patches.get(i.id);
+      return patch ? { ...i, ...patch } : i;
+    }),
+  }));
 }
 
-const K = new Uint32Array([
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-]);
-async function streamingSha256(file: File): Promise<string> {
-  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
-  const w = new Uint32Array(64);
-  let tail = new Uint8Array(0);
-  let total = 0;
-  const compress = (block: Uint8Array, off: number) => {
-    for (let i = 0; i < 16; i += 1) {
-      w[i] = (block[off + i * 4] << 24) | (block[off + i * 4 + 1] << 16) | (block[off + i * 4 + 2] << 8) | block[off + i * 4 + 3];
-    }
-    for (let i = 16; i < 64; i += 1) {
-      const a = w[i - 15]; const b = w[i - 2];
-      const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
-      const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
-    }
-    let [a, b, c, d, e, f, g, h] = H;
-    for (let i = 0; i < 64; i += 1) {
-      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
-      const ch = (e & f) ^ (~e & g);
-      const t1 = (h + S1 + ch + K[i] + w[i]) | 0;
-      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
-      const maj = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (S0 + maj) | 0;
-      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
-    }
-    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
-    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
-  };
-  const reader = (file.stream() as ReadableStream<Uint8Array>).getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    const buf = new Uint8Array(tail.length + value.length);
-    buf.set(tail);
-    buf.set(value, tail.length);
-    const blocks = Math.floor(buf.length / 64);
-    for (let i = 0; i < blocks; i += 1) compress(buf, i * 64);
-    tail = new Uint8Array(buf.subarray(blocks * 64));
-  }
-  const bitLen = BigInt(total) * 8n;
-  const padded = new Uint8Array(tail.length + 1 + ((tail.length % 64 < 56 ? 56 : 120) - (tail.length % 64)) + 8 - 1);
-  padded.set(tail);
-  padded[tail.length] = 0x80;
-  const view = new DataView(padded.buffer);
-  view.setBigUint64(padded.length - 8, bitLen);
-  for (let i = 0; i < padded.length; i += 64) compress(padded, i);
-  return [...H].map((n) => (n >>> 0).toString(16).padStart(8, '0')).join('');
+function report(id: string, patch: Partial<QueueItem>) {
+  pending.set(id, { ...pending.get(id), ...patch });
+  flushTimer ??= setTimeout(flush, FLUSH_MS);
 }
+
+/** The file as it is right now, including progress not yet written to the store. */
+export function latestItem(id: string): QueueItem | undefined {
+  const item = useQueue.getState().items.find((i) => i.id === id);
+  return item && { ...item, ...pending.get(id) };
+}
+
+/** Uploads under way, by queue id. Module-level, so Pause still works after leaving the page and coming back. */
+export const uploadControllers = new Map<string, AbortController>();
+
+// Closing or reloading the tab loses the File handle, and with it any upload in
+// flight — hours of it, for a big file. The browser asks first, as Drive does.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', (event) => {
+    if (!useQueue.getState().items.some((i) => i.state === 'UPLOADING' || i.state === 'FINALISING')) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+}
+
+// ── Fingerprinting, off the page ────────────────────────────────────────────
+//
+// Two lanes, one file at a time each. Small files go to crypto.subtle and take
+// milliseconds, so a cover image is never stuck behind a 15 GB master; big ones
+// are hashed in slices at roughly 80 MB/s. Neither ever runs on the page: the
+// old main-thread hash held it for 51 seconds per GB without one repaint, which
+// is what made the browser call the site unresponsive.
+
+/** Matches WHOLE_FILE_MAX in hash.worker.ts. */
+const SMALL_FILE = 64 * 1024 * 1024;
+
+function spawnHasher(): Worker | null {
+  if (typeof Worker === 'undefined') return null;
+  try {
+    return new Worker(new URL('./hash.worker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    return null;
+  }
+}
+
+class HashLane {
+  private jobs: { id: string; file: File }[] = [];
+  private worker: Worker | null = null;
+  private current: string | null = null;
+
+  push(id: string, file: File) {
+    this.jobs.push({ id, file });
+    this.next();
+  }
+
+  /** Forgets the file, stopping its hash if it is the one running. True when there was anything to stop. */
+  drop(id: string): boolean {
+    const at = this.jobs.findIndex((j) => j.id === id);
+    if (at >= 0) {
+      this.jobs.splice(at, 1);
+      return true;
+    }
+    if (this.current !== id) return false;
+    this.worker?.terminate();
+    this.worker = null;
+    this.current = null;
+    this.next();
+    return true;
+  }
+
+  private next() {
+    if (this.current) return;
+    const job = this.jobs.shift();
+    if (!job) return;
+    this.worker ??= spawnHasher();
+    const worker = this.worker;
+    if (!worker) {
+      report(job.id, { hashState: 'FAILED' });
+      this.next();
+      return;
+    }
+    this.current = job.id;
+    report(job.id, { hashState: 'RUNNING', hashedBytes: 0 });
+    const finish = (patch: Partial<QueueItem>) => {
+      this.current = null;
+      report(job.id, patch);
+      this.next();
+    };
+    worker.onmessage = (event: MessageEvent<HashReply>) => {
+      const reply = event.data;
+      if (reply.id !== this.current) return;
+      if (reply.type === 'progress') report(job.id, { hashedBytes: reply.hashedBytes });
+      else if (reply.type === 'done') finish({ checksum: reply.checksum, hashState: 'DONE', hashedBytes: job.file.size });
+      else finish({ hashState: 'FAILED' });
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      worker.terminate();
+      if (this.worker === worker) this.worker = null;
+      if (this.current === job.id) finish({ hashState: 'FAILED' });
+    };
+    worker.postMessage({ id: job.id, file: job.file });
+  }
+}
+
+const lanes = { small: new HashLane(), large: new HashLane() };
+
+function fingerprint(item: QueueItem) {
+  (item.file.size <= SMALL_FILE ? lanes.small : lanes.large).push(item.id, item.file);
+}
+
+function stopFingerprint(id: string): boolean {
+  return lanes.small.drop(id) || lanes.large.drop(id);
+}
+
+// ── Sending ─────────────────────────────────────────────────────────────────
 
 interface ChunkResult {
 
@@ -143,6 +240,10 @@ interface ChunkResult {
 
   received?: number;
 }
+
+/** A chunk with no progress for this long is abandoned and retried — a dead connection can otherwise hang forever. */
+const STALL_MS = 60_000;
+
 function putChunk(
   sessionUri: string,
   blob: Blob,
@@ -153,36 +254,66 @@ function putChunk(
 ): Promise<ChunkResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let lastProgress = Date.now();
+    let stalled = false;
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastProgress < STALL_MS) return;
+      stalled = true;
+      xhr.abort();
+    }, 5_000);
+    const onAbort = () => xhr.abort();
+    const settle = <T>(fn: (value: T) => void, value: T) => {
+      clearInterval(watchdog);
+      signal.removeEventListener('abort', onAbort);
+      fn(value);
+    };
     xhr.open('PUT', sessionUri);
     xhr.setRequestHeader('content-range', `bytes ${start}-${start + blob.size - 1}/${total}`);
-    xhr.upload.onprogress = (e) => onProgress(e.loaded);
+    xhr.upload.onprogress = (e) => {
+      lastProgress = Date.now();
+      onProgress(e.loaded);
+    };
     xhr.onload = () => {
       if (xhr.status === 200 || xhr.status === 201) {
         try {
-          resolve({ file: JSON.parse(xhr.responseText) });
+          settle(resolve, { file: JSON.parse(xhr.responseText) });
         } catch {
-          reject(new Error('Google accepted the upload but returned something unreadable.'));
+          settle(reject, new Error('Google accepted the upload but returned something unreadable.'));
         }
         return;
       }
       if (xhr.status === 308) {
         const range = xhr.getResponseHeader('range');
-        resolve({ received: range ? Number(range.split('-')[1]) + 1 : start });
+        settle(resolve, { received: range ? Number(range.split('-')[1]) + 1 : start });
         return;
       }
       if (xhr.status === 403 || xhr.status === 404) {
-        reject(new Error('This upload session is no longer valid. Start the upload again.'));
+        settle(reject, new Error('This upload session is no longer valid. Start the upload again.'));
         return;
       }
-      reject(new Error(`Google Drive rejected the chunk (HTTP ${xhr.status})`));
+      settle(reject, new Error(`Google Drive rejected the chunk (HTTP ${xhr.status})`));
     };
-    xhr.onerror = () => reject(new Error('Network error while sending to Google Drive'));
-    xhr.onabort = () => reject(new Error('paused'));
-    signal.addEventListener('abort', () => xhr.abort());
+    xhr.onerror = () => settle(reject, new Error('Network error while sending to Google Drive'));
+    xhr.onabort = () => settle(reject, new Error(stalled ? 'The connection to Google Drive stalled' : 'paused'));
+    signal.addEventListener('abort', onAbort);
     xhr.send(blob);
   });
 }
 const MAX_RETRIES = 5;
+
+/** Offline, a retry only burns an attempt. Wait for the connection (or a pause) instead. */
+function untilOnline(signal: AbortSignal): Promise<void> {
+  if (typeof navigator === 'undefined' || navigator.onLine || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      window.removeEventListener('online', done);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    window.addEventListener('online', done);
+    signal.addEventListener('abort', done);
+  });
+}
 
 export async function abortUpload(item: QueueItem) {
   if (!item.uploadUrl && !item.fileId) return;
@@ -191,28 +322,39 @@ export async function abortUpload(item: QueueItem) {
   } catch {
   }
 }
-export async function runUpload(item: QueueItem, controller: AbortController) {
+export async function runUpload(queued: QueueItem, controller: AbortController) {
   const { update } = useQueue.getState();
+  const item = latestItem(queued.id) ?? queued;
+  // The upload wins from here: a fingerprint still running would only compete
+  // with it for the disk, and the duplicate check it was for happens now or not
+  // at all.
+  const skipped = stopFingerprint(item.id);
+  const checksum = item.checksum;
+  const size = item.file.size;
   try {
-    update(item.id, { state: 'UPLOADING', error: null, startedAt: Date.now() });
+    update(item.id, { state: 'UPLOADING', error: null, ...(skipped ? { hashState: 'SKIPPED' as const } : {}) });
 
     let uploadUrl = item.uploadUrl;
     let chunkSize = item.chunkSize ?? 8 * 1024 * 1024;
     let assetId = item.assetId;
+    // Set once Google holds every byte. A run that got that far and then failed
+    // to catalogue the file goes straight back to cataloguing it.
+    let fileId = item.fileId;
     let offset = 0;
-    if (uploadUrl) {
+    if (!fileId && uploadUrl) {
       try {
-        const state = await api<{ complete: boolean; received: number }>('/uploads/resume', {
+        const state = await api<{ complete: boolean; received: number; fileId?: string | null }>('/uploads/resume', {
           method: 'POST',
-          body: { uploadUrl, sizeBytes: item.file.size },
+          body: { uploadUrl, sizeBytes: size },
         });
         offset = state.received;
+        if (state.complete && state.fileId) fileId = state.fileId;
         update(item.id, { uploadedBytes: offset });
       } catch {
         uploadUrl = undefined;
       }
     }
-    if (!uploadUrl) {
+    if (!fileId && !uploadUrl) {
       const init = await api<{
         assetId: string; uploadUrl: string; chunkSize: number;
         duplicate: QueueItem['duplicate'];
@@ -220,12 +362,12 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
         method: 'POST',
         body: {
           filename: item.displayName,
-          sizeBytes: item.file.size,
+          sizeBytes: size,
           contentType: item.file.type || 'application/octet-stream',
           assetType: item.assetType,
           songId: item.songId || null,
           folderId: item.folderId || null,
-          checksumSHA256: item.checksum,
+          checksumSHA256: checksum,
         },
       });
       uploadUrl = init.uploadUrl;
@@ -237,11 +379,15 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
         duplicate: init.duplicate, uploadedBytes: 0,
       });
     }
-    let uploaded: ChunkResult['file'] | undefined;
+    if (fileId) offset = size;
+    update(item.id, {
+      startedAt: Date.now(), startedBytes: offset, bytesSent: offset,
+      progress: Math.min(99, Math.round((offset / Math.max(1, size)) * 100)),
+    });
     let attempt = 0;
 
-    while (offset < item.file.size) {
-      const end = Math.min(offset + chunkSize, item.file.size);
+    while (!fileId && uploadUrl && offset < size) {
+      const end = Math.min(offset + chunkSize, size);
       const blob = item.file.slice(offset, end, item.file.type || 'application/octet-stream');
       const chunkStart = offset;
       try {
@@ -249,34 +395,36 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
           uploadUrl,
           blob,
           chunkStart,
-          item.file.size,
+          size,
           (sentInThisChunk) => {
             const sent = chunkStart + sentInThisChunk;
-            update(item.id, {
-              progress: Math.min(99, Math.round((sent / item.file.size) * 100)),
+            report(item.id, {
+              progress: Math.min(99, Math.round((sent / size) * 100)),
               bytesSent: sent,
             });
           },
           controller.signal,
         );
-        if (result.file) { uploaded = result.file; offset = item.file.size; }
+        if (result.file) { fileId = result.file.id; offset = size; }
         else {
 
           offset = result.received ?? end;
         }
-        update(item.id, { uploadedBytes: offset, bytesSent: offset });
+        report(item.id, { uploadedBytes: offset, bytesSent: offset });
         attempt = 0;
       } catch (err) {
+        if (controller.signal.aborted) throw err;
+        await untilOnline(controller.signal);
         if (controller.signal.aborted) throw err;
         attempt += 1;
         if (attempt > MAX_RETRIES) throw err;
         try {
 
-          const state = await api<{ complete: boolean; received: number }>('/uploads/resume', {
-            method: 'POST', body: { uploadUrl, sizeBytes: item.file.size },
+          const state = await api<{ complete: boolean; received: number; fileId?: string | null }>('/uploads/resume', {
+            method: 'POST', body: { uploadUrl, sizeBytes: size },
           });
           offset = state.received;
-          if (state.complete) break;
+          if (state.complete) { fileId = state.fileId ?? fileId; break; }
         } catch {
           throw new Error('The upload session expired. Start this file again.');
         }
@@ -284,7 +432,6 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
       }
     }
     update(item.id, { state: 'FINALISING', progress: 99 });
-    const fileId = uploaded?.id ?? item.fileId;
     if (!fileId) throw new Error('Google did not return a file id for the finished upload.');
     update(item.id, { fileId });
     const asset = await api<Asset>('/uploads/complete', {
@@ -292,6 +439,7 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
       body: {
         assetId,
         fileId,
+        uploadUrl,
         songId: item.songId || null,
         folderId: item.folderId || null,
         metadata: {
@@ -302,7 +450,7 @@ export async function runUpload(item: QueueItem, controller: AbortController) {
           version: item.version,
           tags: item.tags,
           language: item.language,
-          checksumSHA256: item.checksum,
+          checksumSHA256: checksum,
         },
       },
     });

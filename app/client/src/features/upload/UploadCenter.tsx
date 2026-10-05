@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -16,7 +16,7 @@ import { TagPicker } from './TagPicker';
 import { TypePicker } from './TypePicker';
 import { LanguagePicker } from '../../components/LanguagePicker';
 import { FolderPicker, FolderSearchPicker } from '../folders/FolderPicker';
-import { abortUpload, checksum, runUpload, useQueue } from './useUploadQueue';
+import { abortUpload, latestItem, runUpload, uploadControllers, useQueue } from './useUploadQueue';
 import type { QueueItem, UploadState } from './useUploadQueue';
 import type { Folder, SongRow } from '../../lib/types';
 
@@ -26,6 +26,11 @@ const MIXED = '__mixed__';
 /** Files "Apply to every file" no longer reaches: finished, or mid-upload. */
 const LOCKED: UploadState[] = ['DONE', 'UPLOADING', 'FINALISING'];
 
+/** One array for "no songs yet", so the rows below are not handed a new one every render. */
+const NO_SONGS: SongRow[] = [];
+
+const fingerprinting = (i: QueueItem) => i.hashState === 'QUEUED' || i.hashState === 'RUNNING';
+
 export function UploadCenter() {
   const [params] = useSearchParams();
   const { items, add, update, remove, clearDone } = useQueue();
@@ -33,7 +38,6 @@ export function UploadCenter() {
   const [confirmClear, setConfirmClear] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
-  const controllers = useRef(new Map<string, AbortController>());
   const toast = useToast();
   const qc = useQueryClient();
   const { data: typeData } = useAssetTypes();
@@ -45,15 +49,6 @@ export function UploadCenter() {
 
   const defaultSongId = params.get('songId') ?? '';
   const defaultFolderId = params.get('folderId') ?? '';
-
-  useEffect(() => {
-    for (const item of items) {
-      if (item.state !== 'HASHING' || item.checksum) continue;
-      checksum(item.file)
-        .then((sum) => update(item.id, { checksum: sum, state: 'READY' }))
-        .catch(() => update(item.id, { state: 'READY' }));
-    }
-  }, [items, update]);
 
   const accept = (files: File[], folderId = defaultFolderId) => {
     if (!files.length) return;
@@ -81,25 +76,36 @@ export function UploadCenter() {
     }
   };
 
-  const start = async (item: QueueItem) => {
+  // Rows are memoised and handed these by id, so a progress tick on one file
+  // re-renders that file's row and no other.
+  const start = useCallback(async (id: string) => {
+    const item = latestItem(id);
+    if (!item) return;
     const controller = new AbortController();
-    controllers.current.set(item.id, controller);
+    uploadControllers.set(id, controller);
     const asset = await runUpload(item, controller);
-    controllers.current.delete(item.id);
+    uploadControllers.delete(id);
     if (asset) {
       qc.invalidateQueries();
       toast({ kind: 'ok', title: 'Uploaded', body: `${asset.displayName} is in storage and verified.` });
     }
-  };
+  }, [qc, toast]);
 
-  const pause = (item: QueueItem) => controllers.current.get(item.id)?.abort();
+  const pause = useCallback((id: string) => uploadControllers.get(id)?.abort(), []);
+
+  const discard = useCallback((id: string) => {
+    const item = latestItem(id);
+    uploadControllers.get(id)?.abort();
+    if (item && item.state !== 'DONE') void abortUpload(item);
+    remove(id);
+  }, [remove]);
 
   const isReady = (i: QueueItem) => i.state === 'READY' && Boolean(i.assetType) && i.tags.length > 0;
   const ready = items.filter(isReady);
   const active = items.filter((i) => ['UPLOADING', 'FINALISING'].includes(i.state));
   const done = items.filter((i) => i.state === 'DONE');
   const needsDetails = items.filter((i) => i.state === 'READY' && !isReady(i)).length;
-  const fingerprinting = items.filter((i) => i.state === 'HASHING').length;
+  const hashing = items.filter(fingerprinting).length;
   const stopped = items.filter((i) => i.state === 'PAUSED' || i.state === 'FAILED').length;
 
   // Everything except what is on its way to Drive this second. An upload that
@@ -107,17 +113,16 @@ export function UploadCenter() {
   // it cancels that session, the way removing a single file does.
   const clearable = items.filter((i) => !['UPLOADING', 'FINALISING'].includes(i.state));
   const clearQueue = () => {
-    for (const item of clearable) {
-      controllers.current.get(item.id)?.abort();
-      if (item.state !== 'DONE') void abortUpload(item);
-      remove(item.id);
-    }
+    for (const item of clearable) discard(item.id);
   };
-  const uploadReady = () => ready.forEach(start);
+  const uploadReady = () => ready.forEach((i) => { void start(i.id); });
 
+  // Keyed on the tags themselves rather than on `items`, which changes with
+  // every progress tick and would hand every row a new array each time.
+  const tagKey = items.map((i) => i.tags.join('\u0001')).join('\u0002');
   const sessionTags = useMemo(
     () => [...new Set(items.flatMap((i) => i.tags))],
-    [items],
+    [tagKey],
   );
 
   // Every file "Apply to every file" reaches.
@@ -345,16 +350,12 @@ export function UploadCenter() {
                 key={item.id}
                 item={item}
                 family={familyOfType(item.assetType)}
-                songs={songs?.data ?? []}
+                songs={songs?.data ?? NO_SONGS}
                 knownTags={sessionTags}
-                onChange={(patch) => update(item.id, patch)}
-                onStart={() => start(item)}
-                onPause={() => pause(item)}
-                onRemove={() => {
-                  controllers.current.get(item.id)?.abort();
-                  if (item.state !== 'DONE') void abortUpload(item);
-                  remove(item.id);
-                }}
+                onChange={update}
+                onStart={start}
+                onPause={pause}
+                onRemove={discard}
               />
             ))}
           </div>
@@ -364,7 +365,7 @@ export function UploadCenter() {
               <b>{ready.length} ready to upload</b>
               {active.length > 0 && ` · ${active.length} uploading`}
               {needsDetails > 0 && ` · ${needsDetails} still ${needsDetails === 1 ? 'needs' : 'need'} a type or a tag`}
-              {fingerprinting > 0 && ` · ${fingerprinting} being fingerprinted`}
+              {hashing > 0 && ` · ${hashing} being fingerprinted`}
               {stopped > 0 && ` · ${stopped} paused or stopped`}
               {done.length > 0 && ` · ${done.length} done`}
             </div>
@@ -412,20 +413,24 @@ function guessType(file: File): string {
   return '';
 }
 
-function UploadRow({
-  item, family, songs, knownTags, onChange, onStart, onPause, onRemove,
+const UploadRow = memo(function UploadRow({
+  item, family, songs, knownTags, onChange: changeItem, onStart: startItem, onPause: pauseItem, onRemove: removeItem,
 }: {
   item: QueueItem;
   family: string;
   songs: SongRow[];
   knownTags: string[];
-  onChange: (patch: Partial<QueueItem>) => void;
-  onStart: () => void;
-  onPause: () => void;
-  onRemove: () => void;
+  onChange: (id: string, patch: Partial<QueueItem>) => void;
+  onStart: (id: string) => void;
+  onPause: (id: string) => void;
+  onRemove: (id: string) => void;
 }) {
   const complete = item.state === 'DONE';
   const busy = ['UPLOADING', 'FINALISING'].includes(item.state);
+  const onChange = (patch: Partial<QueueItem>) => changeItem(item.id, patch);
+  const onStart = () => startItem(item.id);
+  const onPause = () => pauseItem(item.id);
+  const onRemove = () => removeItem(item.id);
 
   const blockers = useMemo(() => {
     const out: string[] = [];
@@ -434,8 +439,12 @@ function UploadRow({
     return out;
   }, [item.assetType, item.tags.length]);
 
-  const speed = item.startedAt && item.bytesSent
-    ? item.bytesSent / Math.max(1, (Date.now() - item.startedAt) / 1000)
+  const sentThisRun = item.bytesSent - (item.startedBytes ?? 0);
+  const speed = item.startedAt && sentThisRun > 0
+    ? sentThisRun / Math.max(1, (Date.now() - item.startedAt) / 1000)
+    : 0;
+  const hashedPercent = item.file.size > 0
+    ? Math.min(99, Math.floor(((item.hashedBytes ?? 0) / item.file.size) * 100))
     : 0;
 
   return (
@@ -459,7 +468,8 @@ function UploadRow({
             </div>
             <div className="t-small">
               {bytes(item.file.size)} · {item.file.type || 'unknown type'}
-              {item.state === 'HASHING' && ' · fingerprinting…'}
+              {item.hashState === 'RUNNING' && ` · fingerprinting ${hashedPercent}%`}
+              {item.hashState === 'QUEUED' && ' · waiting to be fingerprinted'}
               {busy && speed > 0 && ` · ${bytes(speed)}/s`}
             </div>
           </div>
@@ -604,4 +614,4 @@ function UploadRow({
       </div>
     </div>
   );
-}
+});

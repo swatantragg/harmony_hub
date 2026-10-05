@@ -124,7 +124,7 @@ uploads; open means an outage silently turns scanning off and nobody notices. Cl
 default — if you switched scanning on, you meant it. Check `GET /api/admin/health` for
 whether the daemon is actually answering.
 
-Ceilings: 25 GB per file, 50 GB per account per rolling day, 200 MB per scan (clamd's own
+Ceilings: 750 GB per file, 750 GB per account per rolling day (Google Drive's own daily limit), 200 MB per scan (clamd's own
 `StreamMaxLength` is 25 MB out of the box — raise both together, or larger files are
 skipped rather than failed).
 

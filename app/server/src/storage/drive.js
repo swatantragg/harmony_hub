@@ -470,7 +470,12 @@ export async function probeResumableSession(sessionUri, totalBytes) {
     method: 'PUT',
     headers: { 'content-range': `bytes */${totalBytes}`, 'content-length': '0' },
   });
-  if (res.status === 200 || res.status === 201) return { complete: true, received: totalBytes };
+  // A finished session answers with the file itself. Its id is the only way to
+  // catalogue an upload whose last chunk landed but whose answer never got back.
+  if (res.status === 200 || res.status === 201) {
+    const file = await res.json().catch(() => null);
+    return { complete: true, received: totalBytes, fileId: file?.id ?? null };
+  }
   if (res.status === 308) {
     const range = res.headers.get('range');
     const received = range ? Number(range.split('-')[1]) + 1 : 0;
