@@ -18,6 +18,7 @@ import {
 } from '../config.js';
 import { uuid, hashPassword } from '../util/crypto.js';
 import { ROLES, PERMISSIONS, can, familyOf, normaliseRole } from '../catalogue.js';
+import { isSuperAdmin } from '../services/accounts.js';
 import { invalidateSessions, passwordProblem } from './auth.js';
 import { allTypes } from '../services/vocabulary.js';
 import * as antivirus from '../services/antivirus.js';
@@ -703,6 +704,20 @@ const publicUser = (u) => ({
 
 const admins = () => db.users.filter((u) => normaliseRole(u.role) === 'Admin' && u.status === 'active');
 
+// Worded as an ordinary permission refusal on purpose: to another administrator
+// the super administrator is one more Admin, and this must not say otherwise.
+const NOT_PERMITTED = 'You do not have permission to change this account.';
+
+/**
+ * Refuses a change to the super administrator's account made by anybody else.
+ * Returns true when it has answered the request.
+ */
+function protectSuperAdmin(req, res, user) {
+  if (!isSuperAdmin(user) || isSuperAdmin(req.user)) return false;
+  problem(res, 403, 'Forbidden', NOT_PERMITTED);
+  return true;
+}
+
 function attachments() {
   const uploads = new Map();
   for (const { asset } of allAssets({ includeDeleted: true })) {
@@ -717,14 +732,18 @@ function attachments() {
   return { uploads, shares };
 }
 
-adminRouter.get('/users', requires('admin:users'), (_req, res) => {
+adminRouter.get('/users', requires('admin:users'), (req, res) => {
   const { uploads, shares } = attachments();
+  const superViewer = isSuperAdmin(req.user);
   res.json({
     data: db.users.map((u) => ({
       ...publicUser(u),
       uploadCount: uploads.get(u._id) ?? 0,
       activeShareCount: shares.get(u._id) ?? 0,
+      // Only the super administrator is shown which row is theirs.
+      ...(superViewer && isSuperAdmin(u) ? { superAdmin: true } : {}),
     })),
+    canResetPasswords: superViewer,
     roles: ROLES,
     permissionMatrix: PERMISSIONS,
     minPasswordLength: MIN_PASSWORD_LENGTH,
@@ -776,6 +795,7 @@ const STATUSES = ['active', 'suspended'];
 adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   const user = db.users.find((u) => u._id === req.params.id);
   if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
+  if (protectSuperAdmin(req, res, user)) return;
 
   const nextRole = req.body?.role && ROLES.includes(req.body.role) ? req.body.role : null;
   if (req.body?.role && !nextRole) {
@@ -784,6 +804,11 @@ adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   const nextStatus = req.body?.status ?? null;
   if (nextStatus && !STATUSES.includes(nextStatus)) {
     return problem(res, 422, 'Unprocessable Entity', `Status must be one of: ${STATUSES.join(', ')}.`);
+  }
+  // The super administrator cannot step down either: the account that can reset
+  // everybody else's password has to stay an active Admin.
+  if (isSuperAdmin(user) && ((nextRole && nextRole !== 'Admin') || (nextStatus && nextStatus !== 'active'))) {
+    return problem(res, 409, 'Conflict', 'Your own account stays an active Admin. Its role and access cannot be changed.');
   }
 
   const losingAdmin =
@@ -815,9 +840,17 @@ adminRouter.patch('/users/:id', requires('admin:users'), async (req, res) => {
   res.json(publicUser(user));
 });
 
-adminRouter.post('/users/:id/reset-password', requires('admin:users'), requireStepUp('Resetting a password'), async (req, res) => {
+// Only the super administrator resets passwords. Any administrator who could
+// would be able to take over any other account, theirs included.
+const superAdminOnly = (req, res, next) =>
+  (isSuperAdmin(req.user) ? next() : problem(res, 403, 'Forbidden', 'You do not have permission to reset passwords.'));
+
+adminRouter.post('/users/:id/reset-password', requires('admin:users'), superAdminOnly, requireStepUp('Resetting a password'), async (req, res) => {
   const user = db.users.find((u) => u._id === req.params.id);
   if (!user) return problem(res, 404, 'Not Found', 'No user with that id.');
+  if (user._id === req.user.sub) {
+    return problem(res, 409, 'Conflict', 'Change your own password from your profile instead.');
+  }
 
   const supplied = str(req.body?.password, { max: 200, field: 'password', required: true });
   if (supplied.problem) return problem(res, 422, 'Unprocessable Entity', supplied.problem);
@@ -860,6 +893,7 @@ adminRouter.delete('/users/:id', requires('admin:users'), requireStepUp('Deletin
   const index = db.users.findIndex((u) => u._id === req.params.id);
   if (index === -1) return problem(res, 404, 'Not Found', 'No user with that id.');
   const user = db.users[index];
+  if (protectSuperAdmin(req, res, user)) return;
 
   if (user._id === req.user.sub) {
     return problem(

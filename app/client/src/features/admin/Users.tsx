@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, KeyRound, LogIn, UserMinus, UserCheck, Trash2 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, auth, stepUp } from '../../lib/api';
 import { ConfirmDialog, Modal, PasswordInput, Skeleton, useToast } from '../../components/ui';
 import { Select } from '../../components/Select';
 import { LIST_PAGE_SIZES, Pagination, usePaged } from '../../components/Pagination';
@@ -18,19 +18,24 @@ interface UserRow {
   google: { email: string; linkedAt: string } | null;
   uploadCount: number;
   activeShareCount: number;
+  /** Only ever present on the super administrator's own row, and only for them. */
+  superAdmin?: boolean;
 }
 
 interface UsersResponse {
   data: UserRow[];
+  /** True only for the super administrator. */
+  canResetPasswords?: boolean;
   roles: Role[];
   permissionMatrix: Record<Role, string[]>;
   minPasswordLength: number;
 }
 
-function usePersonActions(person: UserRow, isSelf: boolean) {
+function usePersonActions(person: UserRow, isSelf: boolean, canResetPasswords: boolean, minLength: number) {
   const [suspending, setSuspending] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -71,6 +76,12 @@ function usePersonActions(person: UserRow, isSelf: boolean) {
 
   const actions: RowAction[] = [
     {
+      label: 'Reset password',
+      icon: <KeyRound size={16} />,
+      hidden: !canResetPasswords || isSelf,
+      onSelect: () => setResetting(true),
+    },
+    {
       label: 'Suspend access',
       icon: <UserMinus size={16} />,
       hidden: suspended,
@@ -96,6 +107,7 @@ function usePersonActions(person: UserRow, isSelf: boolean) {
 
   const dialogs = (
     <>
+      {resetting && <ResetPasswordDialog person={person} minLength={minLength} onClose={() => setResetting(false)} />}
       {suspending && (
         <ConfirmDialog
           title={`Suspend ${person.name}?`}
@@ -159,10 +171,12 @@ function usePersonActions(person: UserRow, isSelf: boolean) {
   return { actions, dialogs };
 }
 
-function PersonRow({ person, roles, isSelf }: { person: UserRow; roles: Role[]; isSelf: boolean }) {
+function PersonRow({
+  person, roles, isSelf, canResetPasswords, minLength,
+}: { person: UserRow; roles: Role[]; isSelf: boolean; canResetPasswords: boolean; minLength: number }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const { actions, dialogs } = usePersonActions(person, isSelf);
+  const { actions, dialogs } = usePersonActions(person, isSelf, canResetPasswords, minLength);
 
   const changeRole = useMutation({
     mutationFn: (role: string) => api(`/admin/users/${person._id}`, { method: 'PATCH', body: { role } }),
@@ -184,6 +198,7 @@ function PersonRow({ person, roles, isSelf }: { person: UserRow; roles: Role[]; 
           <span className="row-title">
             {person.name}
             {isSelf && <span className="tag" style={{ marginLeft: 8 }}>you</span>}
+            {person.superAdmin && <span className="tag" style={{ marginLeft: 6 }}>super admin</span>}
           </span>
           <span className="row-sub">{person.email}</span>
           {suspended && (
@@ -209,6 +224,7 @@ function PersonRow({ person, roles, isSelf }: { person: UserRow; roles: Role[]; 
               onChange={(role) => changeRole.mutate(role)}
               options={roles.map((r) => ({ value: r, label: r }))}
               ariaLabel={`Role for ${person.name}`}
+              disabled={person.superAdmin}
             />
             <span className="t-small">Added {date(person.createdAt)}</span>
           </div>
@@ -243,7 +259,14 @@ export function Users() {
 
       <div className="panel rows">
         {paged.rows.map((u) => (
-          <PersonRow key={u._id} person={u} roles={data.roles} isSelf={u._id === me?._id} />
+          <PersonRow
+            key={u._id}
+            person={u}
+            roles={data.roles}
+            isSelf={u._id === me?._id}
+            canResetPasswords={Boolean(data.canResetPasswords)}
+            minLength={data.minPasswordLength ?? 8}
+          />
         ))}
       </div>
       <Pagination {...paged.bind} noun="person" nounPlural="people" sizes={LIST_PAGE_SIZES} />
@@ -256,6 +279,95 @@ export function Users() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Sets a new password on somebody else's account. Offered to the super
+ * administrator only — the server refuses anybody else. The new password is good
+ * for one sign-in: they must choose their own before anything else opens.
+ */
+function ResetPasswordDialog({ person, minLength, onClose }: { person: UserRow; minLength: number; onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const [own, setOwn] = useState('');
+  const [wrong, setWrong] = useState(false);
+  const needsOwn = !auth.hasStepUp();
+  const qc = useQueryClient();
+  const toast = useToast();
+
+  const reset = useMutation({
+    mutationFn: async () => {
+      if (needsOwn && !(await stepUp(own))) {
+        setWrong(true);
+        setOwn('');
+        return null;
+      }
+      return api(`/admin/users/${person._id}/reset-password`, { method: 'POST', body: { password } });
+    },
+    onSuccess: (done) => {
+      if (!done) return;
+      qc.invalidateQueries();
+      toast({
+        kind: 'ok',
+        title: `${person.name}’s password was reset`,
+        body: 'They were signed out everywhere. Give them the new password over a private channel — they choose one of their own at their next sign-in.',
+      });
+      onClose();
+    },
+    onError: (e: Error) => toast({ kind: 'danger', title: 'The password was not reset', body: e.message }),
+  });
+
+  const ready = password.length >= minLength && (!needsOwn || own.length > 0);
+
+  return (
+    <Modal
+      title={`Reset the password for ${person.name}?`}
+      onClose={onClose}
+      width="narrow"
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={!ready || reset.isPending} onClick={() => reset.mutate()}>
+            {reset.isPending ? 'Resetting…' : 'Reset password'}
+          </button>
+        </>
+      }
+    >
+      <div className="stack-3">
+        <div className="t-body">
+          Every session on <b>{person.email}</b> ends straight away. The password below works for one
+          sign-in only.
+        </div>
+        <div className="field">
+          <label className="label" htmlFor="reset-new-password">New password</label>
+          <PasswordInput
+            id="reset-new-password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            placeholder={`At least ${minLength} characters`}
+          />
+        </div>
+        {needsOwn && (
+          <div className="field">
+            <label className="label" htmlFor="reset-own-password">Your password</label>
+            <PasswordInput
+              id="reset-own-password"
+              value={own}
+              onChange={(v) => { setOwn(v); setWrong(false); }}
+              autoComplete="current-password"
+              placeholder="The password for your own account"
+              invalid={wrong}
+            />
+            <div className="t-meta" style={{ marginTop: 6 }}>
+              {wrong
+                ? <span style={{ color: 'var(--danger, #c0392b)' }}>That is not the password for this account.</span>
+                : 'Asked because this takes over somebody else’s account — a signed-in tab is not enough on its own.'}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

@@ -19,6 +19,8 @@ export interface User {
   google?: { linkedAt: string; email: string; lastSignInAt: string | null } | null;
   googleSignInAvailable?: boolean;
   canSetPasswordWithoutCurrent?: boolean;
+  /** Present only on the super administrator's own profile. */
+  superAdmin?: boolean;
 }
 
 export interface AuthProviders {

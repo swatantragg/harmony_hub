@@ -9,6 +9,7 @@ import {
   PASSWORD_HISTORY_DEPTH, PASSWORD_MAX_AGE_DAYS, REFRESH_TTL_SEC, isWeakPassword,
 } from '../config.js';
 import { PERMISSIONS, normaliseRole } from '../catalogue.js';
+import { isSuperAdmin } from '../services/accounts.js';
 import { authenticate, authenticatePending, mintStepUpTicket, problem } from '../middleware/auth.js';
 import { record, notify } from '../services/audit.js';
 import * as sessions from '../services/sessions.js';
@@ -41,6 +42,8 @@ const publicUser = (u) => ({
     : null,
   googleSignInAvailable: GOOGLE_SIGNIN_CONFIGURED,
   canSetPasswordWithoutCurrent: googleVerifiedRecently(u),
+  // Only ever describes the account it is sent to; see services/accounts.js.
+  ...(isSuperAdmin(u) ? { superAdmin: true } : {}),
 });
 
 const signAccess = (user, day = otp.dayKey()) => signJwt({

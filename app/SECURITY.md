@@ -73,6 +73,20 @@ Permissions are resolved from the role on the server on every request. They are 
 carried in a token, and the client's copy exists only so a button is not shown that the
 server would refuse.
 
+**The super administrator** is the founding account, `ADMIN_EMAIL`. It is not a third role:
+its stored role is Admin, and to every other administrator — the People list, the activity
+log, its exports — it is one more Admin. Only it is told otherwise. What sets it apart is
+enforced in `routes/admin.js`:
+
+- Nobody else can delete it, change its role, suspend it or reset its password. They get an
+  ordinary "You do not have permission" refusal that does not name it.
+- It alone can reset another account's password (People → ⋯ → Reset password, behind a
+  password re-check). An administrator who could reset passwords could take over any account.
+- It cannot demote, suspend or delete itself, and boot recreates and re-promotes it anyway.
+
+There is exactly one, because it is an address in the configuration and an account's email
+cannot be changed. Moving it to somebody else means changing `ADMIN_EMAIL` and restarting.
+
 ### The byte path (`/api/files/:token`)
 
 This is the only route that streams file contents, and it answers on the same origin as
@@ -383,7 +397,7 @@ If several leaked, rotate `FILE_TOKEN_SECRET` and restart: every URL in circulat
 
 **An account is compromised.** Admin → People → suspend. Every access token, every refresh
 session and every file ticket bound to that account stops working on the next request. Then
-reset the password (Admin → Reset password), which puts the account back into the handover
+the super administrator resets the password (People → ⋯ → Reset password), which puts the account back into the handover
 state. Read its rows in the activity log — filter by person — paying attention to
 `ASSET_PURGE`, `SHARE_CREATE` and `ASSET_DOWNLOAD`.
 

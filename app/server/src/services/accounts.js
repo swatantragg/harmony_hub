@@ -3,6 +3,22 @@ import { hashPassword, verifyPassword } from '../util/crypto.js';
 import { FOUNDING_ADMIN, SEED_PASSWORD, isWeakPassword } from '../config.js';
 import { ROLES, normaliseRole } from '../catalogue.js';
 
+/**
+ * The super administrator: the founding account, ADMIN_EMAIL. There is exactly
+ * one, because it is an address in the configuration rather than a role anybody
+ * can be given — and an account's email cannot be changed, so no other account
+ * can become it.
+ *
+ * Its stored role is plain Admin, so to every other administrator it is one more
+ * Admin: the people list, the activity log and its exports all say so. Only it
+ * is told otherwise (`superAdmin` on its own profile). What sets it apart is
+ * enforced in routes/admin.js: nobody else may delete it, change its role,
+ * suspend it or reset its password, and only it may reset anybody's password.
+ * ensureAccounts below recreates and re-promotes it at every boot regardless.
+ */
+export const isSuperAdmin = (user) =>
+  typeof user?.email === 'string' && user.email.toLowerCase() === FOUNDING_ADMIN.email;
+
 export async function ensureAccounts({ log = console.log } = {}) {
   const changes = [];
 
