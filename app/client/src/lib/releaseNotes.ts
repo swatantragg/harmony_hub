@@ -17,6 +17,15 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V6.0.1',
+    date: '2026-10-27',
+    headline: 'Opening Duplicates no longer makes the whole app unavailable.',
+    highlights: [
+      'Fixed: opening Duplicates could make the app say the server was not available, for everybody, for as long as the check ran. Finding similar files compared every file with every other one — about twenty seconds for a library this size, with nothing else answered meanwhile.',
+      'Duplicates now opens in about a quarter of a second, and finds exactly the same groups as before.',
+    ],
+  },
+  {
     version: 'SK-V6.0.0',
     date: '2026-10-27',
     headline: 'Folders open instantly, and the crashes caused by the server running out of memory are fixed.',

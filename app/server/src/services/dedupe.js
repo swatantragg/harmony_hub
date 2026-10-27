@@ -30,8 +30,18 @@ export function normaliseName(name) {
     .trim();
 }
 
-export const nameTokens = (name) =>
-  new Set(normaliseName(name).split(' ').filter((t) => t.length > 1 && !NOISE.has(t)));
+// Set for the length of one scan(), which asks for the same few thousand names'
+// tokens millions of times — six regex passes each, every time, was most of the
+// cost of a scan. The sets handed out are shared, so callers only read them.
+let tokenMemo = null;
+
+export const nameTokens = (name) => {
+  const memo = tokenMemo?.get(name);
+  if (memo) return memo;
+  const tokens = new Set(normaliseName(name).split(' ').filter((t) => t.length > 1 && !NOISE.has(t)));
+  tokenMemo?.set(name, tokens);
+  return tokens;
+};
 
 function identitiesConflict(a, b) {
   const A = nameTokens(a);
@@ -130,7 +140,16 @@ const groupOf = (kind, confidence, reason, rows, extra = {}) => {
 };
 
 
-export function scan({ level = 'all', family = null, minSizeBytes = 0 } = {}) {
+export function scan(options = {}) {
+  tokenMemo = new Map();
+  try {
+    return scanLibrary(options);
+  } finally {
+    tokenMemo = null;
+  }
+}
+
+function scanLibrary({ level = 'all', family = null, minSizeBytes = 0 }) {
   const t0 = Date.now();
   const rows = allAssets().filter(({ asset }) => {
     if (asset.deletedAt) return false;
@@ -184,16 +203,14 @@ export function scan({ level = 'all', family = null, minSizeBytes = 0 } = {}) {
   for (const family of byFamily.values()) {
     const ordered = [...family].sort((a, b) => (durationOf(a.asset) ?? 0) - (durationOf(b.asset) ?? 0));
     const used = new Set();
+    const partnersOf = partnerFinder(ordered);
 
     for (let i = 0; i < ordered.length; i += 1) {
       if (used.has(i)) continue;
       const cluster = [ordered[i]];
-      const anchor = durationOf(ordered[i].asset);
 
-      for (let j = i + 1; j < ordered.length; j += 1) {
+      for (const j of partnersOf(i)) {
         if (used.has(j)) continue;
-        const other = durationOf(ordered[j].asset);
-        if (anchor != null && other != null && other - anchor > DEDUPE.durationToleranceSec) break;
         if (sameMedia(ordered[i], ordered[j])) { cluster.push(ordered[j]); used.add(j); }
       }
 
@@ -297,6 +314,96 @@ export function scan({ level = 'all', family = null, minSizeBytes = 0 } = {}) {
 
 export const durationOf = (asset) => asset.durationSec ?? asset.drive?.durationSec ?? null;
 
+// First index in an ascending array whose value is >= target.
+function lowerBound(values, target) {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (values[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * For one family's rows, sorted by duration: given a row, the later rows that
+ * sameMedia could accept for it, in order.
+ *
+ * This used to be every later row. A file with no duration — every audio file
+ * Drive adopted, and every image and document — never reached the loop's early
+ * exit, so a family of n such files cost n²/2 comparisons: about twenty seconds
+ * on one thread for a library this size, long enough for the container's health
+ * check to give up on the server. Left out now are only rows sameMedia refuses
+ * on sight: audio and video without a running time, images whose dimensions
+ * differ, anything else whose size is out of tolerance — and, as before, rows
+ * past the end of the anchor's duration window.
+ */
+function partnerFinder(ordered) {
+  const n = ordered.length;
+  const durations = ordered.map((row) => durationOf(row.asset));
+  // The old loop stopped at the first later row with `other - anchor > tolerance`.
+  // Rows are sorted on duration, so that is a binary search.
+  const windowEnd = (i) => {
+    const anchor = durations[i];
+    if (anchor == null) return n;
+    let lo = i + 1;
+    let hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((durations[mid] ?? 0) - anchor > DEDUPE.durationToleranceSec) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  };
+  const family = ordered[0]?.asset.family;
+
+  if (family === 'Video' || family === 'Audio') {
+    return (i) => {
+      if (durations[i] == null) return [];
+      const out = [];
+      for (let j = i + 1, end = windowEnd(i); j < end; j += 1) if (durations[j] != null) out.push(j);
+      return out;
+    };
+  }
+
+  if (family === 'Image') {
+    const byDimensions = new Map();
+    ordered.forEach((row, j) => {
+      const dims = row.asset.dimensions;
+      if (!dims) return;
+      if (!byDimensions.has(dims)) byDimensions.set(dims, []);
+      byDimensions.get(dims).push(j);
+    });
+    return (i) => {
+      const dims = ordered[i].asset.dimensions;
+      if (!dims) return [];
+      const end = windowEnd(i);
+      return byDimensions.get(dims).filter((j) => j > i && j < end);
+    };
+  }
+
+  // Everything else matches on size first: |a - b| / max(a, b) <= tolerance, so
+  // b lies between a(1 - t) and a / (1 - t). A byte either side absorbs rounding;
+  // sameMedia makes the exact test.
+  const bySize = [];
+  ordered.forEach((row, j) => { const size = row.asset.drive?.sizeBytes; if (size) bySize.push([size, j]); });
+  bySize.sort((a, b) => a[0] - b[0]);
+  const sizes = bySize.map(([size]) => size);
+  const t = DEDUPE.sizeTolerance;
+  return (i) => {
+    const size = ordered[i].asset.drive?.sizeBytes;
+    if (!size) return [];
+    const end = windowEnd(i);
+    const out = [];
+    for (let k = lowerBound(sizes, size * (1 - t) - 1); k < sizes.length && sizes[k] <= size / (1 - t) + 1; k += 1) {
+      const j = bySize[k][1];
+      if (j > i && j < end) out.push(j);
+    }
+    return out.sort((a, b) => a - b);
+  };
+}
+
 function sameMedia(a, b) {
   const A = a.asset;
   const B = b.asset;
@@ -333,9 +440,36 @@ function sameMedia(a, b) {
     && nameSimilarity(A.displayName, B.displayName) >= 0.6;
 }
 
+// Each stored 64-bit frame hash as two 32-bit halves, parsed once per hash set
+// rather than once per comparison — the perceptual tier compares every hashed
+// file with every other.
+const parsedFrames = new WeakMap();
+const halvesOf = (perceptual) => {
+  let halves = parsedFrames.get(perceptual);
+  if (!halves) {
+    halves = perceptual.frames.map((hex) => {
+      const s = String(hex).padStart(16, '0');
+      return [parseInt(s.slice(0, 8), 16), parseInt(s.slice(8), 16)];
+    });
+    parsedFrames.set(perceptual, halves);
+  }
+  return halves;
+};
+
+const popcount32 = (x) => {
+  let v = x - ((x >>> 1) & 0x55555555);
+  v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+  return (((v + (v >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+};
+
 export function perceptualDistance(a, b) {
   if (!a?.frames?.length || !b?.frames?.length) return null;
-  const distances = a.frames.map((fa) => Math.min(...b.frames.map((fb) => hamming(fa, fb))));
+  const B = halvesOf(b);
+  const distances = halvesOf(a).map(([hiA, loA]) => {
+    let best = Infinity;
+    for (const [hiB, loB] of B) best = Math.min(best, popcount32(hiA ^ hiB) + popcount32(loA ^ loB));
+    return best;
+  });
   distances.sort((x, y) => x - y);
   return distances[Math.floor(distances.length / 2)];
 }

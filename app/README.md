@@ -884,6 +884,19 @@ Two things, both fixed:
 `GET /api/admin/health` reports `memory` (`rssMB`, `heapUsedMB`, `heapLimitMB`) — the number
 to watch before deciding the server needs to be bigger.
 
+### What made the server "not available" without crashing it
+
+The container's health check gives up after 5 s, three times running, and the proxy in front
+then answers `503 no available server` — the process is still up, just never asked. Anything
+that holds the one thread that long does it. The duplicate scan did: its "same media" tier
+compared every file with every later one in its family, and files with no running time (all
+audio adopted from Drive, all images and documents) never reached its early exit. On a library
+of this shape `GET /api/dedupe/scan?level=all` — what the Duplicates page opens with — took
+**21 s** and failed six health checks in a row. It now compares only files that could match
+(same dimensions, sizes within tolerance, running times within the window), reads each name's
+tokens once per scan, and compares perceptual hashes as 32-bit integers: **0.25 s**, identical
+groups. `test/dedupe.test.mjs` holds both halves.
+
 Measured on a synthetic library of the same shape (17,941 assets, 2,179 folders):
 
 | | Before | After |
