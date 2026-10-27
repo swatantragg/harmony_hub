@@ -111,6 +111,7 @@ const Env = z.object({
   DRIVE_SYNC_WAIT_MS: int(6000, 0),
   DRIVE_SYNC_FIRST_RUN_SEC: int(20, 0),
   DRIVE_SYNC_INCREMENTAL: bool(true),
+  DRIVE_SYNC_FULL_EVERY_HOURS: int(24, 1),
   DRIVE_SYNC_MAX_PROBES: int(200, 0),
   // A page load used to block on the Drive sync it triggered. That is a Drive
   // round trip in front of a MongoDB read, and it gets slower as the library
@@ -583,6 +584,10 @@ export const DRIVE_SYNC = {
   waitMs: env.DRIVE_SYNC_WAIT_MS,
   firstRunDelayMs: env.DRIVE_SYNC_FIRST_RUN_SEC * 1000,
   incremental: env.DRIVE_SYNC_INCREMENTAL,
+  // How often the whole tree is walked even though the changes feed is working.
+  // The feed misses nothing while the token holds, so this is a backstop — and a
+  // restart is no longer a reason to walk, now that the last walk is remembered.
+  fullEveryMs: env.DRIVE_SYNC_FULL_EVERY_HOURS * 3_600_000,
   // Ceiling on the files.get calls one run will spend confirming that a file the
   // walk did not see is genuinely gone rather than merely moved out of the tree.
   maxProbes: env.DRIVE_SYNC_MAX_PROBES,

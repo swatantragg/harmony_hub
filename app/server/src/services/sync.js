@@ -3,8 +3,9 @@ import * as storage from './storage.js';
 import { DRIVE_SYNC, HEAD_CONCURRENCY, ROOTS } from '../config.js';
 import { uuid } from '../util/crypto.js';
 import { allTypes, resolveFamily } from './vocabulary.js';
-import { FOLDER_MIME, isNotFound, listChanges, mapLimit, startPageToken } from '../storage/drive.js';
+import { FOLDER_MIME, LISTING_FIELDS, isNotFound, listChanges, mapLimit, startPageToken } from '../storage/drive.js';
 import { notify, record } from './audit.js';
+import { setAvailability } from './availability.js';
 import { arrivedFromDrive } from './review.js';
 import { isTestLeftover } from './leftovers.js';
 
@@ -81,6 +82,10 @@ const state = {
 let inFlight = null;
 let changeToken = null;
 let tokenLoaded = false;
+// When the whole tree was last walked. Kept in MongoDB beside the change token:
+// held only in memory, every restart looked like "never", and every boot walked
+// the whole Drive.
+let lastFullAt = null;
 
 export const lastSyncAt = () => state.lastFinishedAt;
 
@@ -94,6 +99,7 @@ export function syncState() {
     staleAfterSec: Math.round(DRIVE_SYNC.staleMs / 1000),
     enabled: DRIVE_SYNC.enabled,
     incremental: DRIVE_SYNC.incremental && Boolean(changeToken),
+    lastFullAt,
     driveReady: storage.driveReady(),
     ageSec: state.lastFinishedAt
       ? Math.round((Date.now() - Date.parse(state.lastFinishedAt)) / 1000)
@@ -104,14 +110,22 @@ export function syncState() {
 const isStale = () =>
   !state.lastFinishedAt || Date.now() - Date.parse(state.lastFinishedAt) > DRIVE_SYNC.staleMs;
 
+const fullWalkDue = () =>
+  !lastFullAt || Date.now() - Date.parse(lastFullAt) > DRIVE_SYNC.fullEveryMs;
+
 /**
  * Runs a Drive → catalogue sync, or joins the one already running.
- * `mode` is 'auto' (incremental when a change token is held, full otherwise),
- * 'full' (always walk the whole tree) or 'incremental'.
+ * `mode` is 'auto' (incremental when a change token is held and the last full
+ * walk is recent, full otherwise), 'full' (always walk the whole tree) or
+ * 'incremental'.
+ *
+ * `inventory` hands over a listing of the tree somebody else has just made —
+ * reconciliation lists it every night — so it is not walked twice. It carries
+ * the change token taken before that listing began, as `token`.
  */
-export function syncDrive({ userId = 'system', trigger = 'manual', mode = 'auto' } = {}) {
+export function syncDrive({ userId = 'system', trigger = 'manual', mode = 'auto', inventory = null } = {}) {
   if (inFlight) return inFlight;
-  inFlight = run({ userId, trigger, mode }).finally(() => { inFlight = null; });
+  inFlight = run({ userId, trigger, mode, inventory }).finally(() => { inFlight = null; });
   return inFlight;
 }
 
@@ -169,6 +183,7 @@ async function loadToken() {
   tokenLoaded = true;
   const meta = await readMeta().catch(() => null);
   changeToken = meta?.driveChangeToken ?? null;
+  lastFullAt = meta?.driveFullSyncAt ?? null;
 }
 
 async function rememberToken(token) {
@@ -185,14 +200,20 @@ async function rememberToken(token) {
  * magnitude cheaper but tells us nothing about untouched files — so `partial`
  * marks the difference and the caller skips the passes that need a whole tree.
  */
-async function survey(mode) {
+async function survey(mode, given) {
   await loadToken();
+
+  if (given) {
+    await rememberToken(given.token);
+    return { files: given.files, folders: given.folders, removed: new Set(), pages: given.pages, partial: false };
+  }
+
   const wantIncremental = mode === 'incremental'
-    || (mode === 'auto' && DRIVE_SYNC.incremental && Boolean(changeToken) && Boolean(state.lastFinishedAt));
+    || (mode === 'auto' && DRIVE_SYNC.incremental && Boolean(changeToken) && !fullWalkDue());
 
   if (wantIncremental) {
     try {
-      const { changes, startPageToken: next, pages } = await listChanges({ pageToken: changeToken });
+      const { changes, startPageToken: next, pages } = await listChanges({ pageToken: changeToken, fields: LISTING_FIELDS });
       await rememberToken(next);
       const files = [];
       const folders = [];
@@ -210,8 +231,11 @@ async function survey(mode) {
     }
   }
 
-  const { files, folders, pages } = await storage.inventory({ includeTrashed: true });
+  // The token is taken before the walk, not after it: a change made while the
+  // tree is being listed is then replayed by the next incremental pass, instead
+  // of landing after the listing and before the token, where neither sees it.
   const token = await startPageToken().catch(() => null);
+  const { files, folders, pages } = await storage.inventory({ includeTrashed: true, fields: LISTING_FIELDS });
   await rememberToken(token);
   return { files, folders, removed: new Set(), pages, partial: false };
 }
@@ -253,7 +277,7 @@ function quarantineSubtree(folders) {
   return quarantined;
 }
 
-async function run({ userId, trigger, mode }) {
+async function run({ userId, trigger, mode, inventory }) {
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
   state.lastStartedAt = startedAt;
@@ -269,7 +293,7 @@ async function run({ userId, trigger, mode }) {
 
   let survey_;
   try {
-    survey_ = await survey(mode);
+    survey_ = await survey(mode, inventory);
   } catch (err) {
     state.lastError = err.message;
     state.lastFinishedAt = new Date().toISOString();
@@ -402,8 +426,11 @@ async function run({ userId, trigger, mode }) {
     if (asset.drive?.fileId) tracked.set(asset.drive.fileId, { asset, song: null });
   }
 
-  const folderNameOf = (folderId) =>
-    (folderId ? db.folders.find((f) => f._id === folderId)?.name : null) ?? null;
+  // Asked two or three times per file. A scan of the folder list each time was
+  // ~100M comparisons per full walk at 18k files, with nothing else answered.
+  const folderNames = new Map();
+  for (const f of db.folders) if (!folderNames.has(f._id)) folderNames.set(f._id, f.name);
+  const folderNameOf = (folderId) => (folderId ? folderNames.get(folderId) : null) ?? null;
   const folderIdForParent = (parentDriveId) =>
     parentDriveId && parentDriveId !== ROOTS.assets
       ? folderByDriveId.get(parentDriveId)?._id ?? null
@@ -502,6 +529,11 @@ async function run({ userId, trigger, mode }) {
   const changed = countChanges(counts);
   if (changed > 0) persist();
 
+  if (!partial) {
+    lastFullAt = startedAt;
+    await writeMeta({ driveFullSyncAt: startedAt }).catch(() => null);
+  }
+
   state.lastError = null;
   state.lastCounts = counts;
   state.lastChanged = changed;
@@ -593,10 +625,10 @@ function mirrorAsset(asset, file, { now, counts, folderIdForParent, folderNameOf
   asset.mimeType = asset.drive.mimeType;
   if (asset.drive.durationSec != null) asset.durationSec = asset.drive.durationSec;
   if (asset.drive.dimensions) asset.dimensions = asset.drive.dimensions;
-  asset.availability = {
+  setAvailability(asset, {
     status: 'AVAILABLE', lastCheckedAt: now, lastVerifiedAt: now,
     checkMethod: 'DRIVE_SYNC', detail: null,
-  };
+  });
 }
 
 // Everything except the two "we deliberately left this alone" tallies.

@@ -1,5 +1,5 @@
 import express from 'express';
-import { db, persist, assetsInFolder, assetsUnderFolder, assetContext } from '../db.js';
+import { db, persist, allAssets, assetsInFolder, assetsUnderFolder, assetContext } from '../db.js';
 import { authenticate, requires, problem } from '../middleware/auth.js';
 import { shape } from '../services/assets.js';
 import { awaitingReview, markReviewed } from '../services/review.js';
@@ -17,8 +17,62 @@ foldersRouter.use(authenticate);
 /** Where a folder's tags go when it is edited — see tagFilesLikeFolder. */
 const TAG_SCOPES = ['folder', 'files', 'tree'];
 
-const stats = (folder) => {
-  const rows = assetsInFolder(folder._id);
+/**
+ * The catalogue grouped by folder, built in one pass for a whole response.
+ *
+ * `assetsInFolder` and `assetsUnderFolder` each rebuild the joined asset list
+ * from scratch. Every listing here called them once or twice *per folder*: at
+ * 2.2k folders over 18k assets that was ~4,000 passes and tens of millions of
+ * short-lived rows for one request — seconds of blocked event loop, and the
+ * garbage that ran the server out of memory when a few people opened Folders.
+ */
+function folderIndex() {
+  const assets = new Map();
+  for (const row of allAssets()) {
+    const id = row.asset.folderId;
+    if (!id) continue;
+    const rows = assets.get(id);
+    if (rows) rows.push(row);
+    else assets.set(id, [row]);
+  }
+
+  const byId = new Map();
+  const children = new Map();
+  for (const folder of db.folders) {
+    // First match wins, as `db.folders.find` did.
+    if (!byId.has(folder._id)) byId.set(folder._id, folder);
+    if (folder.deletedAt) continue;
+    const key = folder.parentId ?? null;
+    const siblings = children.get(key);
+    if (siblings) siblings.push(folder);
+    else children.set(key, [folder]);
+  }
+
+  const inFolder = (folderId) => assets.get(folderId) ?? [];
+  const childrenOf = (folderId) => children.get(folderId) ?? [];
+
+  /** Same rows as assetsUnderFolder, in folder order rather than catalogue order. */
+  const under = (folderId) => {
+    const out = [];
+    const seen = new Set([folderId]);
+    const queue = [folderId];
+    while (queue.length) {
+      const id = queue.pop();
+      for (const row of inFolder(id)) out.push(row);
+      for (const child of childrenOf(id)) {
+        if (seen.has(child._id)) continue;
+        seen.add(child._id);
+        queue.push(child._id);
+      }
+    }
+    return out;
+  };
+
+  return { byId, inFolder, childrenOf, under };
+}
+
+const stats = (folder, index) => {
+  const rows = index.inFolder(folder._id);
   const byFamily = {};
   let bytes = 0;
   let newFiles = 0;
@@ -43,42 +97,43 @@ const stats = (folder) => {
 
 const childrenOf = (folderId) => db.folders.filter((f) => !f.deletedAt && f.parentId === folderId);
 
-const deepStats = (folder) => {
-  const rows = assetsUnderFolder(folder._id);
+const deepStats = (folder, index) => {
+  const rows = index.under(folder._id);
   return {
     totalAssetCount: rows.length,
     totalBytesDeep: rows.reduce((n, { asset }) => n + (asset.drive?.sizeBytes ?? 0), 0),
   };
 };
 
-const decorate = (folder) => {
+// Pass one index to every folder in a listing; the default is for one folder.
+const decorate = (folder, index = folderIndex()) => {
   const song = folder.songId ? db.songs.find((s) => s._id === folder.songId) : null;
   const artist = folder.artistId
     ? db.artists.find((a) => a._id === folder.artistId)
     : song
       ? db.artists.find((a) => a._id === song.artistId)
       : null;
-  const parent = folder.parentId ? db.folders.find((f) => f._id === folder.parentId) : null;
+  const parent = folder.parentId ? index.byId.get(folder.parentId) : null;
   return {
     ...folder,
     songTitle: song?.title ?? null,
     artistName: artist?.name ?? null,
     parentName: parent?.name ?? null,
-    subfolderCount: childrenOf(folder._id).length,
+    subfolderCount: index.childrenOf(folder._id).length,
     createdByName: db.users.find((u) => u._id === folder.createdBy)?.name ?? 'Unknown',
     awaitingReview: awaitingReview(folder),
-    ...stats(folder),
-    ...deepStats(folder),
+    ...stats(folder, index),
+    ...deepStats(folder, index),
   };
 };
 
-function ancestry(folderId) {
+function ancestry(folderId, byId = null) {
   const chain = [];
   let cursor = folderId;
   const guard = new Set();
   while (cursor && !guard.has(cursor)) {
     guard.add(cursor);
-    const folder = db.folders.find((f) => f._id === cursor);
+    const folder = byId ? byId.get(cursor) : db.folders.find((f) => f._id === cursor);
     if (!folder) break;
     chain.unshift({ _id: folder._id, name: folder.name });
     cursor = folder.parentId;
@@ -102,6 +157,7 @@ foldersRouter.get('/', (req, res) => {
   const tags = String(req.query.tags || '').split(',').filter(Boolean);
   const parentId = req.query.parentId === 'root' ? null : req.query.parentId;
   const pendingOnly = req.query.review === 'pending';
+  const index = folderIndex();
 
   const rows = db.folders
     .filter((f) => !f.deletedAt)
@@ -109,7 +165,7 @@ foldersRouter.get('/', (req, res) => {
     .filter((f) => (parentId === undefined ? true : (f.parentId ?? null) === (parentId ?? null)))
     .filter((f) => !q || `${f.name} ${f.description} ${f.tags.join(' ')}`.toLowerCase().includes(q))
     .filter((f) => tags.length === 0 || tags.every((t) => f.tags.includes(t)))
-    .map(decorate)
+    .map((f) => decorate(f, index))
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   res.json({ data: rows, total: rows.length });
 });
@@ -117,13 +173,14 @@ foldersRouter.get('/', (req, res) => {
 foldersRouter.get('/:id', (req, res) => {
   const folder = db.folders.find((f) => f._id === req.params.id && !f.deletedAt);
   if (!folder) return problem(res, 404, 'Not Found', 'No folder with that id.');
-  const assets = assetsInFolder(folder._id).map(shape);
+  const index = folderIndex();
+  const assets = index.inFolder(folder._id).map(shape);
   const byFamily = {};
   for (const a of assets) (byFamily[a.family] ??= []).push(a);
   res.json({
-    ...decorate(folder),
-    breadcrumb: ancestry(folder._id),
-    subfolders: childrenOf(folder._id).map(decorate),
+    ...decorate(folder, index),
+    breadcrumb: ancestry(folder._id, index.byId),
+    subfolders: index.childrenOf(folder._id).map((f) => decorate(f, index)),
     assets,
     assetsByFamily: byFamily,
   });
@@ -434,30 +491,33 @@ foldersRouter.post('/:id/assets', requires('asset:edit'), async (req, res) => {
 });
 
 foldersRouter.get('/lookup/options', (_req, res) => {
-  const depthOf = (folder) => ancestry(folder._id).length - 1;
+  const index = folderIndex();
   res.json(
     db.folders
       .filter((f) => !f.deletedAt)
-      .map((f) => ({
-        _id: f._id,
-        name: f.name,
-        path: ancestry(f._id).map((a) => a.name).join(' / '),
-        depth: depthOf(f),
-        assetCount: assetsInFolder(f._id).length,
-      }))
+      .map((f) => {
+        const chain = ancestry(f._id, index.byId);
+        return {
+          _id: f._id,
+          name: f.name,
+          path: chain.map((a) => a.name).join(' / '),
+          depth: chain.length - 1,
+          assetCount: index.inFolder(f._id).length,
+        };
+      })
       .sort((a, b) => a.path.localeCompare(b.path)),
   );
 });
 
 foldersRouter.get('/lookup/tree', (_req, res) => {
+  const index = folderIndex();
   const build = (parentId) =>
-    db.folders
-      .filter((f) => !f.deletedAt && (f.parentId ?? null) === parentId)
+    [...index.childrenOf(parentId)]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((f) => ({
         _id: f._id,
         name: f.name,
-        assetCount: assetsInFolder(f._id).length,
+        assetCount: index.inFolder(f._id).length,
         driveWebViewLink: f.driveWebViewLink ?? null,
         children: build(f._id),
       }));

@@ -10,6 +10,7 @@ import {
   DRIVE_WHOLE_DRIVE, FOLDER_ROLES, HEAD_CONCURRENCY, INLINE_MIME, ORIGIN, ROOTS, TRASH_DAYS, TTL,
 } from '../config.js';
 import { mintFileToken } from './signing.js';
+import { STALE_AFTER_MS } from './availability.js';
 import crypto from 'node:crypto';
 import { models } from '../db/models.js';
 
@@ -193,10 +194,30 @@ const SIGNATURES = [
   { magic: [0x23, 0x21], verdict: 'script' },
 ];
 
+async function firstBytes(res, limit) {
+  const reader = res.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks = [];
+  let size = 0;
+  try {
+    while (size < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).subarray(0, limit);
+}
+
 export async function sniffBytes(fileId) {
   try {
     const res = await downloadResponse(fileId, { range: 'bytes=0-511', signal: AbortSignal.timeout(10_000) });
-    const buffer = Buffer.from(await res.arrayBuffer());
+    // Read the head off the stream rather than `arrayBuffer()`: if Range is ever
+    // not honoured, that would buffer the whole upload — up to tens of GB — here.
+    const buffer = await firstBytes(res, 512);
     let start = 0;
     while (start < buffer.length && [0x20, 0x09, 0x0a, 0x0d, 0xef, 0xbb, 0xbf].includes(buffer[start])) start += 1;
     const head = buffer.subarray(start);
@@ -344,7 +365,7 @@ export async function listFolder(parentId, { includeTrashed = false } = {}) {
   return files;
 }
 
-export async function inventory({ includeTrashed = true, onPage } = {}) {
+export async function inventory({ includeTrashed = true, onPage, fields = FILE_FIELDS } = {}) {
   const seen = new Map();
   const folders = new Map();
   let pages = 0;
@@ -361,6 +382,7 @@ export async function inventory({ includeTrashed = true, onPage } = {}) {
       const parentClause = slice.map((id) => `'${escapeQuery(id)}' in parents`).join(' or ');
       const { files, pages: p } = await listAll({
         q: includeTrashed ? `(${parentClause})` : `(${parentClause}) and trashed = false`,
+        fields,
         onPage,
       });
       pages += p;
@@ -487,7 +509,7 @@ export function staleness(asset) {
   const at = asset.availability?.lastCheckedAt;
   if (!at) return { stale: true, ageHours: null };
   const ageHours = (Date.now() - Date.parse(at)) / 3_600_000;
-  return { stale: ageHours > 24, ageHours };
+  return { stale: ageHours > STALE_AFTER_MS / 3_600_000, ageHours };
 }
 
 export async function syncMetadata(asset, { song, artist, folder, renameFile = true } = {}) {

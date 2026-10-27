@@ -1,1 +1,1 @@
-export const BUILD_TAG = 'SK-V5.3.0';
+export const BUILD_TAG = 'SK-V6.0.0';

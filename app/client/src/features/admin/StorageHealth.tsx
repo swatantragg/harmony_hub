@@ -481,10 +481,13 @@ export function StorageHealth() {
       <section>
         <div className="spread" style={{ marginBottom: 13 }}>
           <h2 className="t-h2 row-tight"><FileWarning size={16} color="var(--ink-3)" /> What the comparison found</h2>
-          <span className="t-small">{open.length} open · {(run?.findings.length ?? 0) - open.length} resolved</span>
+          <span className="t-small">
+            {open.length} open · {(run?.findings.length ?? 0) - open.length} resolved
+            {(run?.findingsOmitted ?? 0) > 0 && <> · {run?.findingsOmitted} more, least severe, not listed</>}
+          </span>
         </div>
 
-        {open.length === 0 ? (
+        {open.length === 0 && !run?.findingsOmitted ? (
           <EmptyState
             icon={<ShieldCheck size={26} />}
             title="No disagreements"

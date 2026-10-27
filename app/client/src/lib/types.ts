@@ -394,6 +394,8 @@ export interface ReconRun {
   readsIssued: number;
   counts: Record<string, number>;
   findings: Finding[];
+  /** Findings beyond the 500 a run stores, least severe first. Counted in `counts`. */
+  findingsOmitted?: number;
   quota: Quota | null;
   ok: boolean;
 }

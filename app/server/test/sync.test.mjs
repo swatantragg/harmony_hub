@@ -40,6 +40,7 @@ mock.module('../src/db.js', {
 mock.module('../src/storage/drive.js', {
   namedExports: {
     FOLDER_MIME,
+    LISTING_FIELDS: 'id,name',
     isNotFound: (e) => e?.status === 404,
     listChanges: async () => { throw new Error('incremental not used in these tests'); },
     startPageToken: async () => 'token-1',
@@ -130,6 +131,15 @@ test('a second run over the same drive changes nothing', async () => {
   assert.equal(out.changed, 0, 'sync is idempotent — no duplicate rows on every poll');
   assert.equal(db.unfiled.length, 2);
   assert.equal(db.folders.length, 2);
+});
+
+test('a walk over an unchanged Drive leaves every row exactly as it was', async () => {
+  // A row that only *looks* changed — a fresher timestamp — is still rewritten
+  // to MongoDB, and a full walk used to make every row look changed.
+  const before = JSON.stringify([db.unfiled, db.folders]);
+  await new Promise((r) => { setTimeout(r, 5); });
+  await syncDrive({ trigger: 'test', mode: 'full' });
+  assert.equal(JSON.stringify([db.unfiled, db.folders]), before);
 });
 
 test('follows a rename and a move made in Drive', async () => {

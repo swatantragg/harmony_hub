@@ -17,6 +17,20 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: 'SK-V6.0.0',
+    date: '2026-10-27',
+    headline: 'Folders open instantly, and the crashes caused by the server running out of memory are fixed.',
+    highlights: [
+      'Fixed: the server could run out of memory and restart, taking everybody’s screen with it. The biggest cause was the folder lists, which went through the whole library once for every folder — at 2,000 folders that took up to 15 seconds a time, and a few people opening Folders at once was enough to bring the server down.',
+      'Folders, the folder pickers on the upload screen and in Move, and the “New” folder list now open in a fraction of a second.',
+      'The server holds a lot less in memory, all the time — about a fifth less on a library this size — so there is room left over when it is busy.',
+      'Files put straight into Google Drive still appear within a couple of minutes. The app no longer re-reads the whole Drive every time it restarts; it asks Drive what changed, and goes through everything once a day, together with the nightly check.',
+      'Fixed: a change saved at the exact moment the library was being written to the database could be lost. It is now always saved.',
+      'Storage health lists the 500 most serious findings of a run, most serious first, and says how many more there are, so one bad night cannot stop the library from saving.',
+      'Finding duplicate videos by their content uses much less memory. It takes longer to run.',
+    ],
+  },
+  {
     version: 'SK-V5.3.0',
     date: '2026-10-05',
     headline: 'Uploading huge files no longer freezes the page — and a single file can now be up to 750 GB.',
