@@ -79,7 +79,9 @@ asks: a **mirror** runs every `DRIVE_SYNC_INTERVAL_SEC` (120s) and calls Drive's
 not the whole Drive. New files are adopted with a catalogue record, renames and moves are
 followed, a trashed file is flagged rather than dropped. The page token is saved after
 each successful pass, so a failure resumes from the last good page instead of rescanning
-1.4 TB.
+1.4 TB. The whole tree is walked only as a backstop, once every
+`DRIVE_SYNC_FULL_EVERY_HOURS` (24) — remembered in MongoDB, so a restart does not cause
+one — and the nightly reconciliation's listing is reused as that walk.
 
 Nothing in the mirror invents a tag or a category. An adopted file arrives with a name and
 a family inferred from its MIME type, and waits for a person.
@@ -857,6 +859,40 @@ Drive round trip in front of a read MongoDB could already answer. `DRIVE_SYNC_PA
 now defaults to `0`: the sync still starts, the screen is served immediately from the
 catalogue, and the result arrives on the next poll. Set it back to `6000` for the old
 behaviour.
+
+### What ran out of memory
+
+Two things, both fixed:
+
+- **Folder listings rebuilt the catalogue per folder.** `/api/folders`, `lookup/options` and
+  `lookup/tree` called `assetsInFolder`/`assetsUnderFolder` once or twice for *every*
+  folder, and each call rebuilds the full joined asset list. At 2,179 folders that was
+  ~4,000 passes over 18k assets per request. They now build one index per request.
+- **The flush snapshot was a second copy of the catalogue.** `db/store.js` kept every row's
+  full JSON to spot changes. It now keeps a SHA-1 per row, loads rows without copying them,
+  and writes dirty rows 500 at a time instead of all at once.
+- **Every boot walked the whole Drive and rewrote every row.** The first sync after a start
+  was always a full walk, and it stamped a fresh check time — plus Drive's freshly signed
+  `thumbnailLink` — onto all 17,941 rows, so the next flush rewrote the entire catalogue.
+  Now a boot reads the changes feed; the full walk is daily and shared with reconciliation;
+  `thumbnailLink` is no longer fetched; and an unchanged check is written down at most twice
+  a day (`services/availability.js`). A full walk over an unchanged Drive now rewrites 0 rows.
+- **Listings fetch only what is read** (`LISTING_FIELDS`), reconciliation keeps 10 runs in
+  memory with at most 500 findings each, and perceptual hashing runs two single-threaded
+  ffmpeg processes instead of four.
+
+`GET /api/admin/health` reports `memory` (`rssMB`, `heapUsedMB`, `heapLimitMB`) — the number
+to watch before deciding the server needs to be bigger.
+
+Measured on a synthetic library of the same shape (17,941 assets, 2,179 folders):
+
+| | Before | After |
+|---|---|---|
+| RSS after boot | 455 MB | **365 MB** |
+| `GET /api/folders?review=pending` | 15.8 s | **57 ms** |
+| `GET /api/folders/lookup/options` | 6.9 s | **24 ms** |
+| Four folder requests at once | 37 s, peak RSS 595 MB | **91 ms, 397 MB** |
+| Boot under `--max-old-space-size=160` | heap out of memory | **serves normally** |
 
 ### Where this design ends
 

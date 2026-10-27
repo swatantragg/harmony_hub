@@ -26,12 +26,25 @@ export const EXPORT_FORMATS = {
   'application/vnd.google-apps.drawing': { mimeType: 'image/png', ext: '.png' },
 };
 
+// No thumbnailLink: nothing shows it, it expires within hours, and Drive signs a
+// new one on every listing — so storing it made every row look changed on every
+// full walk, and the whole catalogue was rewritten each time.
 export const FILE_FIELDS = [
   'id', 'name', 'mimeType', 'size', 'md5Checksum', 'sha1Checksum', 'sha256Checksum',
   'parents', 'trashed', 'explicitlyTrashed', 'createdTime', 'modifiedTime', 'version',
-  'headRevisionId', 'webViewLink', 'iconLink', 'thumbnailLink', 'appProperties', 'driveId',
+  'headRevisionId', 'webViewLink', 'iconLink', 'appProperties', 'driveId',
   'videoMediaMetadata(width,height,durationMillis)', 'imageMediaMetadata(width,height)',
   'lastModifyingUser(displayName,emailAddress)', 'shortcutDetails(targetId,targetMimeType)',
+].join(',');
+
+// What the Drive mirror and reconciliation read from a listing of the whole
+// library — every file at once, held in memory until the pass ends — and not a
+// field more. The rest of FILE_FIELDS is only ever wanted for one file at a time.
+export const LISTING_FIELDS = [
+  'id', 'name', 'mimeType', 'size', 'md5Checksum', 'sha1Checksum', 'sha256Checksum',
+  'parents', 'trashed', 'createdTime', 'modifiedTime', 'headRevisionId', 'webViewLink',
+  'appProperties', 'driveId',
+  'videoMediaMetadata(width,height,durationMillis)', 'imageMediaMetadata(width,height)',
 ].join(',');
 
 

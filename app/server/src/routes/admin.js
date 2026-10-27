@@ -1,4 +1,5 @@
 import express from 'express';
+import v8 from 'node:v8';
 import { db, persist, flushNow, allAssets } from '../db.js';
 import { authenticate, requires, requireStepUp, problem } from '../middleware/auth.js';
 import { runReconciliation, latestRun, healthSummary } from '../services/reconcile.js';
@@ -58,6 +59,13 @@ adminRouter.get('/health', requires('admin:storage'), async (_req, res) => {
     scanner,
     env: ENV,
     uptime: process.uptime(),
+    // Whether the server needs more memory is a number, not a guess: resident
+    // size against the instance, and the JS heap against the limit V8 enforces.
+    memory: (() => {
+      const mb = (bytes) => Math.round(bytes / 1048576);
+      const { rss, heapUsed } = process.memoryUsage();
+      return { rssMB: mb(rss), heapUsedMB: mb(heapUsed), heapLimitMB: mb(v8.getHeapStatistics().heap_size_limit) };
+    })(),
     keepAlive: keepalive.status(),
     node: process.version,
     mongo: { db: mongo.db, host: mongo.host, connected: mongo.readyState === 1 },
@@ -145,7 +153,7 @@ adminRouter.get('/storage/health', requires('admin:storage'), async (_req, res) 
 });
 
 adminRouter.post('/storage/reconcile', requires('admin:storage'), async (req, res) => {
-  const run = await runReconciliation(req, { trigger: 'manual' });
+  const run = await runReconciliation(req, { trigger: 'manual', mirror: true });
   res.json(run);
 });
 

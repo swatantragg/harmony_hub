@@ -73,9 +73,12 @@ function extractFrames(stream, { frames, durationSec, isImage }) {
       '-frames:v', String(frames),
     ];
 
+  // One decoder thread: each extra thread holds frames of its own, and on a 4K
+  // video that is hundreds of MB per process in a container sized for the API.
   const proc = spawn('ffmpeg', [
     '-hide_banner', '-loglevel', 'error',
     '-nostdin',
+    '-threads', '1',
     '-protocol_whitelist', 'pipe',
     ...args,
     '-pix_fmt', 'gray', '-f', 'rawvideo', 'pipe:1',
@@ -161,7 +164,8 @@ export async function buildPerceptualHashes({ state = {}, onProgress } = {}) {
   state.failed = 0;
   state.errors = [];
 
-  const concurrency = Math.max(1, Math.min(4, HEAD_CONCURRENCY));
+  // ffmpeg's memory counts against the same container limit as this process.
+  const concurrency = Math.max(1, Math.min(2, HEAD_CONCURRENCY));
 
   await mapLimit(targets, concurrency, async (asset) => {
     try {

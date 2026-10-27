@@ -50,6 +50,9 @@ async function ping() {
       redirect: 'manual',
       signal: AbortSignal.timeout(KEEPALIVE.timeoutMs),
     });
+    // Only the status matters. An unread body keeps its socket and buffers alive
+    // until the response happens to be garbage-collected.
+    res.body?.cancel().catch(() => {});
     state.lastDurationMs = Date.now() - started;
     state.lastPingAt = new Date().toISOString();
     state.lastStatus = res.status;

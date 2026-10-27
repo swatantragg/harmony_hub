@@ -1,15 +1,33 @@
 import { db, persist, allAssets } from '../db.js';
-import { HEAD_CONCURRENCY, ROOTS, TRASH_DAYS } from '../config.js';
+import { DRIVE_SYNC, HEAD_CONCURRENCY, ROOTS, TRASH_DAYS } from '../config.js';
 import { uuid } from '../util/crypto.js';
 import * as storage from './storage.js';
-import { mapLimit, FOLDER_MIME } from '../storage/drive.js';
+import { mapLimit, FOLDER_MIME, LISTING_FIELDS, startPageToken } from '../storage/drive.js';
 import { notify, record } from './audit.js';
+import { setAvailability } from './availability.js';
+import { syncDrive } from './sync.js';
+
+// Runs kept in memory (all of them stay in MongoDB). Only the latest is ever
+// read here; each older one was loaded at boot and held for nothing.
+const RUNS_KEPT = 10;
+
+// Findings stored on a run. A run is one MongoDB document, and one that grows
+// past 16 MB cannot be written at all — and a flush that fails on it stops the
+// collections after it from being written too. `counts` always has the totals.
+const FINDINGS_KEPT = 500;
+const SEVERITY_RANK = { critical: 0, integrity: 1, orphan: 2, informational: 3 };
 
 let running = null;
 
-export async function runReconciliation(req, { trigger = 'manual', applyAvailability = true } = {}) {
+/**
+ * `mirror` hands this run's listing of Drive to the Drive mirror afterwards, as
+ * the full walk it does once a day anyway — one listing instead of two. Only
+ * for the server process: the mirror adopts files, and a CLI run doing it in a
+ * working set of its own would catalogue them a second time under new ids.
+ */
+export async function runReconciliation(req, { trigger = 'manual', applyAvailability = true, mirror = false } = {}) {
   if (running) return running;
-  running = reconcile(req, { trigger, applyAvailability });
+  running = reconcile(req, { trigger, applyAvailability, mirror });
   try {
     return await running;
   } finally {
@@ -17,11 +35,14 @@ export async function runReconciliation(req, { trigger = 'manual', applyAvailabi
   }
 }
 
-async function reconcile(req, { trigger, applyAvailability }) {
+async function reconcile(req, { trigger, applyAvailability, mirror }) {
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
 
-  const { files, folders, pages } = await storage.inventory({ includeTrashed: true });
+  // Before the listing, so the mirror's next incremental pass replays anything
+  // that changed while it ran (see sync.js survey).
+  const token = mirror ? await startPageToken().catch(() => null) : null;
+  const { files, folders, pages } = await storage.inventory({ includeTrashed: true, fields: LISTING_FIELDS });
   const inDrive = new Map(files.map((f) => [f.id, f]));
   const driveFolders = new Map(folders.map((f) => [f.id, f]));
 
@@ -156,28 +177,28 @@ async function reconcile(req, { trigger, applyAvailability }) {
         continue;
       }
       if (file.trashed) {
-        asset.availability = {
+        setAvailability(asset, {
           ...base,
           status: 'TRASHED',
           lastVerifiedAt: now,
           detail: `In Google Drive's trash. Restore it to make it downloadable again — Drive empties the trash after ${TRASH_DAYS} days.`,
-        };
+        });
       } else if (asset.drive.googleNative) {
-        asset.availability = { ...base, status: 'AVAILABLE', lastVerifiedAt: now, detail: null };
+        setAvailability(asset, { ...base, status: 'AVAILABLE', lastVerifiedAt: now, detail: null });
       } else {
         const liveSize = file.size == null ? 0 : Number(file.size);
         const recordedSum = asset.drive?.sha256 || asset.drive?.md5;
         const liveSum = asset.drive?.sha256 ? file.sha256Checksum : file.md5Checksum;
         const drifted = (asset.drive.sizeBytes != null && liveSize !== asset.drive.sizeBytes)
           || (recordedSum && liveSum && liveSum !== recordedSum);
-        asset.availability = drifted
+        setAvailability(asset, drifted
           ? {
             ...base,
             status: 'MISMATCH',
             lastVerifiedAt: now,
             detail: `The file was changed in Google Drive outside GCloud (size ${asset.drive.sizeBytes} → ${liveSize})`,
           }
-          : { ...base, status: 'AVAILABLE', lastVerifiedAt: now, detail: null };
+          : { ...base, status: 'AVAILABLE', lastVerifiedAt: now, detail: null });
       }
 
       asset.lastHead = {
@@ -205,6 +226,11 @@ async function reconcile(req, { trigger, applyAvailability }) {
   };
   for (const f of findings) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
 
+  const critical = findings.filter((f) => f.severity === 'critical').length;
+  const kept = findings.length > FINDINGS_KEPT
+    ? [...findings].sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)).slice(0, FINDINGS_KEPT)
+    : findings;
+
   const space = await storage.quota().catch(() => null);
 
   const run = {
@@ -221,13 +247,14 @@ async function reconcile(req, { trigger, applyAvailability }) {
     listPages: pages,
     readsIssued,
     counts,
-    findings,
+    findings: kept,
+    findingsOmitted: findings.length - kept.length,
     quota: space,
     rootFolderId: ROOTS.assets,
-    ok: findings.filter((f) => f.severity === 'critical').length === 0,
+    ok: critical === 0,
   };
   db.reconciliationRuns.unshift(run);
-  if (db.reconciliationRuns.length > 40) db.reconciliationRuns.length = 40;
+  if (db.reconciliationRuns.length > RUNS_KEPT) db.reconciliationRuns.length = RUNS_KEPT;
 
   record(req, {
     action: 'RECONCILE_RUN',
@@ -269,6 +296,11 @@ async function reconcile(req, { trigger, applyAvailability }) {
   }
 
   persist();
+
+  if (mirror && DRIVE_SYNC.enabled) {
+    await syncDrive({ trigger: 'reconcile', mode: 'full', inventory: { files, folders, pages, token } })
+      .catch((err) => console.error('[reconcile] drive mirror:', err.message));
+  }
   return run;
 }
 
@@ -294,6 +326,6 @@ export function healthSummary() {
     lastRun: run
       ? { _id: run._id, finishedAt: run.finishedAt, counts: run.counts, objectsScanned: run.objectsScanned, ok: run.ok }
       : null,
-    openFindings: run ? run.findings.filter((f) => !f.resolvedAt).length : 0,
+    openFindings: run ? run.findings.filter((f) => !f.resolvedAt).length + (run.findingsOmitted ?? 0) : 0,
   };
 }

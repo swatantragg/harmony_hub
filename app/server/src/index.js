@@ -475,7 +475,7 @@ async function main() {
 
   const job = RECONCILE_ENABLED && cron.validate(RECONCILE_CRON)
     ? cron.schedule(RECONCILE_CRON, () => {
-      runReconciliation({ ip: '127.0.0.1', get: () => 'scheduler', user: null }, { trigger: 'scheduled' })
+      runReconciliation({ ip: '127.0.0.1', get: () => 'scheduler', user: null }, { trigger: 'scheduled', mirror: true })
         .catch((err) => console.error('[reconcile]', err.message));
     })
     : null;
